@@ -126,7 +126,6 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
         {
             if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FA 10"))){
                 qInfo().noquote() << "增益：" << cachePool.at(9);
-
             }
         }
 
@@ -134,7 +133,6 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
         {
             if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FA 11"))){
                 qInfo().noquote() << "死时间/ns：" << cachePool.mid(8, 2).toShort();
-
             }
         }
 
@@ -142,7 +140,6 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
         {
             if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FA 12"))){
                 qInfo().noquote() << "触发阈值：" << cachePool.mid(8, 2).toShort();
-
             }
         }
 

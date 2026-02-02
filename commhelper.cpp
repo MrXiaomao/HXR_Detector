@@ -173,7 +173,7 @@ void CommHelper::initDataProcessor()
 
                     qInfo().nospace() << "谱仪[#"<< processor->index() << "]创建存储文件：" << filePath;
 
-                    filePath = QString("%1/%2/%3_%4.H5").arg(mShotDir).arg(mShotNum).arg(mTriggerTimer).arg(processor->index());
+                    filePath = QString("%1/%2/%3.H5").arg(mShotDir).arg(mShotNum).arg(mTriggerTimer);
                     HDF5Settings::instance()->createH5Spectrum(filePath);
                 }
 

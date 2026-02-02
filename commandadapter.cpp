@@ -412,15 +412,23 @@ void CommandAdapter::sendGain(bool isRead, double gain){
         askCurrentCmd[3] = 0x0F;
 
     //根据增益值设置对应的指令值
-    quint8 gainHex = 0x01; //默认值1.0
-    if (qFuzzyCompare(gain, 0.5)) //浮点数相等的判断
+    quint8 gainHex = 0x05; //默认值1.26
+    if (qFuzzyCompare(gain, 0.08)) //浮点数相等的判断
         gainHex = 0x01;
-    else if (qFuzzyCompare(gain, 1.0))
+    else if (qFuzzyCompare(gain, 0.16))
         gainHex = 0x02;
-    else if (qFuzzyCompare(gain, 1.5))
+    else if (qFuzzyCompare(gain, 0.32))
         gainHex = 0x03;
-    else if (qFuzzyCompare(gain, 2.0))
+    else if (qFuzzyCompare(gain, 0.63))
         gainHex = 0x04;
+    else if (qFuzzyCompare(gain, 1.26))
+        gainHex = 0x05;
+    else if (qFuzzyCompare(gain, 2.52))
+        gainHex = 0x06;
+    else if (qFuzzyCompare(gain, 5.01))
+        gainHex = 0x07;
+    else if (qFuzzyCompare(gain, 10.0))
+        gainHex = 0x08;
 
     askCurrentCmd[9] = (gainHex & 0xFF);
     
