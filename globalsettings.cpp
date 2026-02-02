@@ -109,7 +109,7 @@ HDF5Settings::HDF5Settings(QObject *parent) : QObject(parent)
 {
     //初始化数据类型
     mCompDataType = createCfgDataType();
-    mSpectrumDataType = createFullSpectrumType();
+    mSpectrumDataType = createH5SpectrumType();
 
     // 创建配置文件
     createH5Config();
@@ -578,9 +578,9 @@ H5::CompType HDF5Settings::createCfgDataType()
 }
 
 // 定义FullSpectrum的HDF5复合类型
-H5::CompType HDF5Settings::createFullSpectrumType()
+H5::CompType HDF5Settings::createH5SpectrumType()
 {
-    H5::CompType type(offsetof(H5Spectrum, sequence));
+    H5::CompType type(sizeof(H5Spectrum));
 
     // 逐个成员映射（注意内存对齐，需与结构体一致）
     type.insertMember("sequence", offsetof(H5Spectrum, sequence), H5::PredType::NATIVE_UINT32);

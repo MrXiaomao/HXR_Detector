@@ -822,7 +822,7 @@ public:
     void sync();
 
     // 定义FullSpectrum的HDF5复合类型
-    H5::CompType createFullSpectrumType();
+    H5::CompType createH5SpectrumType();
     H5::CompType createCfgDataType();
 
     void createH5Config();
