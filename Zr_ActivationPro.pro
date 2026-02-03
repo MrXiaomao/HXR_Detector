@@ -165,7 +165,6 @@ include($$PWD/../3rdParty/hdf5/C++/hdf5Wrapper.pri)
 include($$PWD/../3rdParty/QNtpClient/QNtpClient.pri)
 include($$PWD/../3rdParty/QTelnet/QTelnet.pri)
 include($$PWD/../3rdParty/alglib-cpp/alglib.pri)
-include($$PWD/../3rdParty/gram_savitzky_golay/savitzky_golay.pri)
 
 INCLUDEPATH += $$PWD/../3rdParty/eigen-5.0.0
 

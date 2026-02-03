@@ -1,3 +1,9 @@
+/**
+ * 中子产额绘制类
+ * 用途：绘制物理场空间分布，将球体表面的分布展开为二维图像，并采用色彩来实现物理场的数值强弱
+ * 使用说明：setSensors进行数据填充，数据填充后需要rebuild。
+ */
+
 #ifndef MOLLWEIDEHEATMAP_H
 #define MOLLWEIDEHEATMAP_H
 
