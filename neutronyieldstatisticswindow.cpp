@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-04-20 09:21:28
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-01-29 10:02:52
+ * @LastEditTime: 2026-02-03 14:24:48
  * @Description: 离线数据分析
  */
 #include "neutronyieldstatisticswindow.h"
@@ -19,6 +19,9 @@
 #include <QJsonDocument>
 #include <QMessageBox>
 #include <math.h>
+
+#include "CrasterParabolicHeatmapWidget.h"
+#include "MollweideHeatmapWidget.h"
 
 NeutronYieldStatisticsWindow::NeutronYieldStatisticsWindow(bool isDarkTheme, QWidget *parent)
     : QMainWindow(parent)
@@ -232,7 +235,7 @@ void NeutronYieldStatisticsWindow::initUi()
 
     initSpectrumCustomPlot();
     initCountCustomPlot();
-    initPolorCustomPlot();
+    initYieldCustomPlot();
 
     // 显示计数/能谱
     QButtonGroup *grp = new QButtonGroup(this);
@@ -773,13 +776,59 @@ void NeutronYieldStatisticsWindow::initCountCustomPlot()
     });
 }
 
-void NeutronYieldStatisticsWindow::initPolorCustomPlot()
+void NeutronYieldStatisticsWindow::initYieldCustomPlot()
 {
-    QCustomPlot* customPlot = ui->spectorMeter_Yield;
+    /*QCustomPlot* customPlot = ui->yieldSpatialDistribution;
     QCustomPlotHelper* customPlotHelper = new QCustomPlotHelper(customPlot, this);
 
     customPlot->rescaleAxes(true);
     customPlot->replot();
+    */
+       // auto *w = new MollweideHeatmapWidget(ui->heatmapContainer);
+    auto *w = new CrasterParabolicHeatmapWidget(ui->yieldSpatialDistribution);
+    auto *layout = new QVBoxLayout(ui->yieldSpatialDistribution);
+    layout->setContentsMargins(0,0,0,0);
+    layout->addWidget(w);
+
+    // 示例：塞 30 个点数据（你替换成真实数据）
+    std::vector<Sensor> sensors = {
+            {-180, 0, 120}, {-150, 0, 110},{-120, 0, 113},{-90, 0, 112},{-60, 0, 94},{-30, 0, 103},
+            {0, 0, 112}, {30, 0, 112}, {60, 0, 102}, {120, 0, 124}, {150, 0, 96},
+            {-180, 45, 76}, {-90, 45, 82}, {0, 45, 73}, {90, 45, 60}, {156, 45, 75},
+            {-180, -45, 86}, {-90, -45, 83}, {0, -45, 90}, {90, -45, 76}, {156, -45, 76},
+            {0, -90, 60}, {0, 90, 40}};
+    // ...补齐你的30个
+    w->setSensors(sensors);
+
+    // Mollweide投影
+    /*{
+        //方式1 球谐函数插值
+        w->setInterpMode(MollweideHeatmapWidget::InterpMode::SphericalHarmonics);
+        w->setSHOrder(4);       // 3或4
+        w->setSHLambda(1e-4);   // 稳一点
+        w->rebuild();
+
+        //方式2
+        // w->setInterpMode(MollweideHeatmapWidget::InterpMode::IDW);
+        // w->setPower(2.0);
+        // w->rebuild();
+    }
+    */
+
+    // Craster Parabolic 投影
+    {
+        //方式1 球谐函数插值
+        w->setInterpMode(CrasterParabolicHeatmapWidget::InterpMode::SphericalHarmonics);
+        w->setSHOrder(4);       // 3或4
+        w->setSHLambda(1e-4);   // 稳一点
+        w->rebuild();
+
+        //方式2
+        // w->setInterpMode(CrasterParabolicHeatmapWidget::InterpMode::IDW);
+        // w->setPower(2.0);
+        // w->rebuild();
+    }
+    // 如果你后续数据会变：更新 sensors 后再 rebuild()
 }
 
 #include "H5Cpp.h"
@@ -981,7 +1030,13 @@ void NeutronYieldStatisticsWindow::slotFail()
 
 void NeutronYieldStatisticsWindow::slotSuccess()
 {
-    //SplashWidget::instance()->setInfo(tr("开始数据分析，请等待..."));
+    //
+    double count909_N0 = dealFile->GetInitialCount();
+    int detID = dealFile->mDetId;
+    //根据探测器ID，显示对应的探测器的count909_N0
+    if(detID > 0 && detID <= ui->tableWidget->rowCount()){
+        ui->tableWidget->setItem(detID-1, 1, new QTableWidgetItem(QString::number(count909_N0)));
+    }
 
     //显示计数衰减曲线、显示计数率和残差%
     std::vector<double> time;// x

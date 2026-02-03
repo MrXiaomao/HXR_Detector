@@ -61,6 +61,13 @@ struct SubSpectrumPacket {
 };
 #pragma pack(pop)
 
+// 用于描述探测器空间位置，及其测得的中子产额数值
+struct Sensor {
+    double lonDeg;  // 经度[-180,180]
+    double latDeg;  // 纬度[-90, 90]
+    double value;   // 中子产额
+};
+
 // 用于写入到HDF5文件的能谱数据
 struct H5Spectrum{
     quint32 sequence;      // 能谱序号

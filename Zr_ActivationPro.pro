@@ -9,6 +9,8 @@ CONFIG += c++17
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
+    CrasterParabolicHeatmapWidget.cpp \
+    MollweideHeatmapWidget.cpp \
     PeerConnection.cpp \
     QFlowLayout.cpp \
     TcpAgentServer.cpp \
@@ -35,6 +37,8 @@ SOURCES += \
     sysutils.cpp
 
 HEADERS += \
+    CrasterParabolicHeatmapWidget.h \
+    MollweideHeatmapWidget.h \
     PeerConnection.h \
     QFlowLayout.h \
     TcpAgentServer.h \

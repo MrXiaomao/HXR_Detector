@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2026-01-15 21:24:55
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-01-27 20:56:03
+ * @LastEditTime: 2026-02-03 14:05:52
  * @Description: 请填写简介
  */
 #ifndef NEUTRONYIELDSTATISTICSWINDOW_H
@@ -27,9 +27,13 @@ public:
     ~NeutronYieldStatisticsWindow();
 
     void initUi();
+    // 初始化各时间段段的全谱分布
     void initSpectrumCustomPlot();
+    // 初始化909keV伽马计数随时间变化曲线及各时间段的909能谱
     void initCountCustomPlot();
-    void initPolorCustomPlot();
+    // 初始化中子产额空间分布
+    void initYieldCustomPlot();
+    
     void applyColorTheme();
     void restoreSettings();
 

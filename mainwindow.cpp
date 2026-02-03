@@ -1799,12 +1799,13 @@ void MainWindow::updateSpectrumDisplay(int detectorId, const quint32 spectrum[])
     getGraph(detectorId, true)->setData(x, y);
     // customPlot->xAxis->setRange(0, m_spectrumPlotSettings[detectorId-1].multiChannel);
 
-    //customPlot->xAxis->rescale(true);
+    // customPlot->xAxis->rescale(true);
     customPlot->yAxis->rescale(false);
     double y_min = customPlot->yAxis->range().lower;
     double y_max = customPlot->yAxis->range().upper;
     y_max = y_min + (y_max - y_min) * 1.1;
     customPlot->yAxis->setRange(y_min - 1, y_max);
+    qDebug()<<QString("SetRange detectorId=%1, y_min=%2,y_max=%3").arg(detectorId).arg(y_min).arg(y_max);
 
     customPlot->replot(QCustomPlot::rpQueuedReplot);
 }

@@ -68,6 +68,8 @@ public:
 
     QVector<specStripData> GetCount909Data();
 
+    double GetInitialCount(){return mInitialCount;}
+
     /**
      * @brief mergeSpecTime 提取目标时间段能谱数据，根据时间道宽合并能谱，用于离线分析
      * @param timeBin 时间宽度,单位s
@@ -143,8 +145,12 @@ public:
      * @return
      */
     bool processSinglePacket(int headerPos, int nextHeaderPos, paraseMode mode = offlineMode);
+
     // 获取指定时间段内的能谱
     bool getResult_offline(quint64 timeBin, quint64 start_time, quint64 end_time);
+
+public:
+    int mDetId; //探测器编号
 
 private:
     bool getResult(QVector<mergeSpecData> mergeSpec);
@@ -196,8 +202,9 @@ private:
     int lastSpecID_online = 0; //上一个能谱的编号。用于在线处理
     quint64 spectDeltaT = 0; //单个能谱测量时长，单位ms
     int startTime_online = 240*60; //解析能谱的起始时刻，单位s
-    int timeBin_online = 300*60; //解析能谱的时间宽度，单位s.分时能谱的单个能谱测量时间
+    int mTimeBin_online = 300*60; //解析能谱的时间宽度，单位s.分时能谱的单个能谱测量时间
 
+    double mInitialCount = 0.0; //对数拟合后，给出来的初始计数率
     QVector<int> specStrip_rightCH; //存放所有剥谱图形的右端点下标
 };
 
