@@ -8,56 +8,10 @@
 #include "sysutils.h"
 
 #include "curveFit.h"
-#include "gram_savitzky_golay/gram_savitzky_golay.h"
-
-std::vector<double> sgolayfilt_matlab_like(
-    const std::vector<double>& data, size_t n, size_t frame_length)
-{
-    // const size_t frame_length = 13;
-    const size_t m = (frame_length - 1) / 2; // Window size is 2*m+1
-    // const size_t n = 3; // polynomial order
-    const int    d = 0; // smoothing
-
-    const size_t N = data.size();
-    std::vector<double> out(N);
-
-    for (size_t i = 0; i < N; ++i)
-    {
-        // === 动态窗口（关键）===
-        size_t left  = (i < m) ? 0 : (i - m);
-        size_t right = std::min(N - 1, i + m);
-
-        // 当前窗口大小
-        size_t win_size = right - left + 1;
-        size_t m_local  = (win_size - 1) / 2;
-
-        // 在窗口中的“相对位置”
-        size_t t = i - left;
-
-        gram_sg::SavitzkyGolayFilter sg(
-            m_local,     // half window
-            t,           // evaluation point
-            n,           // polynomial order
-            d
-            );
-
-        // 构造子窗口
-        std::vector<double> window(
-            data.begin() + left,
-            data.begin() + left + m_local*2+1
-            );
-
-        qDebug()<<"i = "<<i;
-        out[i] = sg.filter(window);
-        qDebug()<<"out["<<i<<"]="<<out[i];
-    }
-
-    return out;
-}
 
 const double diffstep = 1.4901e-08;
 ParseData::ParseData() {
-
+    mDetId = 0;
 }
 
 ParseData::~ParseData() {}
@@ -99,7 +53,7 @@ void ParseData::mergeSpecTime_online(const H5Spectrum& specPack)
         quint64 lossTime = 0; // ns
 
         int timeMerge = timeAfterShot - startTime_online; // s
-        int mergeID = int(ceil(timeMerge * 1.0 / timeBin_online));
+        int mergeID = int(ceil(timeMerge * 1.0 / mTimeBin_online));
 
         // 计算丢包带来的死时间
         qint64 lossTimeTemp =
@@ -751,12 +705,12 @@ bool ParseData::fit909data()
 
     //提取拟合数据
     QVector<QPointF> fitPoints;
-    QVector<double> fitx, fity;
+    QVector<double> fitx,fity;
     for(int i=0; i<ch_count; i++)
     {
         double ti = count909_time.at(i);
         double yi = count909_count.at(i);
-        fitPoints.push_back(QPointF(ti, yi));
+        fitPoints.push_back(QPointF(ti, log(yi)));
         fitx.push_back(ti);
         fity.push_back(yi);
     }
@@ -779,11 +733,15 @@ bool ParseData::fit909data()
         double y;
         CurveFit::function_log(c, xData, y, NULL);
         fity_curve.push_back(exp(y));
+        count909_residual.push_back((exp(y)-fity.at(i))/fity.at(i)*100.0);
     }
 
     count909_fitcount.append(fity_curve);
-    count909_residual.append(residual_rate);
+    // count909_residual.append(residual_rate);
 
+    //零时刻计数
+    double t1 = log(2)/(78.4*60);
+    mInitialCount = exp(p)/(exp(mTimeBin_online/60*t1)-1);
     return true;
 }
 
@@ -831,6 +789,7 @@ QVector<specStripData> ParseData::GetCount909Data()
  */
 void ParseData::clearFitResult()
 {
+    mInitialCount = 0.0;
     count909_time.clear();
     count909_count.clear(); //909keV计数，采用峰面积求得
     count909_fitcount.clear(); //909keV计数随时间变化的拟合曲线
@@ -844,6 +803,7 @@ void ParseData::clearFitResult()
 
 int ParseData::parseH5File(const QString& filePath, const quint32 detectorId)
 {
+    mDetId = detectorId;
     if (filePath.isEmpty() || !QFileInfo::exists(filePath)){
         qDebug()<<QString("1% is not exists!").arg(filePath);
         return 0;
@@ -1156,6 +1116,7 @@ int ParseData::findPacketHeader(int startPos) {
 **/
 void ParseData::mergeSpecTime_offline(quint64 timeBin, quint64 start_time, quint64 end_time)
 {
+    mTimeBin_online = timeBin;
     quint32 spectrumNum = (end_time - start_time+1)/timeBin; //整除，给出合并后的能谱个数，对于最后一段时间不满timeBin宽度的能谱直接丢弃。
     if(spectrumNum == 0) return;
 

@@ -327,10 +327,15 @@
           </column>
           <column>
            <property name="text">
+            <string>能谱个数</string>
+           </property>
+          </column>
+          <column>
+           <property name="text">
             <string>中子产额</string>
            </property>
           </column>
-          <item row="0" column="1">
+          <item row="0" column="2">
            <property name="text">
             <string/>
            </property>
@@ -341,7 +346,7 @@
             <set>ItemIsSelectable|ItemIsDragEnabled|ItemIsDropEnabled|ItemIsUserCheckable|ItemIsEnabled</set>
            </property>
           </item>
-          <item row="1" column="1">
+          <item row="1" column="2">
            <property name="text">
             <string/>
            </property>
@@ -398,7 +403,7 @@
        <item>
         <widget class="QStackedWidget" name="stackedWidget">
          <property name="currentIndex">
-          <number>0</number>
+          <number>1</number>
          </property>
          <widget class="QWidget" name="page_spectrum">
           <layout class="QVBoxLayout" name="verticalLayout_3">
@@ -472,7 +477,7 @@
             <number>0</number>
            </property>
            <item row="0" column="0">
-            <widget class="QCustomPlot" name="spectorMeter_Yield" native="true"/>
+            <widget class="QWidget" name="yieldSpatialDistribution" native="true"/>
            </item>
           </layout>
          </widget>
@@ -704,29 +709,6 @@
              <string>解析参数</string>
             </property>
             <layout class="QGridLayout" name="gridLayout_4">
-             <item row="3" column="0">
-              <widget class="QLabel" name="label">
-               <property name="text">
-                <string>时间步长/min：</string>
-               </property>
-               <property name="alignment">
-                <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
-               </property>
-              </widget>
-             </item>
-             <item row="1" column="1" rowspan="2">
-              <widget class="QSpinBox" name="spinBox_timeEnd">
-               <property name="minimum">
-                <number>1</number>
-               </property>
-               <property name="maximum">
-                <number>99999999</number>
-               </property>
-               <property name="value">
-                <number>2000</number>
-               </property>
-              </widget>
-             </item>
              <item row="0" column="1">
               <widget class="QSpinBox" name="spinBox_timeStart">
                <property name="minimum">
@@ -737,23 +719,20 @@
                </property>
               </widget>
              </item>
-             <item row="0" column="0">
-              <widget class="QLabel" name="label_6">
+             <item row="3" column="0">
+              <widget class="QLabel" name="label">
                <property name="text">
-                <string>解析时间起点/min：</string>
+                <string>时间步长/min：</string>
                </property>
                <property name="alignment">
                 <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
                </property>
               </widget>
              </item>
-             <item row="1" column="0" rowspan="2">
-              <widget class="QLabel" name="label_8">
+             <item row="4" column="0">
+              <widget class="QPushButton" name="pushButton_2">
                <property name="text">
-                <string>解析时间终点/min：</string>
-               </property>
-               <property name="alignment">
-                <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                <string>预处理文件</string>
                </property>
               </widget>
              </item>
@@ -770,7 +749,27 @@
                </property>
               </widget>
              </item>
-             <item row="4" column="2">
+             <item row="1" column="0" rowspan="2">
+              <widget class="QLabel" name="label_8">
+               <property name="text">
+                <string>解析时间终点/min：</string>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+               </property>
+              </widget>
+             </item>
+             <item row="0" column="0">
+              <widget class="QLabel" name="label_6">
+               <property name="text">
+                <string>解析时间起点/min：</string>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+               </property>
+              </widget>
+             </item>
+             <item row="4" column="1">
               <widget class="QPushButton" name="pushButton_start">
                <property name="enabled">
                 <bool>true</bool>
@@ -793,18 +792,18 @@
                </property>
               </widget>
              </item>
-             <item row="4" column="0" colspan="2">
-              <spacer name="horizontalSpacer_4">
-               <property name="orientation">
-                <enum>Qt::Horizontal</enum>
+             <item row="1" column="1" rowspan="2">
+              <widget class="QSpinBox" name="spinBox_timeEnd">
+               <property name="minimum">
+                <number>1</number>
                </property>
-               <property name="sizeHint" stdset="0">
-                <size>
-                 <width>255</width>
-                 <height>20</height>
-                </size>
+               <property name="maximum">
+                <number>99999999</number>
                </property>
-              </spacer>
+               <property name="value">
+                <number>1800</number>
+               </property>
+              </widget>
              </item>
             </layout>
            </widget>
@@ -995,7 +994,7 @@
      <x>0</x>
      <y>0</y>
      <width>1431</width>
-     <height>18</height>
+     <height>21</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">
@@ -1048,8 +1047,8 @@
    </attribute>
    <addaction name="action_open"/>
    <addaction name="separator"/>
-   <addaction name="action_startMeasure"/>
-   <addaction name="action_stopMeasure"/>
+   <addaction name="action_startCalculate"/>
+   <addaction name="action_stopCalculate"/>
    <addaction name="separator"/>
    <addaction name="action_exit"/>
   </widget>
@@ -1113,7 +1112,7 @@
     <enum>QAction::NoRole</enum>
    </property>
   </action>
-  <action name="action_startMeasure">
+  <action name="action_startCalculate">
    <property name="icon">
     <iconset resource="../3rdParty/resource/resource.qrc">
      <normaloff>:/work-on.png</normaloff>:/work-on.png</iconset>
@@ -1128,7 +1127,7 @@
     <enum>QAction::NoRole</enum>
    </property>
   </action>
-  <action name="action_stopMeasure">
+  <action name="action_stopCalculate">
    <property name="icon">
     <iconset resource="../3rdParty/resource/resource.qrc">
      <normaloff>:/work-off.png</normaloff>:/work-off.png</iconset>
@@ -1211,7 +1210,7 @@
   <connection>
    <sender>pushButton_start</sender>
    <signal>clicked()</signal>
-   <receiver>action_startMeasure</receiver>
+   <receiver>action_startCalculate</receiver>
    <slot>trigger()</slot>
    <hints>
     <hint type="sourcelabel">

@@ -144,11 +144,6 @@ void HDF5Settings::setDetParameter(QMap<quint8, DetParameter>& detParameters)
     mMapDetParameter = detParameters;
 }
 
-void HDF5Settings::setDetParameter(quint8 detId, DetParameter detParameter)
-{
-    mMapDetParameter[detId] = detParameter;
-}
-
 void HDF5Settings::sync()
 {
     QMutexLocker locker(&mWrite_mutex);

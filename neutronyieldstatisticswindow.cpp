@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-04-20 09:21:28
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-01-29 10:02:52
+ * @LastEditTime: 2026-02-03 22:47:43
  * @Description: 离线数据分析
  */
 #include "neutronyieldstatisticswindow.h"
@@ -20,6 +20,10 @@
 #include <QMessageBox>
 #include <math.h>
 
+// #include "H5Cpp.h"
+#include "CrasterParabolicHeatmapWidget.h"
+#include "MollweideHeatmapWidget.h"
+
 NeutronYieldStatisticsWindow::NeutronYieldStatisticsWindow(bool isDarkTheme, QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::NeutronYieldStatisticsWindow)
@@ -36,7 +40,8 @@ NeutronYieldStatisticsWindow::NeutronYieldStatisticsWindow(bool isDarkTheme, QWi
     qRegisterMetaType<std::vector<FullSpectrum>>("std::vector<FullSpectrum>");
     connect(this, SIGNAL(sigStart()), this, SLOT(slotStart()));
     connect(this, SIGNAL(sigFail()), this, SLOT(slotFail()));//, Qt::QueuedConnection);
-    connect(this, SIGNAL(sigSuccess()), this, SLOT(slotSuccess()));//, Qt::QueuedConnection);
+    // 使用函数指针语法连接信号和槽，确保连接成功
+    connect(this, &NeutronYieldStatisticsWindow::sigSuccess, this, &NeutronYieldStatisticsWindow::slotSuccess, Qt::QueuedConnection);
 
     QTimer::singleShot(0, this, [&](){
         qGoodStateHolder->setCurrentThemeDark(mIsDarkTheme);
@@ -208,6 +213,7 @@ void NeutronYieldStatisticsWindow::initUi()
     }
 
     ui->tableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    ui->tableWidget->setSelectionMode(QAbstractItemView::SingleSelection);
     ui->tableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     ui->tableWidget->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
     ui->tableWidget->setColumnWidth(0, 40);
@@ -230,9 +236,12 @@ void NeutronYieldStatisticsWindow::initUi()
     ui->tableWidget->setFixedHeight(625);
     ui->leftStackedWidget->setMinimumWidth(200);
 
+    // 连接表格选择变化信号
+    connect(ui->tableWidget, &QTableWidget::itemSelectionChanged, this, &NeutronYieldStatisticsWindow::on_tableWidget_selectionChanged);
+
     initSpectrumCustomPlot();
     initCountCustomPlot();
-    initPolorCustomPlot();
+    initYieldCustomPlot();
 
     // 显示计数/能谱
     QButtonGroup *grp = new QButtonGroup(this);
@@ -736,15 +745,19 @@ void NeutronYieldStatisticsWindow::initCountCustomPlot()
     connect(customPlot, SIGNAL(mouseRelease(QMouseEvent*)), this, SLOT(slotRestorePlot(QMouseEvent*)));
 
     connect(customPlotHelper, &QCustomPlotHelper::itemActived, this, [=](QCPGraph *graph, double key, double value){
+        int detID = 1; //默认读取探测器1的数据
+        if (ui->tableWidget->selectedItems().count() > 0)
+            detID = ui->tableWidget->selectedItems()[0]->row() + 1;
+
         if (graph->name() != "timeCountGraph")
             return;
 
         // 显示散点、计数率和残差%
-        int index = 0;
+        int index = 0; //当前选中的计数点序次号，从0开始计数
         double eps = 0.00001; // 单位min
 
         //索引给出该点属于第几个点，下标从0开始
-        QVector<specStripData> count909 = dealFile->GetCount909Data();
+        QVector<specStripData> count909 = dealFile[detID-1]->GetCount909Data();
         for(auto data:count909)
         {
             if(abs(key - data.x)<eps) {
@@ -753,7 +766,7 @@ void NeutronYieldStatisticsWindow::initCountCustomPlot()
             index++;
         }
 
-        QVector<specStripData> allSpec = dealFile->GetStripData(index);
+        QVector<specStripData> allSpec = dealFile[detID-1]->GetStripData(index);
 
         std::vector<double> energy; //能量
         std::vector<double> specCount; // 能谱计数
@@ -773,16 +786,61 @@ void NeutronYieldStatisticsWindow::initCountCustomPlot()
     });
 }
 
-void NeutronYieldStatisticsWindow::initPolorCustomPlot()
+void NeutronYieldStatisticsWindow::initYieldCustomPlot()
 {
-    QCustomPlot* customPlot = ui->spectorMeter_Yield;
+    /*QCustomPlot* customPlot = ui->yieldSpatialDistribution;
     QCustomPlotHelper* customPlotHelper = new QCustomPlotHelper(customPlot, this);
 
     customPlot->rescaleAxes(true);
     customPlot->replot();
+    */
+       // auto *w = new MollweideHeatmapWidget(ui->heatmapContainer);
+    auto *w = new CrasterParabolicHeatmapWidget(ui->yieldSpatialDistribution);
+    auto *layout = new QVBoxLayout(ui->yieldSpatialDistribution);
+    layout->setContentsMargins(0,0,0,0);
+    layout->addWidget(w);
+
+    // 示例：塞 30 个点数据（你替换成真实数据）
+    std::vector<Sensor> sensors = {
+            {-180, 0, 120}, {-150, 0, 110},{-120, 0, 113},{-90, 0, 112},{-60, 0, 94},{-30, 0, 103},
+            {0, 0, 112}, {30, 0, 112}, {60, 0, 102}, {120, 0, 124}, {150, 0, 96},
+            {-180, 45, 76}, {-90, 45, 82}, {0, 45, 73}, {90, 45, 60}, {156, 45, 75},
+            {-180, -45, 86}, {-90, -45, 83}, {0, -45, 90}, {90, -45, 76}, {156, -45, 76},
+            {0, -90, 60}, {0, 90, 40}};
+    // ...补齐你的30个
+    w->setSensors(sensors);
+
+    // Mollweide投影
+    /*{
+        //方式1 球谐函数插值
+        w->setInterpMode(MollweideHeatmapWidget::InterpMode::SphericalHarmonics);
+        w->setSHOrder(4);       // 3或4
+        w->setSHLambda(1e-4);   // 稳一点
+        w->rebuild();
+
+        //方式2
+        // w->setInterpMode(MollweideHeatmapWidget::InterpMode::IDW);
+        // w->setPower(2.0);
+        // w->rebuild();
+    }
+    */
+
+    // Craster Parabolic 投影
+    {
+        //方式1 球谐函数插值
+        w->setInterpMode(CrasterParabolicHeatmapWidget::InterpMode::SphericalHarmonics);
+        w->setSHOrder(4);       // 3或4
+        w->setSHLambda(1e-4);   // 稳一点
+        w->rebuild();
+
+        //方式2
+        // w->setInterpMode(CrasterParabolicHeatmapWidget::InterpMode::IDW);
+        // w->setPower(2.0);
+        // w->rebuild();
+    }
+    // 如果你后续数据会变：更新 sensors 后再 rebuild()
 }
 
-#include "H5Cpp.h"
 void NeutronYieldStatisticsWindow::on_action_open_triggered()
 {
     // 打开历史测量数据文件...
@@ -813,9 +871,42 @@ void NeutronYieldStatisticsWindow::on_action_open_triggered()
 
     // 解析文件，获取能谱范围时长
     {
+        mDetectorSpecCount.clear();
+        mDealSucess.clear();
+
         // 1. 打开文件
         H5::H5File file(filePath.toStdString(), H5F_ACC_RDONLY);
 
+        // 解析给出当前有能谱数据的通道编号集合
+        for(int i=0; i<24; i++){
+            // 2. 打开分组核数据集
+            QString detName = QString("Detector#%1").arg(i+1);
+            H5::Group group = file.openGroup(detName.toStdString());
+            H5::DataSet dataset = group.openDataSet("Spectrum");
+
+            // 3. 确认数据类型匹配（可选，用于错误检查）
+            H5::CompType fileType = dataset.getCompType();
+            if (fileType != H5::PredType::NATIVE_UINT) {
+                file.close();
+                continue;
+            }
+
+            // 4. 初始文件空间
+            H5::DataSpace file_space = dataset.getSpace();
+            hsize_t current_dims[2];
+            file_space.getSimpleExtentDims(current_dims, NULL);
+            hsize_t rows = current_dims[0];
+            hsize_t cols = current_dims[1];
+
+            if(rows>0){
+                mDetectorSpecCount[i+1] = rows;
+                mDealSucess[i+1] = false;
+            }
+            if(i >= 0 && i <= ui->tableWidget->rowCount()){
+                ui->tableWidget->setItem(i, 1, new QTableWidgetItem(QString::number(rows)));
+            }
+        }
+        
         // 2. 打开分组核数据集
         H5::Group group = file.openGroup("Detector#1");
         H5::DataSet dataset = group.openDataSet("Spectrum");
@@ -853,9 +944,9 @@ void NeutronYieldStatisticsWindow::on_action_open_triggered()
 
         // 7. 读取数据
         dataset.read(row_data, H5::PredType::NATIVE_UINT, mem_space, file_space);
-        FullSpectrum* data = reinterpret_cast<FullSpectrum*>(row_data);
+        H5Spectrum* data = reinterpret_cast<H5Spectrum*>(row_data);
 
-        quint32 measureTimelength = rows * data->measureTime / 1000;        
+        quint32 measureTimelength = rows * data->measureTime / 1000;
         ui->spinBox_timeEnd->setMaximum(measureTimelength / 60);
 
         emit reporWriteLog(tr("测量时长/s：%1").arg(measureTimelength));
@@ -876,13 +967,15 @@ void NeutronYieldStatisticsWindow::on_action_exit_triggered()
 }
 
 
-void NeutronYieldStatisticsWindow::on_action_startMeasure_triggered()
+void NeutronYieldStatisticsWindow::on_action_startCalculate_triggered()
 {
+    mInterrupted = false;
+
     // 获取测量的起始时刻，以打靶时刻为零时刻
     // 获取两个时间的时间戳（秒）
-    qint64 seconds1 = ui->messureDateTime->dateTime().toSecsSinceEpoch();
-    qint64 seconds2 = ui->fusionDateTime->dateTime().toSecsSinceEpoch();
-    qint64 measureTime = seconds1 - seconds2;
+    qint64 seconds1 = ui->fusionDateTime->dateTime().toSecsSinceEpoch();
+    qint64 seconds2 = ui->messureDateTime->dateTime().toSecsSinceEpoch();
+    qint64 beginTime = seconds2 - seconds1;
 
     // 设定待分析的时间区间以及步长
     int startTime = ui->spinBox_timeStart->value() * 60; //单位：s
@@ -891,83 +984,159 @@ void NeutronYieldStatisticsWindow::on_action_startMeasure_triggered()
 
     if(startTime >= endTime)
     {
-        qInfo().nospace() << tr("退出解析！输入的解析时间起点>=解析时间终点。");
+        QMessageBox::information(this, tr("提示"), tr("退出解析！输入的解析时间起点>=解析时间终点。"));
         return;
     }
 
-    QString tmStart = ui->fusionDateTime->dateTime().addSecs(ui->spinBox_timeStart->value()*60).toString("yyyy-MM-dd hh:mm:ss");
-    QString tmEnd = ui->fusionDateTime->dateTime().addSecs(ui->spinBox_timeEnd->value()*60).toString("yyyy-MM-dd hh:mm:ss");
-    QString step = QString::number(ui->spinBox_step->value());
-    QString step1 = QString::number((double)(ui->spinBox_timeEnd->value()-ui->spinBox_timeStart->value())/ui->spinBox_step->value(), 'f', 1);
-    QString step2 = QString::number((ui->spinBox_timeEnd->value()-ui->spinBox_timeStart->value())/ui->spinBox_step->value());
+    QString tmStart = ui->fusionDateTime->dateTime().addSecs(startTime).toString("yyyy-MM-dd hh:mm:ss");
+    QString tmEnd = ui->fusionDateTime->dateTime().addSecs(endTime).toString("yyyy-MM-dd hh:mm:ss");
+    QString step = QString::number(timeStep/60);
+    QString f_segment = QString::number((endTime - startTime)*1.0/timeStep, 'f', 1);
+    QString i_segment = QString::number((endTime - startTime)/timeStep);
     QString msgTip = QString("您选择的"
                              "\n起点时间：%1"
                              "\n结束时间：%2"
                              "\n时间步长：%3分钟"
                              "\n计算结果：%4条曲线，根据整除原则，将只显示%5条曲线"
                              "\n\n点击[确认]开始解析"
-                             "\n点击[否]返回重新修改").arg(tmStart, tmEnd, step, step1, step2);
+                             "\n点击[否]返回重新修改").arg(tmStart, tmEnd, step, f_segment, i_segment);
     if (QMessageBox::question(this, tr("提示"), msgTip, QMessageBox::Yes, QMessageBox::No)!=QMessageBox::Yes)
         return;
 
     emit reporWriteLog(tr("开始解析..."));
 
-    if(!dealFile) delete dealFile;
-    dealFile = new ParseData();
+    QString detectorList;
+    for(int detID:mDetectorSpecCount.keys()){
+        detectorList += QString::number(detID) + ",";
 
-    quint32 specCount = 0;
-    dealFile->setStartTime(measureTime);
-    QString filePath = ui->textBrowser_filepath->toPlainText();
-    if (QFileInfo(filePath).suffix() == "H5")
-    {
-        int index = 1; //默认读取探测器1的数据
-        if (ui->tableWidget->selectedItems().count() > 0)
-            index = ui->tableWidget->selectedItems()[0]->row() + 1;
-        specCount = dealFile->parseH5File(filePath, index);
-    }
-    else//处理网口原始数据，暂时搁置，后续有空再处理
-        specCount = dealFile->parseDatFile(filePath);
+        if(mInterrupted) {
+            break;
+        }
+        if(!dealFile[detID-1]) delete dealFile[detID-1];
+        dealFile[detID-1] = new ParseData();
 
-    if (specCount <= 0)
-    {
-        qInfo().nospace() << tr("文件中未找到完整能谱数据。");
-    }
-    else {
-        if (dealFile->getResult_offline(timeStep, startTime, endTime))
-            emit sigSuccess();
-        else
-            emit sigFail();
+        quint32 specCount = 0;
+        dealFile[detID-1]->setStartTime(beginTime);
+
+        QString filePath = ui->textBrowser_filepath->toPlainText();
+        if (QFileInfo(filePath).suffix() == "H5")
+        {
+            int index = 1; //默认读取探测器1的数据
+            if (ui->tableWidget->selectedItems().count() > 0)
+                index = ui->tableWidget->selectedItems()[0]->row() + 1;
+            specCount = dealFile[detID-1]->parseH5File(filePath, index);
+        }
+        else//处理网口原始数据，暂时搁置，后续有空再处理
+        {
+            specCount = dealFile[detID-1]->parseDatFile(filePath);
+        }
+
+        if (specCount <= 0)
+        {
+            qInfo().nospace() << tr("文件中未找到完整能谱数据。");
+        }
+        else {
+            if (dealFile[detID-1]->getResult_offline(timeStep, startTime, endTime))
+            {
+                mDealSucess[detID] = true;
+                emit sigSuccess(detID);
+            }
+            else
+            {
+                emit reporWriteLog(QString("谱仪%1解析失败").arg(detID));
+                // emit sigFail();
+            }
+        }
+
+        emit reporWriteLog(QString("谱仪%1解析完成").arg(detID));
     }
 
-    emit reporWriteLog(tr("解析结束"));
+    // 去掉最后一个逗号
+    if (!detectorList.isEmpty())
+        detectorList.chop(1);
+    QString msg = QString("谱仪：%1解析完成").arg(detectorList);
+    emit reporWriteLog(msg);
+
+    QMessageBox::information(this, tr("提示"), msg);
 }
 
 
-void NeutronYieldStatisticsWindow::on_action_stopMeasure_triggered()
+void NeutronYieldStatisticsWindow::on_action_stopCalculate_triggered()
 {
     emit reporWriteLog(tr("中断解析"));
     mInterrupted = true;
 }
 
-
-void NeutronYieldStatisticsWindow::on_tableWidget_cellClicked(int row, int column)
+void NeutronYieldStatisticsWindow::on_tableWidget_selectionChanged()
 {
-    if (row <= 1 || column != 0)
+    // 获取当前选中的行
+    QList<QTableWidgetItem*> selectedItems = ui->tableWidget->selectedItems();
+    if (selectedItems.isEmpty())
         return;
 
-    int index = row - 1;
-    if (mMapSpectrum.contains(index))
-    {
-        QVector<double> spectrumTotal(2048, 0); // 8192道完整数据
-        QVector<double> keys;
-        for (int i=0; i<2048; ++i)
-        {
-            keys << i;
-            spectrumTotal[i] = mMapSpectrum[index][i];
-        }
+    int row = selectedItems[0]->row();
+    if (row < 0)
+        return;
 
-        ui->spectorMeter_Spectrum->graph(0)->setData(keys, spectrumTotal);
-        ui->spectorMeter_Spectrum->replot(QCustomPlot::rpQueuedReplot);
+    int detID = row + 1; // 探测器ID从1开始
+
+    // 检查数据是否已经解析完成
+    if (detID > 0 && detID <= 24)
+    {
+        if(!mDealSucess[detID]){
+            QMessageBox::information(this, tr("提示"), tr("谱仪%1不存在解析成功的数据！").arg(detID));
+            return; 
+        }
+        
+        // 更新计数衰减曲线
+        QVector<specStripData> count909_picture = dealFile[detID-1]->GetCount909Data();
+        if (!count909_picture.isEmpty())
+        {
+            std::vector<double> time;
+            std::vector<double> count;
+            std::vector<double> fitCount;
+            std::vector<double> residual;
+
+            for(int i=0; i<count909_picture.size(); i++)
+            {
+                time.push_back(count909_picture.at(i).x);
+                count.push_back(count909_picture.at(i).y);
+                fitCount.push_back(count909_picture.at(i).fit_y);
+                residual.push_back(count909_picture.at(i).residual_rate);
+            }
+            slotUpdate_Count909_time(time, count, fitCount, residual);
+
+            // 更新第一个时间点的909keV能谱
+            QVector<specStripData> allSpec = dealFile[detID-1]->GetStripData(0);
+            if (!allSpec.isEmpty())
+            {
+                std::vector<double> energy;
+                std::vector<double> specCount;
+                std::vector<double> fitSpecCount;
+                std::vector<double> residual;
+
+                for(auto data : allSpec)
+                {
+                    energy.push_back(data.x);
+                    specCount.push_back(data.y);
+                    fitSpecCount.push_back(data.fit_y);
+                    residual.push_back(data.residual_rate);
+                }
+                slotUpdateSpec_909keV(energy, specCount, fitSpecCount, residual);
+            }
+
+            // 更新多段能谱
+            QVector<ParseData::mergeSpecData> mergeSpecData = dealFile[detID-1]->GetMergeSpec();
+            if (!mergeSpecData.isEmpty())
+            {
+                std::vector<ParseData::mergeSpecData> allSpec_vec;
+                for(auto data : mergeSpecData)
+                {
+                    allSpec_vec.push_back(data);
+                }
+                slotUpdateMultiSegmentPlotDatas(allSpec_vec);
+            }
+        }
     }
 }
 
@@ -979,9 +1148,16 @@ void NeutronYieldStatisticsWindow::slotFail()
     QMessageBox::information(this, tr("提示"), tr("文件解析失败！"));
 }
 
-void NeutronYieldStatisticsWindow::slotSuccess()
+void NeutronYieldStatisticsWindow::slotSuccess(int detID)
 {
-    //SplashWidget::instance()->setInfo(tr("开始数据分析，请等待..."));
+    qDebug() << "slotSuccess called with detID:" << detID;
+    //
+    double count909_N0 = dealFile[detID-1]->GetInitialCount();
+    // int detID = dealFile[detID-1]->mDetId;
+    //根据探测器ID，显示对应的探测器的count909_N0
+    if(detID > 0 && detID <= ui->tableWidget->rowCount()){
+        ui->tableWidget->setItem(detID-1, 2, new QTableWidgetItem(QString::number(count909_N0)));
+    }
 
     //显示计数衰减曲线、显示计数率和残差%
     std::vector<double> time;// x
@@ -989,7 +1165,7 @@ void NeutronYieldStatisticsWindow::slotSuccess()
     std::vector<double> fitCount; // fity 拟合曲线
     std::vector<double> residual; // 残差
 
-    QVector<specStripData> count909_picture = dealFile->GetCount909Data();
+    QVector<specStripData> count909_picture = dealFile[detID-1]->GetCount909Data();
     specStripData tempData;
     for(int i=0; i<count909_picture.size(); i++)
     {
@@ -1002,7 +1178,7 @@ void NeutronYieldStatisticsWindow::slotSuccess()
 
     // 先默认绘制第一幅图
     {
-        QVector<specStripData> allSpec = dealFile->GetStripData(0);
+        QVector<specStripData> allSpec = dealFile[detID-1]->GetStripData(0);
         std::vector<double> energy; //能量
         std::vector<double> specCount; // 能谱计数
         std::vector<double> fitSpecCount; // 拟合曲线
@@ -1022,7 +1198,7 @@ void NeutronYieldStatisticsWindow::slotSuccess()
 
     // 绘制多段能谱
     {
-        QVector<ParseData::mergeSpecData> allSpec = dealFile->GetMergeSpec();
+        QVector<ParseData::mergeSpecData> allSpec = dealFile[detID-1]->GetMergeSpec();
         std::vector<ParseData::mergeSpecData> allSpec_vec;
         for(auto data:allSpec)
         {
@@ -1035,8 +1211,6 @@ void NeutronYieldStatisticsWindow::slotSuccess()
     // QTimer::singleShot(1, this, [=](){
     //     SplashWidget::instance()->hide();
     // });
-
-    QMessageBox::information(this, tr("提示"), tr("文件解析已顺利完成！"));
 }
 
 //更新多段能谱数据

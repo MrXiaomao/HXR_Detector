@@ -629,7 +629,7 @@ namespace CurveFit {
 
             // QVector容器转real_1d_array
             alglib::real_1d_array y;
-            y.setcontent(fit_y.size(), fit_y.constData());
+            y.setcontent(num, fit_y.constData());
 
             alglib::real_1d_array c;
             c.setcontent(paraNum, fit_c);

@@ -61,6 +61,13 @@ struct SubSpectrumPacket {
 };
 #pragma pack(pop)
 
+// 用于描述探测器空间位置，及其测得的中子产额数值
+struct Sensor {
+    double lonDeg;  // 经度[-180,180]
+    double latDeg;  // 纬度[-90, 90]
+    double value;   // 中子产额
+};
+
 // 用于写入到HDF5文件的能谱数据
 struct H5Spectrum{
     quint32 sequence;      // 能谱序号
@@ -682,14 +689,13 @@ typedef struct _DetParameter{
     //基本设置
     //增益
     /*
-    0001：对应增益为0.08；
-    0002：对应增益为0.16；
-    0003：对应增益为0.32；
-    0004：对应增益为0.63；
-    0005：对应增益为1.26；默认
-    0006：对应增益为2.52；
-    0007：对应增益为5.01；
-    0008：对应增益为10.0；
+     0001：对应增益为0.08；
+     0002：对应增益为0.16；
+     0003：对应增益为0.32；
+     0004：对应增益为1.26；
+     0005：对应增益为2.52；
+     0006：对应增益为5.01；
+     0007：对应增益为10.0；
     */
     double gain;
 
@@ -734,10 +740,6 @@ typedef struct _DetParameter{
     bool highVoltageEnable;
     //DAC高压输出电平
     quint16 highVoltageOutLevel;
-
-    // _DetParameter(_DetParameter& other){
-    //     memcpy(this, &other, sizeof(_DetParameter));
-    // }
 
     _DetParameter(){
         // 全局
@@ -817,7 +819,6 @@ public:
 
     QMap<quint8, DetParameter>& detParameters();
     void setDetParameter(QMap<quint8, DetParameter>&);
-    void setDetParameter(quint8, DetParameter);
     
     // 写一个标量字符串 attribute（可变长）
     void writeStrAttr(H5::DataSet& ds, const std::string& key, const std::string& val);

@@ -411,7 +411,7 @@
               <item row="1" column="1" colspan="2">
                <widget class="QComboBox" name="comboBox_spectrumLength">
                 <property name="enabled">
-                 <bool>false</bool>
+                 <bool>true</bool>
                 </property>
                 <property name="currentIndex">
                  <number>3</number>
@@ -751,7 +751,7 @@
        </spacer>
       </item>
       <item>
-       <widget class="QPushButton" name="pushButton_read">
+       <widget class="QPushButton" name="pushButton">
         <property name="text">
          <string>读取参数</string>
         </property>

@@ -1785,7 +1785,19 @@ void MainWindow::updateSpectrumDisplay(int detectorId, const quint32 spectrum[])
     // 转换数据格式
     if(mEnScale)
     {
-        for (int i = 0; i < m_spectrumPlotSettings[detectorId-1].multiChannel; ++i) {
+        //压缩多道
+        int mergebin = 8192/m_spectrumPlotSettings[detectorId-1].multiChannel;
+        for (int i = 0; i < 8192; ++i) {
+            double mergeCount = 0.0;
+            for(int mergeID = 0; mergeID<mergebin; mergeID++){
+                if(i<8192){
+                    mergeCount += spectrum[i];
+                }
+                else{
+                    break;
+                }
+                i++;
+            }
             double tempX;
             if (m_spectrumPlotSettings[detectorId-1].fitType == 1){
                 tempX = m_spectrumPlotSettings[detectorId-1].c0*i + m_spectrumPlotSettings[detectorId-1].c1;
@@ -1793,24 +1805,33 @@ void MainWindow::updateSpectrumDisplay(int detectorId, const quint32 spectrum[])
                 //拟合参数赋值
                 tempX = m_spectrumPlotSettings[detectorId-1].c0*i*i + m_spectrumPlotSettings[detectorId-1].c1*i + m_spectrumPlotSettings[detectorId-1].c2;
             }
-
             x << tempX;
-            y << spectrum[i];
+            y << mergeCount;
         }
     }
     else
     {
-        for (int i = 0; i < m_spectrumPlotSettings[detectorId-1].multiChannel; ++i) {
+        //压缩多道
+        int mergebin = 8192/m_spectrumPlotSettings[detectorId-1].multiChannel;
+        for (int i = 0; i < 8192; ++i) {
+            double mergeCount = 0.0;
+            for(int mergeID = 0; mergeID<mergebin; mergeID++){
+                if(i<8192){
+                    mergeCount += spectrum[i];
+                }
+                else{
+                    break;
+                }
+                i++;
+            }
             x << i;
-            y << spectrum[i];
+            y << mergeCount;
         }
     }
 
     // 更新图表
     getGraph(detectorId, true)->setData(x, y);
-    // customPlot->xAxis->setRange(0, m_spectrumPlotSettings[detectorId-1].multiChannel);
 
-    //customPlot->xAxis->rescale(true);
     customPlot->yAxis->rescale(false);
     double y_min = customPlot->yAxis->range().lower;
     double y_max = customPlot->yAxis->range().upper;

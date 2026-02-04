@@ -72,12 +72,9 @@ void SysUtils::smooth(double *data, double *output, int data_size, int window_si
 
 
 // MATLAB-like sgolayfilt for 1D data, smoothing only (derivative order d = 0)
-// p: polynomial order, f: frame length (odd)
 std::vector<double> SysUtils::sgolayfilt_matlab_like(
-    const std::vector<double>& x,
-    int p,
-    int f
-    ) {
+    const std::vector<double>& x, int p, int f)
+{
     if (f <= 0 || (f % 2) == 0) {
         throw std::invalid_argument("frame_length f must be a positive odd integer.");
     }

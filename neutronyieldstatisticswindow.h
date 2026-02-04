@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2026-01-15 21:24:55
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-01-27 20:56:03
+ * @LastEditTime: 2026-02-03 14:05:52
  * @Description: 请填写简介
  */
 #ifndef NEUTRONYIELDSTATISTICSWINDOW_H
@@ -27,9 +27,13 @@ public:
     ~NeutronYieldStatisticsWindow();
 
     void initUi();
+    // 初始化各时间段段的全谱分布
     void initSpectrumCustomPlot();
+    // 初始化909keV伽马计数随时间变化曲线及各时间段的909能谱
     void initCountCustomPlot();
-    void initPolorCustomPlot();
+    // 初始化中子产额空间分布
+    void initYieldCustomPlot();
+    
     void applyColorTheme();
     void restoreSettings();
 
@@ -37,39 +41,64 @@ public:
     Q_SLOT void replyWriteLog(const QString &msg, QtMsgType msgType = QtDebugMsg);
 
 signals:
-    // void itemActived(double key, double value);//节点被鼠标点击激活
     void sigPlot(FullSpectrum);
     void sigPausePlot(bool); //是否暂停图像刷新
     void sigEnd(bool);
-    void sigSuccess();
+    void sigSuccess(int detID);
     void sigFail();
 
 public slots:
-    // void slotCountPlotClick(double key, double value);
     void slotFail();
-    void slotSuccess();
+    void slotSuccess(int detID);
 
-    //更新多段能谱数据
+    /**
+     * @brief 绘制多段能谱数据，每段能谱数据都是完整的8192道
+     * @param mergeSpecData 各个时间段对应的总能谱
+     */
     void slotUpdateMultiSegmentPlotDatas(std::vector<ParseData::mergeSpecData>); //分时能谱
 
-    void slotUpdate_Count909_time(std::vector<double> time/*时刻*/, std::vector<double> count/*散点*/,
-                                  std::vector<double> fitcount/*拟合曲线*/, std::vector<double> residual/*残差*/);//计数衰减曲线
-    void slotUpdateSpec_909keV(std::vector<double> channel, std::vector<double> count, std::vector<double> fitcount, std::vector<double>residual);//909峰位段能谱曲线
+    /**
+     * @brief 绘制909keV计数随时间衰减曲线
+     * @param time 时刻
+     * @param count 909keV峰位下的计数
+     * @param fitcount 909计数的拟合曲线
+     * @param residual 拟合数据的残差
+     */
+    void slotUpdate_Count909_time(std::vector<double> time,
+                                  std::vector<double> count,
+                                  std::vector<double> fitcount,
+                                  std::vector<double> residual);
+
+    /**
+     * @brief 绘制能谱909keV能段的图像，包含实测数据散点、能谱拟合数据、拟合残差
+     * @param channel 能谱的X值，带有能量刻度的X轴
+     * @param count 能谱上的Y值，实测计数。
+     * @param fitcount 能谱拟合数据Y值
+     * @param residual 能谱的拟合残差
+     */
+    void slotUpdateSpec_909keV(std::vector<double> channel,
+                               std::vector<double> count,
+                               std::vector<double> fitcount,
+                               std::vector<double>residual);
 
 private slots:
+    // 选取待处理文件，目前只支持处理H5文件
+    void on_action_open_triggered();
+
+    // 开始解析文件
+    void on_action_startCalculate_triggered();
+
+    // 停止解析，在解析时，逐个通道解析，当解析函数返回到主界面的函数中时，对停止解析动作做判断，停止后续解析
+    void on_action_stopCalculate_triggered();
+
     void on_action_lightTheme_triggered();
     void on_action_darkTheme_triggered();
     void on_action_colorTheme_triggered();
 
-    void on_action_open_triggered();
-
     void on_action_exit_triggered();
 
-    void on_action_startMeasure_triggered();
-
-    void on_action_stopMeasure_triggered();
-
-    void on_tableWidget_cellClicked(int row, int column);
+    // 选中行发生改变
+    void on_tableWidget_selectionChanged();
 
 private:
     Ui::NeutronYieldStatisticsWindow *ui;
@@ -95,7 +124,9 @@ private:
     unsigned int startTimeUI = 0;
     unsigned int endTimeUI = 0;
 
-    ParseData* dealFile = nullptr;
+    QMap<int, quint32> mDetectorSpecCount; //存放各个通道中能谱的数据,探测器编号：1~24
+    QMap<int, bool> mDealSucess; //存放各个通道中子产额解析是否成功的标志,探测器编号：1~24
+    ParseData* dealFile[24];
 };
 
 #endif // NEUTRONYIELDSTATISTICSWINDOW_H
