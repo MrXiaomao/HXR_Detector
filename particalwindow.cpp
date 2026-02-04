@@ -14,6 +14,7 @@ ParticalWindow::ParticalWindow(QWidget *parent)
 
     commHelper = CommHelper::instance();
     connect(commHelper, &CommHelper::reportParticleCurveData, this, [=]{
+        pkgCount++;
         if (!measuring){
             measuring = true;
             timerStart = QDateTime::currentDateTime();
@@ -23,6 +24,8 @@ ParticalWindow::ParticalWindow(QWidget *parent)
             ui->pushButton_stop->setEnabled(true);
             ui->label_2->setText(timerStart.toString("yyyy-MM-dd HH:mm:ss"));
         }
+
+        ui->lineEdit_pkgCount->setText(QString::number(pkgCount));
     });
 
     //波形路径
@@ -65,6 +68,7 @@ void ParticalWindow::on_pushButton_start_clicked()
         return;
     }
 
+    ui->lineEdit_pkgCount->setText(QString::number(0));
     commHelper->startMeasure(CommandAdapter::WorkMode::wmParticle);
 
     ui->pushButton_save->setEnabled(false);
@@ -84,30 +88,32 @@ void ParticalWindow::on_pushButton_save_clicked()
 {
     //存储路径
     //存储文件名
-    QString filename = ui->lineEdit_path->text() + "/" + ui->lineEdit_filename->text();
-    if (!filename.endsWith(".dat"))
-        filename += ".dat";
-    QFileInfo fInfo(filename);
-    if (QFileInfo::exists(filename)){
-        if (QMessageBox::question(this, tr("提示"), tr("保存文件名已经存在，是否覆盖重写？"), QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes) != QMessageBox::Yes)
-            return ;
+    QString exportPath = ui->lineEdit_path->text();
+    if (!exportPath.endsWith("/"))
+        exportPath += "/";
+    QDir dir(exportPath);
+    if (!dir.exists()) {
+        dir.mkpath(".");
+    }
+    if (!dir.exists()) {
+        QMessageBox::information(this, tr("提示"), tr("路径不存在，请检查后重新输入。"));
+        return;
     }
 
     // 保存参数
-    // JsonSettings* waveSettings = GlobalSettings::instance()->mUserSettings;
-    // if (waveSettings->isOpen()){
-    //     waveSettings->prepare();
-    //     waveSettings->beginGroup();
-    //     QJsonObject jsonObj;
-    //     waveSettings->setValue("Path", ui->lineEdit_path->text());
-    //     waveSettings->setValue("FileName", filename);
-    //     waveSettings->endGroup();
-    //     waveSettings->flush();
-    //     waveSettings->finish();
+    if (commHelper->exportFile(exportPath)){
+        QMessageBox::information(this, tr("提示"), tr("数据导出成功！"), QMessageBox::Ok, QMessageBox::Ok);
+    } else {
+        QMessageBox::information(this, tr("提示"), tr("数据导出失败！"), QMessageBox::Ok, QMessageBox::Ok);
+    }
+}
 
-    //     commandhelper->exportFile(filename);
-    // } else {
-    //     QMessageBox::warning(this, tr("提示"), tr("数据保存失败！"), QMessageBox::Ok, QMessageBox::Ok);
-    // }
+
+void ParticalWindow::on_pushButton_stop_clicked()
+{
+    commHelper->stopMeasure();
+    ui->pushButton_save->setEnabled(true);
+    ui->pushButton_start->setEnabled(true);
+    ui->pushButton_stop->setEnabled(false);
 }
 

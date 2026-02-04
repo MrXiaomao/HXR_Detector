@@ -30,12 +30,15 @@ public:
 
     Q_SIGNAL void settingfinished();
 
+public:
+    virtual bool eventFilter(QObject *watched, QEvent *event) override;
+
 private slots:
     void on_pushButton_save_clicked();
 
     void on_pushButton_cancel_clicked();
 
-    void on_pushButton_clicked();
+    void on_pushButton_read_clicked();
 
 private:
     void loadAt(quint8 detId);

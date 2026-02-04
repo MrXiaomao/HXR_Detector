@@ -1794,7 +1794,7 @@
      <x>0</x>
      <y>0</y>
      <width>1431</width>
-     <height>22</height>
+     <height>18</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">
@@ -1835,15 +1835,15 @@
     </property>
     <addaction name="action_energycalibration"/>
     <addaction name="action_yieldCalibration"/>
+    <addaction name="separator"/>
+    <addaction name="action_waveformMode"/>
+    <addaction name="action_partical"/>
    </widget>
    <widget class="QMenu" name="menu_W">
     <property name="title">
      <string>工作模式(&amp;W)</string>
     </property>
-    <addaction name="action_waveformMode"/>
     <addaction name="action_spectrumMode"/>
-    <addaction name="separator"/>
-    <addaction name="action_partical"/>
    </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_setup"/>
@@ -2236,7 +2236,7 @@
     <bool>false</bool>
    </property>
    <property name="text">
-    <string>波形模式</string>
+    <string>波形测量</string>
    </property>
   </action>
   <action name="action_spectrumMode">
@@ -2264,7 +2264,7 @@
   </action>
   <action name="action_partical">
    <property name="text">
-    <string>粒子模式</string>
+    <string>粒子测量</string>
    </property>
    <property name="menuRole">
     <enum>QAction::NoRole</enum>

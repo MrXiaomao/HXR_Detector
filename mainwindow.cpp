@@ -88,7 +88,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     // 继电器
     connect(commHelper, &CommHelper::switcherConnected, this, [=](QString ip){
         mSwitcherConnected = true;
-        qInfo().nospace() << tr("交换机[ %1 ]已连通").arg(ip);
+        qInfo().nospace().noquote() << tr("交换机[ %1 ]已连通").arg(ip);
     });
 
     connect(commHelper, &CommHelper::switcherLogged, this, [=](QString ip){
@@ -99,7 +99,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
         updateConnectButtonState(true);
         ui->action_powerOn->setEnabled(true);
         ui->action_powerOff->setEnabled(true);
-        qInfo().nospace() << tr("交换机[ %1 ]已登录").arg(ip);
+        qInfo().nospace().noquote() << tr("交换机[ %1 ]已登录").arg(ip);
 
         /// 再给设备上电
         if (mEnableAutoMeasure)
@@ -121,7 +121,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
         updateConnectButtonState(false);
         ui->action_powerOn->setEnabled(false);
         ui->action_powerOff->setEnabled(false);
-        qCritical().nospace() << tr("交换机[ %1 ]连接已断开").arg(ip);
+        qCritical().nospace().noquote() << tr("交换机[ %1 ]连接已断开").arg(ip);
     });
 
     // 探测器
@@ -325,10 +325,6 @@ void MainWindow::initUi()
     connect(mDetSettingWindow, &DetSettingWindow::settingfinished, this, [this]{
         updateSpectrumPlotSettings();
     });
-
-    QActionGroup *actionGrp = new QActionGroup(this);
-    actionGrp->addAction(ui->action_waveformMode);
-    actionGrp->addAction(ui->action_spectrumMode);
 
     connect(ui->centralHboxTabWidget,&QTabWidget::tabCloseRequested,this,[=](int index){
         if (index != 0){
@@ -655,8 +651,22 @@ void MainWindow::initUi()
         std::uniform_int_distribution<int> distB(0, 255);   // 蓝色通道低值
         return QColor(distR(engine), distG(engine), distB(engine));
     };
-    for (int i=0; i<12; ++i)
-        mGraphisColor.push_back(getRandomColor());
+    mGraphisColor.push_back(QColor::fromRgb(0,47,167));
+    mGraphisColor.push_back(QColor::fromRgb(10,186,181));
+    mGraphisColor.push_back(QColor::fromRgb(5,75,58));
+    mGraphisColor.push_back(QColor::fromRgb(129,216,208));
+    mGraphisColor.push_back(QColor::fromRgb(0,140,141));
+    mGraphisColor.push_back(QColor::fromRgb(255,0,77));
+    //mGraphisColor.push_back(QColor::fromRgb(0,47,167));
+    //mGraphisColor.push_back(QColor::fromRgb(70,40,20));
+    mGraphisColor.push_back(QColor::fromRgb(128,0,32));
+    mGraphisColor.push_back(QColor::fromRgb(142,76,41));
+    mGraphisColor.push_back(QColor::fromRgb(205,0,0));
+    mGraphisColor.push_back(QColor::fromRgb(255,204,51));
+    mGraphisColor.push_back(QColor::fromRgb(0,102,128));
+    mGraphisColor.push_back(QColor::fromRgb(32,88,39));
+    // for (int i=0; i<12; ++i)
+    //     mGraphisColor.push_back(getRandomColor());
 
     for (int i=1; i<=2; ++i){
         QCustomPlot *spectroMeter_top = this->findChild<QCustomPlot*>(QString("spectroMeter%1_top").arg(i));
@@ -788,6 +798,7 @@ void MainWindow::initUi()
     
     // 接收波形曲线数据
     connect(commHelper, &CommHelper::reportWaveformCurveData, this, [=](quint8 index, QVector<quint16>& data){
+        return; // 不显示波形
         QCustomPlot *customPlot = getCustomPlot(index);
         if (!customPlot)
             return;
@@ -944,7 +955,7 @@ void MainWindow::initCustomPlot(int index, QCustomPlot* customPlot, QString axis
     // 读取探测器参数 ，能谱长度
     HDF5Settings *settings = HDF5Settings::instance();
     QMap<quint8, DetParameter>& detParameters = settings->detParameters();
-    DetParameter& detParameter = detParameters[index];
+    DetParameter& detParameter = detParameters[1]; //默认读取探测器1的参数
     int multiCh = detParameter.spectrumLength;
 
     // 设置刻度范围
@@ -1209,11 +1220,11 @@ void MainWindow::on_action_startMeasure_triggered()
 
     if (mEnableAutoMeasure)
     {
-        qInfo().nospace() << tr("开启自动测量");
+        qInfo().nospace().noquote() << tr("开启自动测量");
     }
     else
     {
-        qInfo().nospace() << tr("开启手动测量");
+        qInfo().nospace().noquote() << tr("开启手动测量");
     }
 
     QVector<double> keys, values;
@@ -1385,11 +1396,11 @@ void MainWindow::on_action_stopMeasure_triggered()
 
     if (mEnableAutoMeasure)
     {
-        qInfo().nospace() << tr("人工停止自动测量");
+        qInfo().nospace().noquote() << tr("人工停止自动测量");
     }
     else
     {
-        qInfo().nospace() << tr("停止手动测量");
+        qInfo().nospace().noquote() << tr("停止手动测量");
     }
 
     ui->action_startMeasure->setEnabled(true);
@@ -1833,12 +1844,31 @@ void MainWindow::updateCountRateDisplay(int detectorId, double fpgaTime, double 
 
     // 显示最近300秒
     const int WINDOW = 300;
-    customPlot->xAxis->setRange(qMax(0.0, fpgaTime*1.0 - WINDOW), fpgaTime + 1);
+    // 统计总曲线X轴最大值范围
+    double x_max = WINDOW;//getGraph((detectorId-1)/12*12+1, false)->data()->at(0)->key;
+    for (int detectorIndex = (detectorId-1)/12*12+1; detectorIndex = (detectorId-1)/12*12+12; ++detectorIndex){
+        QCPGraph* tempGraph = getGraph((detectorIndex-1)/12*12+1, false);
+        if (tempGraph->dataCount() <= 0)
+            continue;
+
+        x_max =  qMax(x_max, tempGraph->data()->at(tempGraph->dataCount() - 1)->key);
+    }
+    x_max = qMax(x_max, (double)WINDOW);
+    double x_min = qMax(0.0, x_max - WINDOW);
+    //customPlot->xAxis->setRange(qMax(0.0, fpgaTime*1.0 - WINDOW), fpgaTime + 1);
+    customPlot->xAxis->setRange(x_min, x_max);
     
     // y轴范围只由最近300秒的y决定
     auto range = calcRecentYRange(data.countRateHistory, WINDOW);
     double y_min = range.first;
     double y_max = range.second;
+    // 统计总曲线Y轴最大、最小值范围
+    for (int detectorIndex = (detectorId-1)/12*12+1; detectorIndex <= (detectorId-1)/12*12+12; ++detectorIndex){
+        DetectorData &data = m_detectorData[detectorIndex];
+        auto range = calcRecentYRange(data.countRateHistory, WINDOW);
+        y_min = qMin(y_min, range.first);
+        y_max = qMax(y_max, range.second);
+    }
 
     // 稍微留点头部空间
     double pad = (y_max - y_min) * 0.1;
@@ -2362,6 +2392,19 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
 #include "particalwindow.h"
 void MainWindow::on_action_partical_triggered()
 {
+    /*设置发次信息*/
+    QString shotDir = ui->lineEdit_filePath->text();
+    QString shotNumStr = ui->lineEdit_shotNum->text();
+
+    // 保存测量数据
+    QString savePath = QString(tr("%1/%2")).arg(shotDir).arg(shotNumStr);
+    QDir dir(QString(tr("%1/%2")).arg(shotDir).arg(shotNumStr));
+    if (!dir.exists()) {
+        dir.mkpath(".");
+    }
+
+    commHelper->setShotInformation(shotDir, shotNumStr);
+
     ParticalWindow *w = new ParticalWindow(nullptr);
     w->setAttribute(Qt::WA_DeleteOnClose, true); // 关闭时自动删除
     w->setWindowFlags(Qt::WindowCloseButtonHint|Qt::Dialog); // 只显示关闭按钮
@@ -2383,7 +2426,7 @@ void MainWindow::on_action_countRateStatistics_triggered()
     num++;
     QProcess::startDetached(program, arguments);
 
-    qInfo().nospace() << tr("打开离线数据分析程序-计数率统计");
+    qInfo().nospace().noquote() << tr("打开离线数据分析程序-计数率统计");
 }
 
 
@@ -2400,6 +2443,29 @@ void MainWindow::on_action_neutronYieldStatistics_triggered()
     num++;
     QProcess::startDetached(program, arguments);
 
-    qInfo().nospace() << tr("打开离线数据分析程序-中子产额统计");
+    qInfo().nospace().noquote() << tr("打开离线数据分析程序-中子产额统计");
+}
+
+#include "waveformwindow.h"
+void MainWindow::on_action_waveformMode_triggered()
+{
+    /*设置发次信息*/
+    QString shotDir = ui->lineEdit_filePath->text();
+    QString shotNumStr = ui->lineEdit_shotNum->text();
+
+    // 保存测量数据
+    QString savePath = QString(tr("%1/%2")).arg(shotDir).arg(shotNumStr);
+    QDir dir(QString(tr("%1/%2")).arg(shotDir).arg(shotNumStr));
+    if (!dir.exists()) {
+        dir.mkpath(".");
+    }
+
+    commHelper->setShotInformation(shotDir, shotNumStr);
+
+    WaveformWindow *w = new WaveformWindow(nullptr);
+    w->setAttribute(Qt::WA_DeleteOnClose, true); // 关闭时自动删除
+    w->setWindowFlags(Qt::WindowCloseButtonHint|Qt::Dialog); // 只显示关闭按钮
+    w->setWindowModality(Qt::ApplicationModal);//模态属性，NonModal=非模态，ApplicationModal=应用程序模态（阻塞本程序所有窗口），WindowModal=窗口模态（阻塞父窗口）
+    w->show();
 }
 

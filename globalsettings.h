@@ -682,10 +682,14 @@ typedef struct _DetParameter{
     //基本设置
     //增益
     /*
-     0001：对应增益为0.5；
-     0002：对应增益为1.0；
-     0003：对应增益为1.5；
-     0004：对应增益为2.0；
+    0001：对应增益为0.08；
+    0002：对应增益为0.16；
+    0003：对应增益为0.32；
+    0004：对应增益为0.63；
+    0005：对应增益为1.26；默认
+    0006：对应增益为2.52；
+    0007：对应增益为5.01；
+    0008：对应增益为10.0；
     */
     double gain;
 
@@ -730,6 +734,10 @@ typedef struct _DetParameter{
     bool highVoltageEnable;
     //DAC高压输出电平
     quint16 highVoltageOutLevel;
+
+    // _DetParameter(_DetParameter& other){
+    //     memcpy(this, &other, sizeof(_DetParameter));
+    // }
 
     _DetParameter(){
         // 全局
@@ -809,6 +817,7 @@ public:
 
     QMap<quint8, DetParameter>& detParameters();
     void setDetParameter(QMap<quint8, DetParameter>&);
+    void setDetParameter(quint8, DetParameter);
     
     // 写一个标量字符串 attribute（可变长）
     void writeStrAttr(H5::DataSet& ds, const std::string& key, const std::string& val);

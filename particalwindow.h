@@ -23,12 +23,15 @@ private slots:
 
     void on_pushButton_save_clicked();
 
+    void on_pushButton_stop_clicked();
+
 private:
     Ui::ParticalWindow *ui;
     QTimer *timer;
     QDateTime timerStart;
     CommHelper *commHelper = nullptr;//网络指令
     bool measuring = false;
+    quint64 pkgCount = 0;
 };
 
 #endif // PARTICALWINDOW_H

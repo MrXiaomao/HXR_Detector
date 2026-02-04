@@ -15,6 +15,16 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
     ui->tableWidget->setColumnWidth(1, 200);
     ui->tableWidget->setRowHeight(0, 30);
 
+    QList<QSpinBox*> spinBoxs = this->findChildren<QSpinBox*>();
+    for (auto spinBox: spinBoxs){
+        spinBox->installEventFilter(this);
+    }
+
+    QList<QComboBox*> comboBoxs = this->findChildren<QComboBox*>();
+    for (auto comboBox: comboBoxs){
+        comboBox->installEventFilter(this);
+    }
+
     // 创建模型和视图
     // QStandardItemModel model(24, 2);
     // for (int i = 0; i < model.rowCount(); ++i) {
@@ -395,6 +405,7 @@ void DetSettingWindow::saveAt(quint8 detId)
     //输出高压，单位：V
     detParameter.highVoltageOutLevel = static_cast<quint16>(ui->spinBox_highVoltageOutLevel->value());
 
+    //settings->setDetParameter(detId, detParameter);
     settings->sync();
 }
 
@@ -458,8 +469,15 @@ void DetSettingWindow::loadAt(quint8 detId)
     ui->spinBox_highVoltageOutLevel->setValue(detParameter.highVoltageOutLevel);
 }
 
-void DetSettingWindow::on_pushButton_clicked()
+void DetSettingWindow::on_pushButton_read_clicked()
 {
-
+    mCommhelper->readParamters();
 }
 
+bool DetSettingWindow::eventFilter(QObject *obj, QEvent *event) {
+    if (event->type() == QEvent::Wheel && (obj->inherits("QSpinBox")||obj->inherits("QComboBox"))) {
+        return true; // 拦截滚轮事件
+    }
+
+    return QWidget::eventFilter(obj, event);
+}
