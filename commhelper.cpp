@@ -525,9 +525,39 @@ bool CommHelper::closeSwitcherExtendPOEPower()
 /*
  打开网络
 */
+#include <QHostInfo>
 bool CommHelper::startServer()
 {    
     GlobalSettings settings(CONFIG_FILENAME);
+    QString ip = settings.value("Local/ServerIp", "0.0.0.0").toString();
+
+    // 判断网络参数是否合法
+    {
+        QStringList ipList;
+        //获取本机IP地址列表
+        //获取主机名称
+        QString HostName = QHostInfo::localHostName();
+        //根据主机名获取主机IP地址
+        QHostInfo hostinfo = QHostInfo::fromName(HostName);
+        QList<QHostAddress> AddressList = hostinfo.addresses();
+        if(!AddressList.isEmpty())
+        {
+            for(int i = 0;i<AddressList.size();i++)
+            {
+                QHostAddress hostaddress = AddressList.at(i);
+                if(hostaddress.protocol() == QAbstractSocket::IPv4Protocol)
+                {
+                    ipList.append(hostaddress.toString());
+                }
+            }
+        }
+
+        ipList.append("127.0.0.1");
+        ipList.append("0.0.0.0");
+        if (!ipList.contains(ip))
+            return false;
+    }
+
     return this->mTcpServer->listen(QHostAddress(settings.value("Local/ServerIp", "0.0.0.0").toString()), settings.value("Local/ServerPort", 6000).toUInt());
 }
 /*
@@ -981,13 +1011,15 @@ void CommHelper::handleDetectorDisconnection(quint8 index)
         Q_ARG(quint8, index));
 }
 
-void CommHelper::readParamters()
+bool CommHelper::readParamters(quint8 detIndex)
 {
-    for (quint8 index = 1; index <= DET_NUM; ++index){
-        DataProcessor* detectorDataProcessor = mDetectorDataProcessor[index];
-        if (!detectorDataProcessor->isFreeSocket()){
-            DetParameter detParameter;
-            detectorDataProcessor->updateSetting(detParameter, true);
-        }
+    DataProcessor* detectorDataProcessor = mDetectorDataProcessor[detIndex];
+    if (!detectorDataProcessor->isFreeSocket()){
+        DetParameter detParameter;
+        detectorDataProcessor->updateSetting(detParameter, true);
+        return true;
+    }
+    else{
+        return false;
     }
 }

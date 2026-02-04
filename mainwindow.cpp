@@ -1137,6 +1137,9 @@ void MainWindow::on_action_startServer_triggered()
         label_LocalServer->setStyleSheet("color:#00ff00;");
         label_LocalServer->setText(tr("本地网络服务：已开启"));
     }
+    else{
+        QMessageBox::information(this, tr("提示"), tr("服务开启失败，请检测本地主机地址！"));
+    }
 }
 
 
@@ -1213,6 +1216,8 @@ void MainWindow::on_action_startMeasure_triggered()
     ui->lineEdit_filePath->setEnabled(false);
     ui->dateTimeEdit_autoTrigger->setEnabled(false);
     ui->cbb_measureMode->setEnabled(false);
+    ui->pushButton_startMeasure->setEnabled(false);
+    ui->pushButton_stopMeasure->setEnabled(false);
 
     updateSpectrumPlotSettings();
 
@@ -1357,7 +1362,10 @@ void MainWindow::on_pushButton_startMeasure_clicked()
     }
 
     // 测量中禁用参数配置
-    mDetSettingWindow->setEnabled(false);  
+    mDetSettingWindow->setEnabled(false);
+
+    ui->action_startMeasure->setEnabled(false);
+    ui->action_stopMeasure->setEnabled(false);
 }
 
 
@@ -1376,7 +1384,10 @@ void MainWindow::on_pushButton_stopMeasure_clicked()
     m_selectedChannels.clear();
 
     // 非测量中可用参数配置
-    mDetSettingWindow->setEnabled(true);      
+    mDetSettingWindow->setEnabled(true);
+
+    ui->action_startMeasure->setEnabled(true);
+    ui->action_stopMeasure->setEnabled(true);
 }
 
 
@@ -1393,6 +1404,8 @@ void MainWindow::on_action_stopMeasure_triggered()
     ui->lineEdit_filePath->setEnabled(true);
     ui->dateTimeEdit_autoTrigger->setEnabled(true);
     ui->cbb_measureMode->setEnabled(true);
+    ui->pushButton_startMeasure->setEnabled(true);
+    ui->pushButton_stopMeasure->setEnabled(true);
 
     if (mEnableAutoMeasure)
     {
@@ -1867,7 +1880,7 @@ void MainWindow::updateCountRateDisplay(int detectorId, double fpgaTime, double 
     const int WINDOW = 300;
     // 统计总曲线X轴最大值范围
     double x_max = WINDOW;//getGraph((detectorId-1)/12*12+1, false)->data()->at(0)->key;
-    for (int detectorIndex = (detectorId-1)/12*12+1; detectorIndex = (detectorId-1)/12*12+12; ++detectorIndex){
+    for (int detectorIndex = (detectorId-1)/12*12+1; detectorIndex <= (detectorId-1)/12*12+12; ++detectorIndex){
         QCPGraph* tempGraph = getGraph((detectorIndex-1)/12*12+1, false);
         if (tempGraph->dataCount() <= 0)
             continue;

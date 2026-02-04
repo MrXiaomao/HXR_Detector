@@ -121,7 +121,7 @@ void DataProcessor::updateSetting(DetParameter& detParameter, bool isRead/* = fa
         //#05 能谱刷新时间=1|0|9|1234000FFD1000000000ABCD
         this->sendSprectnumRefreshTimelength(isRead, detParameter.spectrumRefreshTime);
 
-        if (!detParameter.trapShapeEnable || isRead){
+        if (detParameter.trapShapeEnable || isRead){
             //#07 梯形成型常数=1|0|13|1234000FFE1000000000ABCD
             this->sendTrapTimeConst(isRead, detParameter.trapShapeTimeConstD1, detParameter.trapShapeTimeConstD2);
             //#08 上升沿参数=1|0|15|1234000FFE1100000000ABCD

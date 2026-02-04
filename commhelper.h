@@ -180,7 +180,7 @@ public:
     /*
      * 读取网络参数
      */
-    void readParamters();
+    bool readParamters(quint8 detIndex);
 
 private:
     // 处理探测器断开连接的统一逻辑

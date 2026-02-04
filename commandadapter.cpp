@@ -102,7 +102,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
         //增益指令
         {
             if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FA 10"))){
-                qInfo().noquote() << "增益：" << cachePool.at(9);
+                //qInfo().noquote() << "增益：" << cachePool.at(9);
 
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
 
@@ -126,7 +126,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
         //触发阈值
         {
             if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FA 12"))){
-                qInfo().noquote() << "触发阈值：" << cachePool.mid(8, 2).toShort();
+                //qInfo().noquote() << "触发阈值：" << cachePool.mid(8, 2).toShort();
 
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
 
@@ -140,7 +140,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
         ***********************************************************/
         {
             if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FC 10"))){
-                qInfo().noquote() << "触发模式：" << (cachePool.mid(7, 1).toShort() == tmTimer ? "定时触发" : "正常触发模式");
+                //qInfo().noquote() << "触发模式：" << (cachePool.mid(7, 1).toShort() == tmTimer ? "定时触发" : "正常触发模式");
                 WaveformLength waveformLength = (WaveformLength)cachePool.mid(9, 1).toShort();
                 if (waveformLength == wl64)
                     qInfo().noquote() << "波形长度：64";
@@ -165,7 +165,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
         ***********************************************************/
         {
             if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FD 10"))){
-                qInfo().noquote() << "能谱刷新时间/ms：" << cachePool.mid(6, 4).toUInt();
+                //qInfo().noquote() << "能谱刷新时间/ms：" << cachePool.mid(6, 4).toUInt();
 
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
 
@@ -184,7 +184,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                 quint16 d2 = cachePool.mid(8, 9).toShort();
                 float f1 = (float)d1 / 65536;
                 float f2 = (float)d2 / 65536;
-                qInfo().noquote() << "梯形成型时间常数，d1=" << f1 << "，d2="<<f2;
+                //qInfo().noquote() << "梯形成型时间常数，d1=" << f1 << "，d2="<<f2;
 
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
 
@@ -199,7 +199,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                 quint8 rise = (quint8)cachePool.at(7);
                 quint8 peak = (quint8)cachePool.at(8);
                 quint8 fall = (quint8)cachePool.at(9);
-                qInfo().noquote() << "上升沿=" << rise << "，平顶="<<peak<< "，下降沿="<<fall;
+                //qInfo().noquote() << "上升沿=" << rise << "，平顶="<<peak<< "，下降沿="<<fall;
 
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
 
@@ -214,7 +214,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                 quint8 rise = (quint8)cachePool.at(7);
                 quint8 peak = (quint8)cachePool.at(8);
                 quint8 fall = (quint8)cachePool.at(9);
-                qInfo().noquote() << "梯形成型使能状态：" << ((quint8)cachePool.at(9) == 0x00 ? "关闭" : "打开");
+                //qInfo().noquote() << "梯形成型使能状态：" << ((quint8)cachePool.at(9) == 0x00 ? "关闭" : "打开");
 
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
 
@@ -250,9 +250,9 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
         ***********************************************************/
         //高压使能配置
         {
-            if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A F9 10"))){
+            if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A F9 11"))){
                 HighVolgateOutLevelEnable highVoltageEnable = (HighVolgateOutLevelEnable)cachePool.at(9);
-                qInfo().noquote() << "高压使能状态：" << (highVoltageEnable ? "关闭" : "打开");
+                //qInfo().noquote() << "高压使能状态：" << (highVoltageEnable ? "关闭" : "打开");
 
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
 
@@ -263,9 +263,9 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
 
         //DAC输出电平配置
         {
-            if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A F9 11"))){
+            if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A F9 10"))){
                 quint16 level = cachePool.mid(8, 2).toShort();
-                qInfo().noquote() << "DAC输出电平值：" << level;
+                //qInfo().noquote() << "DAC输出电平值：" << level;
 
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
 
@@ -284,8 +284,8 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
             //测试版本标志位
             bool isTest = cachePool.at(9) == 0x01;
 
-            qInfo().noquote() << "硬件版本号：" << hardVersion;
-            qInfo().noquote() << "是否测试版本：" << (isTest ? "是" : "否");
+            //qInfo().noquote() << "硬件版本号：" << hardVersion;
+            //qInfo().noquote() << "是否测试版本：" << (isTest ? "是" : "否");
             QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
 
             findNaul = true;

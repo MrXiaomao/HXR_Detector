@@ -371,7 +371,7 @@
                  </sizepolicy>
                 </property>
                 <property name="text">
-                 <string>测量时间步长：</string>
+                 <string>能谱刷新时长：</string>
                 </property>
                </widget>
               </item>
@@ -538,14 +538,17 @@
               </item>
               <item row="1" column="1">
                <widget class="QComboBox" name="comboBox_waveformLength">
+                <property name="currentIndex">
+                 <number>1</number>
+                </property>
                 <item>
                  <property name="text">
-                  <string>128</string>
+                  <string>64</string>
                  </property>
                 </item>
                 <item>
                  <property name="text">
-                  <string>64</string>
+                  <string>128</string>
                  </property>
                 </item>
                 <item>
@@ -611,36 +614,10 @@
                 </property>
                </widget>
               </item>
-              <item row="0" column="1">
-               <widget class="QSpinBox" name="spinBox_trapShapeTimeConstD1">
-                <property name="minimum">
-                 <number>0</number>
-                </property>
-                <property name="maximum">
-                 <number>65535</number>
-                </property>
-                <property name="value">
-                 <number>59310</number>
-                </property>
-               </widget>
-              </item>
               <item row="1" column="0">
                <widget class="QLabel" name="label_32">
                 <property name="text">
                  <string>时间常数d2：</string>
-                </property>
-               </widget>
-              </item>
-              <item row="1" column="1">
-               <widget class="QSpinBox" name="spinBox_trapShapeTimeConstD2">
-                <property name="maximum">
-                 <number>65535</number>
-                </property>
-                <property name="singleStep">
-                 <number>100</number>
-                </property>
-                <property name="value">
-                 <number>24111</number>
                 </property>
                </widget>
               </item>
@@ -705,6 +682,32 @@
                 </property>
                </widget>
               </item>
+              <item row="0" column="1">
+               <widget class="QDoubleSpinBox" name="doubleSpinBox_trapShapeTimeConstD1">
+                <property name="decimals">
+                 <number>6</number>
+                </property>
+                <property name="maximum">
+                 <double>1.000000000000000</double>
+                </property>
+                <property name="value">
+                 <double>0.367905000000000</double>
+                </property>
+               </widget>
+              </item>
+              <item row="1" column="1">
+               <widget class="QDoubleSpinBox" name="doubleSpinBox_trapShapeTimeConstD2">
+                <property name="decimals">
+                 <number>6</number>
+                </property>
+                <property name="maximum">
+                 <double>1.000000000000000</double>
+                </property>
+                <property name="value">
+                 <double>0.904999000000000</double>
+                </property>
+               </widget>
+              </item>
              </layout>
             </widget>
            </item>
@@ -751,7 +754,7 @@
        </spacer>
       </item>
       <item>
-       <widget class="QPushButton" name="pushButton">
+       <widget class="QPushButton" name="pushButton_read">
         <property name="text">
          <string>读取参数</string>
         </property>
