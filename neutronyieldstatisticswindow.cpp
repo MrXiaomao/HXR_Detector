@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-04-20 09:21:28
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-02-03 21:50:39
+ * @LastEditTime: 2026-02-03 22:47:43
  * @Description: 离线数据分析
  */
 #include "neutronyieldstatisticswindow.h"
@@ -984,7 +984,7 @@ void NeutronYieldStatisticsWindow::on_action_startCalculate_triggered()
 
     if(startTime >= endTime)
     {
-        qInfo().nospace() << tr("退出解析！输入的解析时间起点>=解析时间终点。");
+        QMessageBox::information(this, tr("提示"), tr("退出解析！输入的解析时间起点>=解析时间终点。"));
         return;
     }
 
