@@ -13,6 +13,8 @@
 #include "qcustomplothelper.h"
 #include "parsedata.h"
 
+class CrasterParabolicHeatmapWidget;
+
 namespace Ui {
 class NeutronYieldStatisticsWindow;
 }
@@ -81,6 +83,12 @@ public slots:
                                std::vector<double> fitcount,
                                std::vector<double>residual);
 
+    /**
+     * @brief 绘制中子产额空间分布
+     * @param sensors 探测器所在经纬度及其对应产额
+     */
+    void slotUpdate_yieldDis(QMap<int, Sensor> yield);
+
 private slots:
     // 选取待处理文件，目前只支持处理H5文件
     void on_action_open_triggered();
@@ -106,6 +114,7 @@ private:
     bool mThemeColorEnable = true;
     QColor mThemeColor = QColor(255,255,255);
     class QGoodWindowHelper *mainWindow = nullptr;
+    CrasterParabolicHeatmapWidget *w;
 
     // 中断解析
     std::atomic<bool> mInterrupted = false;
@@ -126,6 +135,7 @@ private:
 
     QMap<int, quint32> mDetectorSpecCount; //存放各个通道中能谱的数据,探测器编号：1~24
     QMap<int, bool> mDealSucess; //存放各个通道中子产额解析是否成功的标志,探测器编号：1~24
+    QMap<int, Sensor> myield; //存放各个通道中子产额。通道编号：1-24，通道经纬度，通道的中子产额
     ParseData* dealFile[24];
 };
 

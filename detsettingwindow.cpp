@@ -10,10 +10,17 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
     , ui(new Ui::DetSettingWindow)
 {
     ui->setupUi(this);
-    ui->tableWidget->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-    ui->tableWidget->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
-    ui->tableWidget->setColumnWidth(1, 200);
-    ui->tableWidget->setRowHeight(0, 30);
+
+    // 设置每个列宽都可拉伸
+    QHeaderView* header = ui->tableWidget->horizontalHeader();
+    header->setSectionResizeMode(QHeaderView::Interactive);
+
+    // 设置初始行高/列宽
+    ui->tableWidget->setRowHeight(0, 30); //行高
+    ui->tableWidget->setColumnWidth(0, 80);
+    ui->tableWidget->setColumnWidth(1, 120);
+    ui->tableWidget->setColumnWidth(2, 100);
+    ui->tableWidget->setColumnWidth(3, 100);
 
     QList<QSpinBox*> spinBoxs = this->findChildren<QSpinBox*>();
     for (auto spinBox: spinBoxs){
@@ -24,14 +31,6 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
     for (auto comboBox: comboBoxs){
         comboBox->installEventFilter(this);
     }
-
-    // 创建模型和视图
-    // QStandardItemModel model(24, 2);
-    // for (int i = 0; i < model.rowCount(); ++i) {
-    //     model.setData(model.index(i, 0), QString("谱仪#%1").arg(i));
-    //     model.setData(model.index(i, 1), "0.0.0.0");
-    // }
-    // ui->tableWidget->setModel(&model);
 
     QComboBoxDelegate *delegate = new QComboBoxDelegate(this);
     delegate->insertItem(QString("0.0.0.0"));
@@ -48,30 +47,14 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
         delegate->removeItem(QString("%1:%2").arg(peerAddress).arg(peerPort));
     });
 
+    ui->tableWidget->setItemDelegate(
+        new LonLatDelegate(ui->tableWidget));
     /*connect(ui->tableWidget, &QTableWidget::currentItemChanged, this, [=](QTableWidgetItem *current, QTableWidgetItem *previous){
         // if (previous)
         //     saveAt(previous->row() + 1);
         if (current)
             loadAt(current->row() + 1);
     });*/
-
-    connect(ui->tableWidget, &QTableWidget::cellChanged, this, [=](int row, int column){
-        //防止IP关联重复
-        if (column == 1){
-            QString peerAddress = ui->tableWidget->item(row, 1)->text();
-            for (int i = 0; i < ui->tableWidget->rowCount(); ++i){
-                QString peerAddress2 = ui->tableWidget->item(i, 1)->text();
-                if (peerAddress == peerAddress2 && i != row){
-                    if (i < row){
-                        ui->tableWidget->item(row, 1)->setText("0.0.0.0");
-                    }
-                    else {
-                        ui->tableWidget->item(i, 1)->setText("0.0.0.0");
-                    }
-                }
-            }
-        }
-    });
     
     connect(ui->checkBox_selectAll, &QCheckBox::stateChanged, this, [=](int state){
         if (mUpdatingSelectAll) return;
@@ -99,6 +82,7 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
 
         ui->tableWidget->setItem(row, 1, new QTableWidgetItem(""));
         ui->tableWidget->item(row, 1)->setTextAlignment(Qt::AlignCenter);
+        // ui->tableWidget->item(row, 2)->
     }
 
     // 初始化表格时：给每行第0列放checkbox
@@ -311,8 +295,8 @@ void DetSettingWindow::updateSelectAllState()
     }
 
     // ✅ 没有勾选任何框就隐藏，有勾选就显示
-    ui->scrollArea->setVisible(checkedCount > 0);
-    ui->stackedWidget->setCurrentIndex(checkedCount > 0 ? 1 : 0);
+    // ui->scrollArea->setVisible(checkedCount > 0);
+    // ui->stackedWidget->setCurrentIndex(checkedCount > 0 ? 1 : 0);
 
     mUpdatingSelectAll = true;
     if (checkedCount == 0) {
@@ -359,6 +343,64 @@ void DetSettingWindow::setSaveEnabled(bool enabled)
     ui->pushButton_save->setEnabled(enabled);
 }
 
+bool DetSettingWindow::getLonLat(int row, double& lon, double& lat)
+{
+    // 行号合法性检查
+    if (row < 0 || row >= ui->tableWidget->rowCount())
+        return false;
+
+    QTableWidgetItem* lonItem = ui->tableWidget->item(row, 2); // 第二列
+    QTableWidgetItem* latItem = ui->tableWidget->item(row, 3); // 第三列
+
+    if (!lonItem || !latItem)
+        return false;
+
+    bool ok1 = false;
+    bool ok2 = false;
+
+    lon = lonItem->text().trimmed().toDouble(&ok1);
+    lat = latItem->text().trimmed().toDouble(&ok2);
+
+    if (!ok1 || !ok2)
+        return false;
+
+    return true;
+}
+
+bool DetSettingWindow::setLonLat(int row, double lon, double lat)
+{
+    // 行号合法性
+    if (row < 0 || row >= ui->tableWidget->rowCount())
+        return false;
+
+    // 范围校验（与你前面的规则一致）
+    if (lon < 0.0 || lon > 360.0)
+        return false;
+    if (lat < 0.0 || lat > 180.0)
+        return false;
+
+    ui->tableWidget->blockSignals(true); // 防止触发 itemChanged
+
+    // 经度（第三列）
+    QTableWidgetItem* lonItem = ui->tableWidget->item(row, 2);
+    if (!lonItem) {
+        lonItem = new QTableWidgetItem;
+        ui->tableWidget->setItem(row, 2, lonItem);
+    }
+    lonItem->setText(QString::number(lon, 'f', 2));
+
+    // 纬度（第三列）
+    QTableWidgetItem* latItem = ui->tableWidget->item(row, 3);
+    if (!latItem) {
+        latItem = new QTableWidgetItem;
+        ui->tableWidget->setItem(row, 3, latItem);
+    }
+    latItem->setText(QString::number(lat, 'f', 2));
+
+    ui->tableWidget->blockSignals(false);
+    return true;
+}
+
 // 通过setSaveEnabled控制保存按钮的可用性，防止测量过程中修改参数
 void DetSettingWindow::saveAt(quint8 detId)
 {
@@ -366,6 +408,12 @@ void DetSettingWindow::saveAt(quint8 detId)
     HDF5Settings *settings = HDF5Settings::instance();
     QMap<quint8, DetParameter>& detParameters = settings->detParameters();
     DetParameter& detParameter = detParameters[detId];
+    double lon = 0.0;
+    double lat = 0.0;
+    if(getLonLat(detId-1, lon, lat)){
+        detParameter.longitude = lon;
+        detParameter.latitude = lat;
+    }
 
     detParameter.pluseCheckTime = static_cast<quint32>(ui->spinBox_pluseCheckTime->value());
 
@@ -448,6 +496,8 @@ void DetSettingWindow::loadAt(quint8 detId)
     //触发阈值
     ui->spinBox_triggerThold->setValue(detParameter.triggerThold);
 
+    //经纬度
+    setLonLat(detId-1, detParameter.longitude, detParameter.latitude);
     //网络设置
     //IP地址
 
@@ -500,4 +550,43 @@ bool DetSettingWindow::eventFilter(QObject *obj, QEvent *event) {
     }
 
     return QWidget::eventFilter(obj, event);
+}
+
+void DetSettingWindow::on_tableWidget_itemChanged(QTableWidgetItem *item)
+{
+    //防止IP关联重复
+    if (item->column() == 1){
+        int row = item->row();
+        QString peerAddress = item->text();
+        for (int i = 0; i < ui->tableWidget->rowCount(); ++i){
+            QString peerAddress2 = ui->tableWidget->item(i, 1)->text();
+            if (peerAddress == peerAddress2 && i != row){
+                if (i < row){
+                    ui->tableWidget->item(row, 1)->setText("0.0.0.0");
+                }
+                else {
+                    ui->tableWidget->item(i, 1)->setText("0.0.0.0");
+                }
+            }
+        }
+    }
+
+    // 限制经纬度输入范围
+    if (item->column() != 2 && item->column() != 3)
+        return;
+
+    bool ok = false;
+    double v = item->text().toDouble(&ok);
+
+    if (!ok) return;
+
+    if (item->column() == 2 && (v < 0.0 || v > 360.0)) {
+        QMessageBox::warning(this, "错误", "经度范围必须是 0~360");
+        item->setText("0");
+    }
+
+    if (item->column() == 3 && (v < 0.0 || v > 180.0)) {
+        QMessageBox::warning(this, "错误", "纬度范围必须是 0~180");
+        item->setText("0");
+    }
 }

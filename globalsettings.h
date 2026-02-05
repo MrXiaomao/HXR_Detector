@@ -676,6 +676,12 @@ typedef struct _DetParameter{
     //探测器ID
     quint8 id;
 
+    //经度：0-360
+    double longitude;
+
+    //纬度：0-180
+    double latitude;
+
     // 全局
     //心跳时间(秒)
     quint32 pluseCheckTime;
@@ -742,6 +748,10 @@ typedef struct _DetParameter{
     quint16 highVoltageOutLevel;
 
     _DetParameter(){
+        longitude = 0.0;
+
+        latitude = 0.0;
+
         // 全局
         //心跳时间(秒)
         pluseCheckTime = 10;

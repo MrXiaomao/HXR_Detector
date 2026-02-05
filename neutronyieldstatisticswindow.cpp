@@ -788,15 +788,9 @@ void NeutronYieldStatisticsWindow::initCountCustomPlot()
 
 void NeutronYieldStatisticsWindow::initYieldCustomPlot()
 {
-    /*QCustomPlot* customPlot = ui->yieldSpatialDistribution;
-    QCustomPlotHelper* customPlotHelper = new QCustomPlotHelper(customPlot, this);
-
-    customPlot->rescaleAxes(true);
-    customPlot->replot();
-    */
-       // auto *w = new MollweideHeatmapWidget(ui->heatmapContainer);
-    auto *w = new CrasterParabolicHeatmapWidget(ui->yieldSpatialDistribution);
-    auto *layout = new QVBoxLayout(ui->yieldSpatialDistribution);
+   // auto *w = new MollweideHeatmapWidget(ui->heatmapContainer);
+    w = new CrasterParabolicHeatmapWidget(ui->yieldSpatialDistribution);
+    QVBoxLayout *layout = new QVBoxLayout(ui->yieldSpatialDistribution);
     layout->setContentsMargins(0,0,0,0);
     layout->addWidget(w);
 
@@ -1164,8 +1158,21 @@ void NeutronYieldStatisticsWindow::slotSuccess(int detID)
         if(initN_c>0.0){
             yield = count909_N0 / initN_c * yield_c;
         }
+
         ui->tableWidget->setItem(detID-1, 3, new QTableWidgetItem(QString::number(yield)));
+
+        //获取探测器经纬度
+        //从HDF5加载配置信息
+        HDF5Settings *settings = HDF5Settings::instance();
+        QMap<quint8, DetParameter>& detParameters = settings->detParameters();
+        DetParameter& detParameter = detParameters[detID];
+        myield[detID] = Sensor{detParameter.longitude, detParameter.latitude, yield};
+
+        //更新中子产额分布图
+        slotUpdate_yieldDis(myield);
     }
+
+    //绘制中子产额空间分布
 
     //显示计数衰减曲线、显示计数率和残差%
     std::vector<double> time;// x
@@ -1555,3 +1562,13 @@ void NeutronYieldStatisticsWindow::slotUpdateSpec_909keV(std::vector<double> cha
     customPlot->replot(QCustomPlot::rpQueuedReplot);
 }
 
+void NeutronYieldStatisticsWindow::slotUpdate_yieldDis(QMap<int, Sensor> yields)
+{
+    std::vector<Sensor> sensors;
+    for(auto yield:yields)
+    {
+        sensors.push_back({yield.lonDeg,yield.latDeg,yield.value});
+    }
+    w->setSensors(sensors);
+    w->rebuild();
+}

@@ -194,6 +194,8 @@ void HDF5Settings::writeDetParStrAttr(H5::DataSet& dataset)
 {
     // 给每个字段写解释（多个键）
     writeStrAttr(dataset, "id",   "通道号(0~23)");
+    writeStrAttr(dataset, "longitude",  "经度(0~360)");
+    writeStrAttr(dataset, "latitude",   "纬度(0~180)");
     writeStrAttr(dataset, "checkTime", "心跳时间(秒)");
     writeStrAttr(dataset, "timerSrvIp", "授时服务器 IP 地址");
     writeStrAttr(dataset, "gain", "增益(0.08~10.0)");
@@ -503,6 +505,10 @@ H5::CompType HDF5Settings::createCfgDataType()
     H5::StrType ipStrType(H5::PredType::C_S1, IP_LENGTH);
 
     type.insertMember("id", HOFFSET(DetParameter, id), H5::PredType::NATIVE_UINT8);
+    // 经度
+    type.insertMember("longitude", HOFFSET(DetParameter, longitude), H5::PredType::NATIVE_DOUBLE);
+    // 纬度
+    type.insertMember("latitude", HOFFSET(DetParameter, latitude), H5::PredType::NATIVE_DOUBLE);
 
     // 全局
     {
