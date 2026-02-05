@@ -782,7 +782,7 @@ void MainWindow::initUi()
 
         // 更新能谱显示
         updateSpectrumDisplay(index, data.spectrum);
-        qDebug()<<"Det index="<<index<<", sequenceID="<<fullSpectrum.sequence;
+        
         //最快每秒更新一次计数率,这里不考虑丢包带来的计数率修复
         quint32 accuTime = (fullSpectrum.sequence - data.lastSpectrumID) * fullSpectrum.measureTime;//单位ms
         double currenTime = 1.0 * fullSpectrum.sequence * fullSpectrum.measureTime / 1000; //单位s，这里最大数对应2^32/24/3600=49days
@@ -1811,12 +1811,13 @@ void MainWindow::updateSpectrumDisplay(int detectorId, const quint32 spectrum[])
                 }
                 i++;
             }
+            int newCh = (i+1)/mergebin;
             double tempX;
             if (m_spectrumPlotSettings[detectorId-1].fitType == 1){
-                tempX = m_spectrumPlotSettings[detectorId-1].c0*i + m_spectrumPlotSettings[detectorId-1].c1;
+                tempX = m_spectrumPlotSettings[detectorId-1].c0*newCh + m_spectrumPlotSettings[detectorId-1].c1;
             } else if (m_spectrumPlotSettings[detectorId-1].fitType == 2){
                 //拟合参数赋值
-                tempX = m_spectrumPlotSettings[detectorId-1].c0*i*i + m_spectrumPlotSettings[detectorId-1].c1*i + m_spectrumPlotSettings[detectorId-1].c2;
+                tempX = m_spectrumPlotSettings[detectorId-1].c0*newCh*newCh + m_spectrumPlotSettings[detectorId-1].c1*newCh + m_spectrumPlotSettings[detectorId-1].c2;
             }
             x << tempX;
             y << mergeCount;
@@ -1837,7 +1838,8 @@ void MainWindow::updateSpectrumDisplay(int detectorId, const quint32 spectrum[])
                 }
                 i++;
             }
-            x << i;
+            int newCh = (i+1)/mergebin;
+            x << newCh;
             y << mergeCount;
         }
     }

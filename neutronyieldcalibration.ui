@@ -128,6 +128,11 @@
      </row>
      <row>
       <property name="text">
+       <string>#23</string>
+      </property>
+     </row>
+     <row>
+      <property name="text">
        <string>#24</string>
       </property>
      </row>
@@ -138,9 +143,16 @@
      </column>
      <column>
       <property name="text">
-       <string>初始活度</string>
+       <string>初始活度(909keV)</string>
       </property>
      </column>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="label">
+     <property name="text">
+      <string>注：支持输入整数、浮点数、科学计数法</string>
+     </property>
     </widget>
    </item>
    <item>

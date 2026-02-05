@@ -332,10 +332,15 @@
           </column>
           <column>
            <property name="text">
+            <string>初始计数(909keV)</string>
+           </property>
+          </column>
+          <column>
+           <property name="text">
             <string>中子产额</string>
            </property>
           </column>
-          <item row="0" column="2">
+          <item row="0" column="3">
            <property name="text">
             <string/>
            </property>
@@ -346,7 +351,7 @@
             <set>ItemIsSelectable|ItemIsDragEnabled|ItemIsDropEnabled|ItemIsUserCheckable|ItemIsEnabled</set>
            </property>
           </item>
-          <item row="1" column="2">
+          <item row="1" column="3">
            <property name="text">
             <string/>
            </property>

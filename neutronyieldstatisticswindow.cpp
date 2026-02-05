@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-04-20 09:21:28
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-02-03 22:47:43
+ * @LastEditTime: 2026-02-04 17:18:06
  * @Description: 离线数据分析
  */
 #include "neutronyieldstatisticswindow.h"
@@ -1151,12 +1151,20 @@ void NeutronYieldStatisticsWindow::slotFail()
 void NeutronYieldStatisticsWindow::slotSuccess(int detID)
 {
     qDebug() << "slotSuccess called with detID:" << detID;
-    //
+    // 显示909初始计数
     double count909_N0 = dealFile[detID-1]->GetInitialCount();
-    // int detID = dealFile[detID-1]->mDetId;
-    //根据探测器ID，显示对应的探测器的count909_N0
     if(detID > 0 && detID <= ui->tableWidget->rowCount()){
         ui->tableWidget->setItem(detID-1, 2, new QTableWidgetItem(QString::number(count909_N0)));
+
+        //读取灵敏度标定数据，给出中子产额
+        QSettings mSettings("./config/NeutronYield.ini", QSettings::IniFormat);
+        double yield_c = mSettings.value(QString("Table/yield%1").arg(detID), 1.0).toDouble();
+        double initN_c = mSettings.value(QString("Table/initial909Count%1").arg(detID), 1.0).toDouble();
+        double yield = 0.0;
+        if(initN_c>0.0){
+            yield = count909_N0 / initN_c * yield_c;
+        }
+        ui->tableWidget->setItem(detID-1, 3, new QTableWidgetItem(QString::number(yield)));
     }
 
     //显示计数衰减曲线、显示计数率和残差%

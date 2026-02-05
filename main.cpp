@@ -1,11 +1,11 @@
 ﻿#include "mainwindow.h"
 #include "globalsettings.h"
-#include "commhelper.h"
+// #include "commhelper.h"
 #include "countratestatisticswindow.h"
 #include "neutronyieldstatisticswindow.h"
 #include "lightstyle.h"
 #include "darkstyle.h"
-#include "customcolorstyle.h"
+// #include "customcolorstyle.h"
 
 #include <QApplication>
 #include <QStyleFactory>
@@ -200,6 +200,8 @@ int main(int argc, char *argv[])
     w.setupUiHelper(mMainWindow, isDarkTheme);
 
     qInfo().noquote() << QObject::tr("系统启动");
+    qInfo().noquote() << QString("软件版本信息：%1, git:%2,%3").arg(GIT_BRANCH, GIT_HASH, GIT_DATE);
+
     splash.finish(&w);
 
     QRect screenRect = QGuiApplication::primaryScreen()->availableGeometry();
