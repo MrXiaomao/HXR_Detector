@@ -77,6 +77,8 @@ signals:
     void reportFullSpectrum(quint8 index, const FullSpectrum& fullSpectrum); // 发送完整的能谱数据
 
     void reportTemperatureTimeout(); // 温度心跳超时信号
+    void reportRawNetData(const QByteArray& data); // 上报原始网络数据
+
 private:
     quint8 mIndex;//探测器索引
     QTcpSocket *mTcpSocket = nullptr;
@@ -101,6 +103,8 @@ private:
     ParseData* m_parseData;
     
     QTimer mTempTimeoutTimer; //心跳检测定时器
+
+    QFile *mNetDataFile = nullptr;//网络数据保存文件
 };
 
 #endif // DATAPROCESSOR_H

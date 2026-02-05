@@ -34,7 +34,8 @@ SOURCES += \
     qcomboboxdelegate.cpp \
     qhuaweiswitcherhelper.cpp \
     switchbutton.cpp \
-    sysutils.cpp
+    sysutils.cpp \
+    waveformwindow.cpp
 
 HEADERS += \
     CrasterParabolicHeatmapWidget.h \
@@ -62,7 +63,8 @@ HEADERS += \
     globalsettings.h \
     mainwindow.h \
     switchbutton.h \
-    sysutils.h
+    sysutils.h \
+    waveformwindow.h
 
 FORMS += \
     clientpeerswindow.ui \
@@ -74,7 +76,8 @@ FORMS += \
     neutronyieldcalibration.ui \
     neutronyieldstatisticswindow.ui \
     offlinewindow.ui \
-    particalwindow.ui
+    particalwindow.ui \
+    waveformwindow.ui
 
 # Default rules for deployment.
 qnx: target.path = /tmp/$${TARGET}/bin

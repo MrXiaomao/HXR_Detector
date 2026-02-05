@@ -171,6 +171,8 @@ private slots:
 
     void on_action_neutronYieldStatistics_triggered();
 
+    void on_action_waveformMode_triggered();
+
 private:
     QString increaseShotNumSuffix(QString shotNumStr);
     QCustomPlot* getCustomPlot(int detectorId, bool isSpectrum = true);

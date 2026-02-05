@@ -159,35 +159,7 @@
          <property name="bottomMargin">
           <number>9</number>
          </property>
-         <item row="0" column="1">
-          <widget class="QLineEdit" name="lineEdit_path">
-           <property name="text">
-            <string>./</string>
-           </property>
-          </widget>
-         </item>
-         <item row="1" column="1">
-          <widget class="QLineEdit" name="lineEdit_filename">
-           <property name="text">
-            <string>test.dat</string>
-           </property>
-          </widget>
-         </item>
-         <item row="1" column="0">
-          <widget class="QLabel" name="label_55">
-           <property name="text">
-            <string>文件名：</string>
-           </property>
-          </widget>
-         </item>
-         <item row="0" column="0">
-          <widget class="QLabel" name="label_24">
-           <property name="text">
-            <string>存储路径：</string>
-           </property>
-          </widget>
-         </item>
-         <item row="3" column="0" colspan="2">
+         <item row="3" column="0" colspan="3">
           <widget class="QWidget" name="widget_3" native="true">
            <layout class="QHBoxLayout" name="horizontalLayout_3">
             <property name="leftMargin">
@@ -202,10 +174,38 @@
            </layout>
           </widget>
          </item>
-         <item row="2" column="1">
+         <item row="2" column="2">
           <widget class="QPushButton" name="pushButton_save">
            <property name="text">
-            <string>保存数据</string>
+            <string>导出数据...</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="2">
+          <widget class="QLineEdit" name="lineEdit_path">
+           <property name="text">
+            <string>./</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="0">
+          <widget class="QLabel" name="label_3">
+           <property name="text">
+            <string>完整包计数：</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="0">
+          <widget class="QLabel" name="label_24">
+           <property name="text">
+            <string>存储路径：</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="2">
+          <widget class="QLineEdit" name="lineEdit_pkgCount">
+           <property name="readOnly">
+            <bool>true</bool>
            </property>
           </widget>
          </item>

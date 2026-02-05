@@ -121,7 +121,7 @@ void DataProcessor::updateSetting(DetParameter& detParameter, bool isRead/* = fa
         //#05 能谱刷新时间=1|0|9|1234000FFD1000000000ABCD
         this->sendSprectnumRefreshTimelength(isRead, detParameter.spectrumRefreshTime);
 
-        if (!detParameter.trapShapeEnable || isRead){
+        if (detParameter.trapShapeEnable || isRead){
             //#07 梯形成型常数=1|0|13|1234000FFE1000000000ABCD
             this->sendTrapTimeConst(isRead, detParameter.trapShapeTimeConstD1, detParameter.trapShapeTimeConstD2);
             //#08 上升沿参数=1|0|15|1234000FFE1100000000ABCD
@@ -130,11 +130,11 @@ void DataProcessor::updateSetting(DetParameter& detParameter, bool isRead/* = fa
 
         //#09 梯形成型使能=1|0|17|1234000FFE1200000000ABCD
         this->sendTrapShapeEnable(isRead, (TrapShapeEnable)detParameter.trapShapeEnable);
-        //#10 高压电平使能=1|0|19|1234000FF91000000000ABCD
-        this->sendHighVolgateOutLevelEnable(isRead, (HighVolgateOutLevelEnable)detParameter.highVoltageEnable);
-        //#11 高压输出电平=1|0|21|1234000FF91100000000ABCD
-        if (!detParameter.highVoltageEnable || isRead)
+        //#10 高压输出电平=1|0|21|1234000FF91100000000ABCD
+        if (detParameter.highVoltageEnable || isRead)
             this->sendHighVolgateOutLevel(isRead, detParameter.highVoltageOutLevel);
+        //#11 高压电平使能=1|0|19|1234000FF91000000000ABCD
+        this->sendHighVolgateOutLevelEnable(isRead, (HighVolgateOutLevelEnable)detParameter.highVoltageEnable);
 
         //通知发送指令
         this->notifySendNextCmd();
@@ -192,7 +192,7 @@ void DataProcessor::sendCmdToSocket(CommandItem cmdItem) const
     if (mTcpSocket && mTcpSocket->isOpen()){
         mTcpSocket->write(cmdItem.data);
         mTcpSocket->waitForBytesWritten();
-        // ::QThread::msleep(5);
+        ::QThread::msleep(5);// 每条指令发送完成暂停5毫秒
 
         qDebug().noquote()<< QString("[%1]Send HEX: %2 [%3]")
                                   .arg(mIndex)
@@ -208,6 +208,9 @@ void DataProcessor::readyRead()
         return;
 
     QByteArray rawData = socket->readAll();
+    // 上报原始网络数据
+    emit reportRawNetData(rawData);
+
     this->inputData(rawData);
 }
 

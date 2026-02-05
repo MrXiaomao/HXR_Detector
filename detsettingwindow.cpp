@@ -15,6 +15,16 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
     ui->tableWidget->setColumnWidth(1, 200);
     ui->tableWidget->setRowHeight(0, 30);
 
+    QList<QSpinBox*> spinBoxs = this->findChildren<QSpinBox*>();
+    for (auto spinBox: spinBoxs){
+        spinBox->installEventFilter(this);
+    }
+
+    QList<QComboBox*> comboBoxs = this->findChildren<QComboBox*>();
+    for (auto comboBox: comboBoxs){
+        comboBox->installEventFilter(this);
+    }
+
     // 创建模型和视图
     // QStandardItemModel model(24, 2);
     // for (int i = 0; i < model.rowCount(); ++i) {
@@ -122,24 +132,35 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
 
     mCommhelper = CommHelper::instance();
     connect(mCommhelper, &CommHelper::reportParamterData, this, [=](int, const QByteArray& cachePool){
+        qInfo().noquote() << "收到参数配置数据包：" << cachePool.toHex(' ');
+        bool ok;
+
         //增益指令
         {
             if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FA 10"))){
-                qInfo().noquote() << "增益：" << cachePool.at(9);
+                if (ui->comboBox_gain->count()<=(quint8)cachePool.at(9)){
+                    qInfo().noquote() << "增益：" << ui->comboBox_gain->itemText((quint8)cachePool.at(9) - 1);
+                    ui->comboBox_gain->setCurrentIndex((quint8)cachePool.at(9) - 1);
+                }
+                else{
+                    qInfo().noquote() << "增益索引：" << (quint8)cachePool.at(9);
+                }
             }
         }
 
         //死时间配置(ns)
         {
-            if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FA 11"))){
-                qInfo().noquote() << "死时间/ns：" << cachePool.mid(8, 2).toShort();
+            if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FA 11"))){                                
+                qInfo().noquote() << "死时间/ns：" << cachePool.mid(8, 2).toHex().toUShort(&ok, 16);
+                ui->spinBox_deathTime->setValue(cachePool.mid(8, 2).toHex().toUShort(&ok, 16));
             }
         }
 
         //触发阈值
         {
             if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FA 12"))){
-                qInfo().noquote() << "触发阈值：" << cachePool.mid(8, 2).toShort();
+                qInfo().noquote() << "触发阈值：" << cachePool.mid(8, 2).toHex().toUShort(&ok, 16);
+                ui->spinBox_triggerThold->setValue(cachePool.mid(8, 2).toHex().toUShort(&ok, 16));
             }
         }
 
@@ -148,8 +169,9 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
         ***********************************************************/
         {
             if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FC 10"))){
-                qInfo().noquote() << "触发模式：" << (cachePool.mid(7, 1).toShort() == CommandAdapter::tmTimer ? "定时触发" : "正常触发模式");
-                CommandAdapter::WaveformLength waveformLength = (CommandAdapter::WaveformLength)cachePool.mid(9, 1).toShort();
+                quint8 triggerMode = (quint8)cachePool.mid(7, 1).toHex().toUShort(&ok, 16);
+                qInfo().noquote() << "触发模式：" << ((triggerMode == CommandAdapter::tmTimer) ? "定时触发" : "正常触发模式");
+                CommandAdapter::WaveformLength waveformLength = (CommandAdapter::WaveformLength)((quint8)cachePool.mid(9, 1).toHex().toUShort(&ok, 16));
                 if (waveformLength == CommandAdapter::wl64)
                     qInfo().noquote() << "波形长度：64";
                 else if (waveformLength == CommandAdapter::wl128)
@@ -160,6 +182,8 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
                     qInfo().noquote() << "波形长度：512";
                 else
                     qInfo().noquote() << "波形长度：未知值";
+
+                ui->comboBox_waveformLength->setCurrentIndex(waveformLength);
             }
         }
 
@@ -168,8 +192,8 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
         ***********************************************************/
         {
             if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FD 10"))){
-                qInfo().noquote() << "能谱刷新时间/ms：" << cachePool.mid(6, 4).toUInt();
-
+                qInfo().noquote() << "能谱刷新时间/ms：" << cachePool.mid(6, 4).toHex().toUInt(&ok, 16);
+                ui->spinBox_spectrumRefreshTime->setValue(cachePool.mid(6, 4).toHex().toUInt(&ok, 16));
             }
         }
 
@@ -179,12 +203,13 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
         //梯形成型时间常数配置
         {
             if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FE 10"))){
-                quint16 d1 = cachePool.mid(6, 2).toShort();
-                quint16 d2 = cachePool.mid(8, 9).toShort();
+                quint16 d1 = cachePool.mid(6, 2).toHex().toUShort(&ok, 16);
+                quint16 d2 = cachePool.mid(8, 2).toHex().toUShort(&ok, 16);
                 float f1 = (float)d1 / 65536;
                 float f2 = (float)d2 / 65536;
                 qInfo().noquote() << "梯形成型时间常数，d1=" << f1 << "，d2="<<f2;
-
+                ui->doubleSpinBox_trapShapeTimeConstD1->setValue(f1);
+                ui->doubleSpinBox_trapShapeTimeConstD2->setValue(f2);
             }
         }
 
@@ -195,7 +220,9 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
                 quint8 peak = (quint8)cachePool.at(8);
                 quint8 fall = (quint8)cachePool.at(9);
                 qInfo().noquote() << "上升沿=" << rise << "，平顶="<<peak<< "，下降沿="<<fall;
-
+                ui->spinBox_trapShapeRisePoint->setValue(rise);
+                ui->spinBox_trapShapePeakPoint->setValue(peak);
+                ui->spinBox_trapShapeFallPoint->setValue(fall);
             }
         }
 
@@ -206,7 +233,7 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
                 quint8 peak = (quint8)cachePool.at(8);
                 quint8 fall = (quint8)cachePool.at(9);
                 qInfo().noquote() << "梯形成型使能状态：" << ((quint8)cachePool.at(9) == 0x00 ? "关闭" : "打开");
-
+                ui->trapShapeEnable->setChecked((quint8)cachePool.at(9) != 0x00);
             }
         }
 
@@ -233,19 +260,20 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
         ***********************************************************/
         //高压使能配置
         {
-            if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A F9 10"))){
-                CommandAdapter::HighVolgateOutLevelEnable highVoltageEnable = (CommandAdapter::HighVolgateOutLevelEnable)cachePool.at(9);
-                qInfo().noquote() << "高压使能状态：" << (highVoltageEnable ? "关闭" : "打开");
-
+            if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A F9 11"))){
+                CommandAdapter::HighVolgateOutLevelEnable highVoltageEnable = (CommandAdapter::HighVolgateOutLevelEnable)(quint8)cachePool.at(9);
+                qInfo().noquote() << "高压使能状态：" << (highVoltageEnable==CommandAdapter::HighVolgateOutLevelEnable::hvClose ? "关闭" : "打开");
+                ui->highVoltageEnable->setChecked((quint8)cachePool.at(9) != 0x00);
             }
         }
 
         //DAC输出电平配置
         {
-            if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A F9 11"))){
-                quint16 level = cachePool.mid(8, 2).toShort();
-                qInfo().noquote() << "DAC输出电平值：" << level;
-
+            if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A F9 10"))){
+                quint16 level = cachePool.mid(8, 2).toHex().toUShort(&ok, 16);
+                quint16 highVolgateOutLevel = static_cast<quint16>(std::round(level*2.5*441.0/65536.0));
+                qInfo().noquote() << "DAC输出电平值：" << highVolgateOutLevel << "V";
+                ui->spinBox_highVoltageOutLevel->setValue(highVolgateOutLevel);
             }
         }
 
@@ -377,9 +405,9 @@ void DetSettingWindow::saveAt(quint8 detId)
     //是否启用
     detParameter.trapShapeEnable = ui->trapShapeEnable->isChecked();
     //时间常数D1
-    detParameter.trapShapeTimeConstD1 = static_cast<quint16>(ui->spinBox_trapShapeTimeConstD1->value());
+    detParameter.trapShapeTimeConstD1 = static_cast<quint16>(ui->doubleSpinBox_trapShapeTimeConstD1->value()*65536);
     //时间常数D2
-    detParameter.trapShapeTimeConstD2 = static_cast<quint16>(ui->spinBox_trapShapeTimeConstD2->value());
+    detParameter.trapShapeTimeConstD2 = static_cast<quint16>(ui->doubleSpinBox_trapShapeTimeConstD2->value()*65536);
     //上升沿
     detParameter.trapShapeRisePoint = static_cast<quint8>(ui->spinBox_trapShapeRisePoint->value());
     //平顶
@@ -392,6 +420,7 @@ void DetSettingWindow::saveAt(quint8 detId)
     //输出高压，单位：V
     detParameter.highVoltageOutLevel = static_cast<quint16>(ui->spinBox_highVoltageOutLevel->value());
 
+    //settings->setDetParameter(detId, detParameter);
     settings->sync();
 }
 
@@ -438,9 +467,9 @@ void DetSettingWindow::loadAt(quint8 detId)
     //是否启用
     ui->trapShapeEnable->setChecked(detParameter.trapShapeEnable);
     //时间常数D1
-    ui->spinBox_trapShapeTimeConstD1->setValue(detParameter.trapShapeTimeConstD1);
+    ui->doubleSpinBox_trapShapeTimeConstD1->setValue((double)detParameter.trapShapeTimeConstD1 / 65536.0);
     //时间常数D2
-    ui->spinBox_trapShapeTimeConstD2->setValue(detParameter.trapShapeTimeConstD2);
+    ui->doubleSpinBox_trapShapeTimeConstD2->setValue((double)detParameter.trapShapeTimeConstD2 / 65536.0);
     //上升沿
     ui->spinBox_trapShapeRisePoint->setValue(detParameter.trapShapeRisePoint);
     //平顶
@@ -455,8 +484,20 @@ void DetSettingWindow::loadAt(quint8 detId)
     ui->spinBox_highVoltageOutLevel->setValue(detParameter.highVoltageOutLevel);
 }
 
-void DetSettingWindow::on_pushButton_clicked()
+void DetSettingWindow::on_pushButton_read_clicked()
 {
+    QList<QTableWidgetItem*> items = ui->tableWidget->selectedItems();
+    if (items.size() <= 0)
+        return;
 
+    quint8 detId = items.first()->row() + 1;
+    mCommhelper->readParamters(detId);
 }
 
+bool DetSettingWindow::eventFilter(QObject *obj, QEvent *event) {
+    if (event->type() == QEvent::Wheel && (obj->inherits("QSpinBox")||obj->inherits("QComboBox"))) {
+        return true; // 拦截滚轮事件
+    }
+
+    return QWidget::eventFilter(obj, event);
+}

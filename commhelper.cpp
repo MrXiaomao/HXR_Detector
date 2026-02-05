@@ -164,6 +164,7 @@ void CommHelper::initDataProcessor()
                     QString filePath = QString("%1/%2/%3_%4_能谱.dat").arg(mShotDir).arg(mShotNum).arg(mTriggerTimer).arg(processor->index());
                     mDetectorFileProcessor[processor->index()] = new QFile(filePath);
                     mDetectorFileProcessor[processor->index()]->open(QIODevice::WriteOnly);
+                    mDataFileList.push_back(filePath);
 
                     // 初始化flush信息
                     {
@@ -192,6 +193,43 @@ void CommHelper::initDataProcessor()
                     emit reportFullSpectrum(index, fullSpectrum);
                 });
 
+
+        // 原始网络数据
+        connect(detectorDataProcessor, &DataProcessor::reportRawNetData, this, [=](const QByteArray& data){
+            DataProcessor* processor = qobject_cast<DataProcessor*>(sender());
+            /*
+                保存数据
+            */
+            quint8 detId = processor->index();
+            {
+                QMutexLocker locker(&mMutexTriggerTimer);
+                if (mTriggerTimer.isEmpty()){
+                    mTriggerTimer = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
+                }
+
+                if (!mNetRawFileProcessor.contains(processor->index())){
+                    QString filePath = QString("%1/%2/%3_%4_Net.dat").arg(mShotDir).arg(mShotNum).arg(mTriggerTimer).arg(processor->index());
+                    mNetRawFileProcessor[processor->index()] = new QFile(filePath);
+                    mNetRawFileProcessor[processor->index()]->open(QIODevice::WriteOnly | QIODevice::Append); //覆盖式写入
+                    mDataFileList.push_back(filePath);
+
+                    // 初始化flush信息
+                    {
+                        QMutexLocker flushLocker(&mMutexFileFlush);
+                        mFileFlushInfo[processor->index()] = FileFlushInfo();
+                    }
+
+                    qInfo().nospace() << "谱仪[#"<< processor->index() << "]创建存储文件：" << filePath;
+                }
+
+                if (mNetRawFileProcessor[processor->index()]->isOpen()){
+                    qint64 bytesWritten = mNetRawFileProcessor[processor->index()]->write((const char *)data.constData(), data.size());
+                    // 实时flush，确保数据都存下来了
+                    mNetRawFileProcessor[processor->index()]->flush();
+                }
+            }
+        });
+
         connect(detectorDataProcessor, &DataProcessor::reportWaveformData, this, [=](QByteArray& data){
             DataProcessor* processor = qobject_cast<DataProcessor*>(sender());
             /*
@@ -208,6 +246,7 @@ void CommHelper::initDataProcessor()
                     QString filePath = QString("%1/%2/%3_%4_波形.dat").arg(mShotDir).arg(mShotNum).arg(mTriggerTimer).arg(processor->index());
                     mDetectorFileProcessor[processor->index()] = new QFile(filePath);
                     mDetectorFileProcessor[processor->index()]->open(QIODevice::WriteOnly | QIODevice::Append); //覆盖式写入
+                    mDataFileList.push_back(filePath);
 
                     // 初始化flush信息
                     {
@@ -266,6 +305,11 @@ void CommHelper::initDataProcessor()
                     QString filePath = QString("%1/%2/%3_%4_粒子.txt").arg(mShotDir).arg(mShotNum).arg(mTriggerTimer).arg(processor->index());
                     mDetectorFileProcessor[processor->index()] = new QFile(filePath);
                     mDetectorFileProcessor[processor->index()]->open(QIODevice::WriteOnly | QIODevice::Append); //覆盖式写入
+                    mDataFileList.push_back(filePath);
+                    // 写入表头
+                    QString line = QString("序号,时间,幅度,类型\n");
+                    qint64 bytesWritten = mDetectorFileProcessor[processor->index()]->write((const char *)line.toUtf8());
+                    // 检查是否需要flush（每10秒或每1MB）
 
                     // 初始化flush信息
                     {
@@ -288,15 +332,21 @@ void CommHelper::initDataProcessor()
             for (int i=0; i<130; ++i)
             {
                 bool ok;
-                quint32 utc = data.mid(i*12, 4).toHex().toUInt(&ok, 16); // utc时间戳
-                quint32 second = data.mid(i*12+4, 4).toHex().toUInt(&ok, 16); // 小数秒
-                quint32 deathT = data.mid(i*12+8, 2).toHex().toUShort(&ok, 16); // 死时间
-                quint16 _type = data.mid(i*12+10, 2).toHex().toUShort(&ok, 16); // 粒子类型
+                quint16 utc = data.mid(i*8, 2).toHex().toUInt(&ok, 16); // utc时间戳
+                quint16 msecond = 65536*1000/data.mid(i*8+2, 2).toHex().toUInt(&ok, 16); // 毫秒
+                quint16 deathT = data.mid(i*8+4, 2).toHex().toUShort(&ok, 16); // 死时间
+                quint16 _type = data.mid(i*8+6, 2).toHex().toUShort(&ok, 16); // 粒子类型
                 quint16 typeFlag = (_type & 0x8000) >> 15;// 类型 （0：γ；1：α）
                 quint16 amplitude = _type & 0x7FFF; // 幅度
 
                 // 保存时间、能量、粒子类型
-                QDateTime tm = QDateTime::fromSecsSinceEpoch(utc, Qt::TimeSpec::UTC, second);
+                QDateTime now = QDateTime::currentDateTimeUtc();
+                quint64 currUtc = now.toSecsSinceEpoch();
+                currUtc = currUtc & 0xffffffffffff0000; // 只保留高16位
+                currUtc = currUtc | utc; // 合成新的utc时间戳
+                currUtc = currUtc*1000 + msecond; // 转成毫秒时间戳
+                QDateTime tm = QDateTime::fromMSecsSinceEpoch(currUtc, Qt::TimeSpec::UTC);
+                tm = tm.addSecs(8*3600); // 转成北京时间
 
                 if (mDetectorFileProcessor[processor->index()]->isOpen()){
                     QString line = QString("%1,%2,%3,%4\n")
@@ -306,10 +356,10 @@ void CommHelper::initDataProcessor()
                                     .arg(typeFlag);
                     QByteArray lineData = line.toUtf8();
                     qint64 bytesWritten = mDetectorFileProcessor[processor->index()]->write((const char *)lineData.constData(), lineData.size());
-                    // 检查是否需要flush（每10秒或每1MB）
-                    checkAndFlushFile(processor->index(), bytesWritten);
                 }
             }
+
+            mDetectorFileProcessor[processor->index()]->flush();
 
             // 上报计数
             emit reportParticleCurveData(index, sequence);
@@ -475,9 +525,39 @@ bool CommHelper::closeSwitcherExtendPOEPower()
 /*
  打开网络
 */
+#include <QHostInfo>
 bool CommHelper::startServer()
 {    
     GlobalSettings settings(CONFIG_FILENAME);
+    QString ip = settings.value("Local/ServerIp", "0.0.0.0").toString();
+
+    // 判断网络参数是否合法
+    {
+        QStringList ipList;
+        //获取本机IP地址列表
+        //获取主机名称
+        QString HostName = QHostInfo::localHostName();
+        //根据主机名获取主机IP地址
+        QHostInfo hostinfo = QHostInfo::fromName(HostName);
+        QList<QHostAddress> AddressList = hostinfo.addresses();
+        if(!AddressList.isEmpty())
+        {
+            for(int i = 0;i<AddressList.size();i++)
+            {
+                QHostAddress hostaddress = AddressList.at(i);
+                if(hostaddress.protocol() == QAbstractSocket::IPv4Protocol)
+                {
+                    ipList.append(hostaddress.toString());
+                }
+            }
+        }
+
+        ipList.append("127.0.0.1");
+        ipList.append("0.0.0.0");
+        if (!ipList.contains(ip))
+            return false;
+    }
+
     return this->mTcpServer->listen(QHostAddress(settings.value("Local/ServerIp", "0.0.0.0").toString()), settings.value("Local/ServerPort", 6000).toUInt());
 }
 /*
@@ -603,6 +683,7 @@ void CommHelper::startMeasure(CommandAdapter::WorkMode mode, quint8 index/* = 0*
 {
     mWaveAllData.clear();
     mTriggerTimer.clear();
+    mDataFileList.clear();
 
     if (index == 0){
         for (index = 1; index <= DET_NUM; ++index){
@@ -741,6 +822,15 @@ void CommHelper::stopMeasure(quint8 index/* = 0*/)
                     });
                 }
             }
+
+            //关闭网络存储文件
+            if (mNetRawFileProcessor.contains(index)){
+                QFile* file = mNetRawFileProcessor[index];
+                file->flush();
+                file->close();
+                file->deleteLater();
+                mNetRawFileProcessor.remove(index);
+            }
         }
 
         HDF5Settings::instance()->closeH5Spectrum();
@@ -845,6 +935,22 @@ bool CommHelper::saveAs(QString dstPath)
     return copyDir(srcPath, dstPath);
 }
 
+bool CommHelper::exportFile(QString dstPath)
+{
+    if (mDataFileList.size() == 0)
+        return false;
+
+    for (auto srcFilePath : mDataFileList)
+    {
+        QFileInfo fileInfo(srcFilePath);
+        QString dstFilePath = QString("%1/%2").arg(dstPath).arg(fileInfo.fileName());
+
+        QFile::copy(srcFilePath, dstFilePath);
+    }
+
+    return true;
+}
+
 qint8 CommHelper::indexOfAddress(qintptr socketDescriptor/*QString peerAddress, quint16 peerPort*/)
 {
     for (const auto& iter : this->mConnectionPeers)
@@ -903,4 +1009,17 @@ void CommHelper::handleDetectorDisconnection(quint8 index)
     QMetaObject::invokeMethod(this, "detectorOffline", 
         Qt::QueuedConnection, 
         Q_ARG(quint8, index));
+}
+
+bool CommHelper::readParamters(quint8 detIndex)
+{
+    DataProcessor* detectorDataProcessor = mDetectorDataProcessor[detIndex];
+    if (!detectorDataProcessor->isFreeSocket()){
+        DetParameter detParameter;
+        detectorDataProcessor->updateSetting(detParameter, true);
+        return true;
+    }
+    else{
+        return false;
+    }
 }

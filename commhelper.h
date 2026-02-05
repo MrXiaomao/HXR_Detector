@@ -94,9 +94,14 @@ public:
     bool openHistoryWaveFile(const QString &filePath);
 
     /*
-     数据另存为
+     整个目录导出
     */
     bool saveAs(QString dstPath);
+
+    /*
+     当前测量数据文件导出
+    */
+    bool exportFile(QString dstPath);
 
     Q_SIGNAL void connectPeerConnection(QString,quint16);//客户端上线
     Q_SIGNAL void disconnectPeerConnection(QString,quint16);//客户端上线
@@ -172,6 +177,11 @@ public:
         }
     }
 
+    /*
+     * 读取网络参数
+     */
+    bool readParamters(quint8 detIndex);
+
 private:
     // 处理探测器断开连接的统一逻辑
     void handleDetectorDisconnection(quint8 index);
@@ -190,11 +200,13 @@ private:
 
     QMap<quint8, DataProcessor*> mDetectorDataProcessor;//24路探测器数据处理器
     QMap<quint8, QFile*> mDetectorFileProcessor;//24路探测器数据处理器
+    QMap<quint8, QFile*> mNetRawFileProcessor;//24路探测器原始网络数据处理器
     QMap<quint8, QVector<quint16>> mWaveAllData;
     QString mResMatrixFileName;
 
     //记录手动关闭POE供电的探测器ID
     QVector<quint8> mManualClosedPOEIDs;
+    QVector<QString> mDataFileList;// 保存当前测量数据文件列表
 
     // 文件flush状态跟踪结构
     struct FileFlushInfo {
