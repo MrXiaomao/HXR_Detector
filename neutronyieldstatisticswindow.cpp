@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-04-20 09:21:28
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-02-04 17:18:06
+ * @LastEditTime: 2026-03-02 19:43:33
  * @Description: 离线数据分析
  */
 #include "neutronyieldstatisticswindow.h"
@@ -862,95 +862,106 @@ void NeutronYieldStatisticsWindow::on_action_open_triggered()
 
     settings.setValue("mainWindow/LastFilePath", filePath);
     ui->textBrowser_filepath->setText(filePath);
-
+    mfilePath = filePath;
+    
     // 解析文件，获取能谱范围时长
     {
         mDetectorSpecCount.clear();
         mDealSucess.clear();
 
-        // 1. 打开文件
-        H5::H5File file(filePath.toStdString(), H5F_ACC_RDONLY);
+        try
+        {
+            // 1. 打开文件
+            H5::H5File file(filePath.toStdString(), H5F_ACC_RDONLY);
 
-        // 解析给出当前有能谱数据的通道编号集合
-        for(int i=0; i<24; i++){
-            // 2. 打开分组核数据集
-            QString detName = QString("Detector#%1").arg(i+1);
-            H5::Group group = file.openGroup(detName.toStdString());
-            H5::DataSet dataset = group.openDataSet("Spectrum");
+            //获取经纬度
+            H5::Group group = file.openGroup("Config");
+            H5::DataSet dataset = group.openDataSet("Detector");
+            H5::CompType cfgType = HDF5Settings::createCfgDataType();
+            DetParameter cfg[24];
+            dataset.read(&cfg, cfgType);
 
-            // 3. 确认数据类型匹配（可选，用于错误检查）
-            H5::CompType fileType = dataset.getCompType();
-            if (fileType != H5::PredType::NATIVE_UINT) {
-                file.close();
-                continue;
+            // 解析给出当前有能谱数据的通道编号集合
+            for(int i=0; i<24; i++)
+            {
+                double longitude = cfg[i].longitude;
+                double latitude = cfg[i].latitude;
+                setLonLat(i,longitude,latitude);
+
+                // 2. 打开分组核数据集
+                QString detName = QString("Detector#%1").arg(i+1);
+                H5::Group group = file.openGroup(detName.toStdString());
+                H5::DataSet dataset = group.openDataSet("Spectrum");
+
+                // 3. 确认数据类型匹配（可选，用于错误检查）
+                H5::CompType fileType = dataset.getCompType();
+                if (fileType != H5::PredType::NATIVE_UINT) {
+                    group.close();
+                    dataset.close();
+                    continue;
+                }
+
+                // 4. 初始文件空间
+                H5::DataSpace file_space = dataset.getSpace();
+                hsize_t current_dims[2];
+                file_space.getSimpleExtentDims(current_dims, NULL);
+                hsize_t rows = current_dims[0];
+                hsize_t cols = current_dims[1];
+
+                if (rows<=0){
+                    group.close();
+                    dataset.close();
+                    file_space.close();
+                    continue;
+                }
+
+                // 5. 内存空间：只读取一行
+                hsize_t mem_dims[2] = {1, cols};
+                H5::DataSpace mem_space(2, mem_dims);
+                uint32_t* row_data = new uint32_t[cols];
+
+                // 6. 指定数据读取位置
+                hsize_t start[2] = {0, 0};
+                hsize_t count[2] = {1, cols};
+                file_space.selectHyperslab(H5S_SELECT_SET, count, start);
+
+                // 7. 读取数据
+                dataset.read(row_data, H5::PredType::NATIVE_UINT, mem_space, file_space);
+                H5Spectrum* data = reinterpret_cast<H5Spectrum*>(row_data);
+
+                quint32 measureTimelength = rows * data->measureTime / 1000;
+                ui->spinBox_timeEnd->setMaximum(measureTimelength / 60);
+
+                emit reporWriteLog(tr("谱仪%1测量时长:%2s").arg(i+1).arg(measureTimelength));
+
+                delete[] row_data;
+                row_data = nullptr;
+
+
+                if(rows>0){
+                    mDetectorSpecCount[i+1] = rows;
+                    mDealSucess[i+1] = false;
+                }
+                if(i >= 0 && i <= ui->tableWidget->rowCount()){
+                    ui->tableWidget->setItem(i, 5, new QTableWidgetItem(QString::number(rows)));
+                }
+                group.close();
+                dataset.close();
+                file_space.close();
             }
-
-            // 4. 初始文件空间
-            H5::DataSpace file_space = dataset.getSpace();
-            hsize_t current_dims[2];
-            file_space.getSimpleExtentDims(current_dims, NULL);
-            hsize_t rows = current_dims[0];
-            hsize_t cols = current_dims[1];
-
-            if(rows>0){
-                mDetectorSpecCount[i+1] = rows;
-                mDealSucess[i+1] = false;
-            }
-            if(i >= 0 && i <= ui->tableWidget->rowCount()){
-                ui->tableWidget->setItem(i, 1, new QTableWidgetItem(QString::number(rows)));
-            }
-        }
-        
-        // 2. 打开分组核数据集
-        H5::Group group = file.openGroup("Detector#1");
-        H5::DataSet dataset = group.openDataSet("Spectrum");
-
-        // 3. 确认数据类型匹配（可选，用于错误检查）
-        H5::CompType fileType = dataset.getCompType();
-        if (fileType != H5::PredType::NATIVE_UINT) {
+            qDebug("4444");
             file.close();
+        }
+        catch (H5::FileIException& e)
+        {
+            QMessageBox::critical(this, tr("错误"), tr("无法打开HDF5文件，可能被占用。"));
             return;
         }
-
-        // 4. 初始文件空间
-        H5::DataSpace file_space = dataset.getSpace();
-        hsize_t current_dims[2];
-        file_space.getSimpleExtentDims(current_dims, NULL);
-        hsize_t rows = current_dims[0];
-        hsize_t cols = current_dims[1];
-        if (rows<=0){
-            group.close();
-            dataset.close();
-            file_space.close();
-            file.close();
+        catch (H5::Exception& e)
+        {
+            QMessageBox::critical(this, tr("错误"), tr("HDF5读取异常。"));
             return;
         }
-
-        // 5. 内存空间：只读取一行
-        hsize_t mem_dims[2] = {1, cols};
-        H5::DataSpace mem_space(2, mem_dims);
-        uint32_t* row_data = new uint32_t[cols];
-
-        // 6. 指定数据读取位置
-        hsize_t start[2] = {0, 0};
-        hsize_t count[2] = {1, cols};
-        file_space.selectHyperslab(H5S_SELECT_SET, count, start);
-
-        // 7. 读取数据
-        dataset.read(row_data, H5::PredType::NATIVE_UINT, mem_space, file_space);
-        H5Spectrum* data = reinterpret_cast<H5Spectrum*>(row_data);
-
-        quint32 measureTimelength = rows * data->measureTime / 1000;
-        ui->spinBox_timeEnd->setMaximum(measureTimelength / 60);
-
-        emit reporWriteLog(tr("测量时长/s：%1").arg(measureTimelength));
-
-        delete[] row_data;
-        row_data = nullptr;
-
-        group.close();
-        dataset.close();
-        file_space.close();
     }
 }
 
@@ -1048,7 +1059,7 @@ void NeutronYieldStatisticsWindow::on_action_startCalculate_triggered()
     // 去掉最后一个逗号
     if (!detectorList.isEmpty())
         detectorList.chop(1);
-    QString msg = QString("谱仪：%1解析完成").arg(detectorList);
+    QString msg = QString("谱仪%1解析完成").arg(detectorList);
     emit reporWriteLog(msg);
 
     QMessageBox::information(this, tr("提示"), msg);
@@ -1148,7 +1159,7 @@ void NeutronYieldStatisticsWindow::slotSuccess(int detID)
     // 显示909初始计数
     double count909_N0 = dealFile[detID-1]->GetInitialCount();
     if(detID > 0 && detID <= ui->tableWidget->rowCount()){
-        ui->tableWidget->setItem(detID-1, 2, new QTableWidgetItem(QString::number(count909_N0)));
+        ui->tableWidget->setItem(detID-1, 4, new QTableWidgetItem(QString::number(count909_N0)));
 
         //读取灵敏度标定数据，给出中子产额
         QSettings mSettings("./config/NeutronYield.ini", QSettings::IniFormat);
@@ -1159,14 +1170,18 @@ void NeutronYieldStatisticsWindow::slotSuccess(int detID)
             yield = count909_N0 / initN_c * yield_c;
         }
 
-        ui->tableWidget->setItem(detID-1, 3, new QTableWidgetItem(QString::number(yield)));
+        ui->tableWidget->setItem(detID-1, 1, new QTableWidgetItem(QString::number(yield)));
 
-        //获取探测器经纬度
-        //从HDF5加载配置信息
-        HDF5Settings *settings = HDF5Settings::instance();
-        QMap<quint8, DetParameter>& detParameters = settings->detParameters();
-        DetParameter& detParameter = detParameters[detID];
-        myield[detID] = Sensor{detParameter.longitude, detParameter.latitude, yield};
+        //从界面左侧表格读取探测器经纬度(这意味着用户可以离线分析中手动修改各个探测器的坐标位置）
+        QTableWidgetItem* longitudeItem = ui->tableWidget->item(detID-1, 2);
+        QTableWidgetItem* latitudeItem = ui->tableWidget->item(detID-1, 3);
+        double longitude = 0.0;
+        double latitude = 0.0;
+        if(longitudeItem && latitudeItem){
+            longitude = longitudeItem->text().toDouble();
+            latitude = latitudeItem->text().toDouble();
+        }
+        myield[detID] = Sensor{longitude, latitude, yield};
 
         //更新中子产额分布图
         slotUpdate_yieldDis(myield);
@@ -1571,4 +1586,38 @@ void NeutronYieldStatisticsWindow::slotUpdate_yieldDis(QMap<int, Sensor> yields)
     }
     w->setSensors(sensors);
     w->rebuild();
+}
+
+bool NeutronYieldStatisticsWindow::setLonLat(int row, double lon, double lat)
+{
+    // 行号合法性
+    if (row < 0 || row >= ui->tableWidget->rowCount())
+        return false;
+
+    // 范围校验（与你前面的规则一致）
+    if (lon < 0.0 || lon > 360.0)
+        return false;
+    if (lat < 0.0 || lat > 180.0)
+        return false;
+
+    ui->tableWidget->blockSignals(true); // 防止触发 itemChanged
+
+    // 经度（第三列）
+    QTableWidgetItem* lonItem = ui->tableWidget->item(row, 2);
+    if (!lonItem) {
+        lonItem = new QTableWidgetItem;
+        ui->tableWidget->setItem(row, 2, lonItem);
+    }
+    lonItem->setText(QString::number(lon, 'f', 2));
+
+    // 纬度（第四列）
+    QTableWidgetItem* latItem = ui->tableWidget->item(row, 3);
+    if (!latItem) {
+        latItem = new QTableWidgetItem;
+        ui->tableWidget->setItem(row, 3, latItem);
+    }
+    latItem->setText(QString::number(lat, 'f', 2));
+
+    ui->tableWidget->blockSignals(false);
+    return true;
 }

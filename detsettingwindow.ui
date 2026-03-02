@@ -6,7 +6,7 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>1362</width>
+    <width>822</width>
     <height>1087</height>
    </rect>
   </property>
@@ -215,7 +215,7 @@
            </property>
            <property name="minimumSize">
             <size>
-             <width>500</width>
+             <width>450</width>
              <height>0</height>
             </size>
            </property>
@@ -296,6 +296,12 @@
          </property>
          <item>
           <widget class="QScrollArea" name="scrollArea">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Minimum" vsizetype="Expanding">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
            <property name="widgetResizable">
             <bool>true</bool>
            </property>
@@ -304,7 +310,7 @@
              <rect>
               <x>0</x>
               <y>0</y>
-              <width>788</width>
+              <width>298</width>
               <height>903</height>
              </rect>
             </property>

@@ -389,7 +389,7 @@ bool DetSettingWindow::setLonLat(int row, double lon, double lat)
     }
     lonItem->setText(QString::number(lon, 'f', 2));
 
-    // 纬度（第三列）
+    // 纬度（第四列）
     QTableWidgetItem* latItem = ui->tableWidget->item(row, 3);
     if (!latItem) {
         latItem = new QTableWidgetItem;
