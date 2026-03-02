@@ -737,7 +737,7 @@ void CountRateStatisticsWindow::on_action_startMeasure_triggered()
                 // 8. 对数据按秒进行重新分类
                 quint64 totalTemp = 0;//计数
                 double totalTempDeathT = 0;//死时间
-                quint8 step = 1000 / data->measureTime;
+                quint8 step = qMax<quint8>(1, 1000 / data->measureTime);
                 QVector<quint32> spectrum(8192, 0);// 能谱/s
                 quint32 deathTime = 0;// 死时间/s
                 for (int t = 0; t < step; ++t)
@@ -745,12 +745,11 @@ void CountRateStatisticsWindow::on_action_startMeasure_triggered()
                     for (int j=0; j<8192; ++j)
                     {
                         spectrum[j] += data->spectrum[j];
-
                     }
 
                     deathTime += data->deathTime;
                 }
-                i += qMax<quint8>(step, 1);
+                i += step;
 
                 // 9. 能谱统计
                 for (int j=0; j<8192; ++j)
