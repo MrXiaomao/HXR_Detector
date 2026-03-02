@@ -1840,7 +1840,11 @@
     <addaction name="action_yieldCalibration"/>
     <addaction name="separator"/>
     <addaction name="action_waveformMode"/>
+<<<<<<< HEAD
     <addaction name="action_particalMode"/>
+=======
+    <addaction name="action_partical"/>
+>>>>>>> 26822851222f1b350478b3dc690d0d41742dfecc
    </widget>
    <widget class="QMenu" name="menu_W">
     <property name="title">

@@ -327,15 +327,30 @@
           </column>
           <column>
            <property name="text">
-            <string>能谱个数</string>
+            <string>中子产额</string>
            </property>
           </column>
           <column>
            <property name="text">
-            <string>中子产额</string>
+            <string>经度</string>
            </property>
           </column>
-          <item row="0" column="2">
+          <column>
+           <property name="text">
+            <string>纬度</string>
+           </property>
+          </column>
+          <column>
+           <property name="text">
+            <string>初始计数(909keV)</string>
+           </property>
+          </column>
+          <column>
+           <property name="text">
+            <string>能谱个数</string>
+           </property>
+          </column>
+          <item row="0" column="1">
            <property name="text">
             <string/>
            </property>
@@ -346,7 +361,7 @@
             <set>ItemIsSelectable|ItemIsDragEnabled|ItemIsDropEnabled|ItemIsUserCheckable|ItemIsEnabled</set>
            </property>
           </item>
-          <item row="1" column="2">
+          <item row="1" column="1">
            <property name="text">
             <string/>
            </property>

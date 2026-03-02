@@ -42,7 +42,11 @@
           <number>0</number>
          </property>
          <item>
+<<<<<<< HEAD
           <widget class="QWidget" name="widget" native="true">
+=======
+          <widget class="QWidget" name="widget2" native="true">
+>>>>>>> 26822851222f1b350478b3dc690d0d41742dfecc
            <layout class="QGridLayout" name="gridLayout">
             <item row="1" column="1">
              <widget class="QSpinBox" name="spinBox_port">
@@ -160,7 +164,58 @@
               <property name="title">
                <string>全局</string>
               </property>
+<<<<<<< HEAD
               <layout class="QHBoxLayout" name="horizontalLayout_4">
+=======
+              <property name="alignment">
+               <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="2">
+             <widget class="QLineEdit" name="lineEdit">
+              <property name="placeholderText">
+               <string>请输入ip地址</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="0">
+             <widget class="QLabel" name="label_2">
+              <property name="text">
+               <string>接入交换机：</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="0">
+             <widget class="QLabel" name="label_3">
+              <property name="text">
+               <string>对应网口：</string>
+              </property>
+              <property name="alignment">
+               <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="2">
+             <widget class="QSpinBox" name="spinBox">
+              <property name="minimum">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <number>24</number>
+              </property>
+              <property name="value">
+               <number>24</number>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="1" colspan="2">
+             <widget class="QWidget" name="widget4" native="true">
+              <layout class="QHBoxLayout" name="horizontalLayout_3">
+>>>>>>> 26822851222f1b350478b3dc690d0d41742dfecc
                <item>
                 <widget class="QLabel" name="label_11">
                  <property name="minimumSize">
@@ -373,7 +428,7 @@
     </widget>
    </item>
    <item>
-    <widget class="QWidget" name="widget" native="true">
+    <widget class="QWidget" name="widget3" native="true">
      <property name="sizePolicy">
       <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
        <horstretch>0</horstretch>

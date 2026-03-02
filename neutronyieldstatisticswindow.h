@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2026-01-15 21:24:55
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-02-03 14:05:52
+ * @LastEditTime: 2026-03-02 19:39:13
  * @Description: 请填写简介
  */
 #ifndef NEUTRONYIELDSTATISTICSWINDOW_H
@@ -12,6 +12,8 @@
 #include "QGoodWindowHelper"
 #include "qcustomplothelper.h"
 #include "parsedata.h"
+
+class CrasterParabolicHeatmapWidget;
 
 namespace Ui {
 class NeutronYieldStatisticsWindow;
@@ -81,6 +83,21 @@ public slots:
                                std::vector<double> fitcount,
                                std::vector<double>residual);
 
+    /**
+     * @brief 绘制中子产额空间分布
+     * @param sensors 探测器所在经纬度及其对应产额
+     */
+    void slotUpdate_yieldDis(QMap<int, Sensor> yield);
+
+    /**
+     * @brief 设置经纬度
+     * @param row 行号，从0开始计数
+     * @param lon 经度 0-360
+     * @param lat 纬度 0-180
+     * @return
+     */
+    bool setLonLat(int row, double lon, double lat);
+
 private slots:
     // 选取待处理文件，目前只支持处理H5文件
     void on_action_open_triggered();
@@ -106,6 +123,7 @@ private:
     bool mThemeColorEnable = true;
     QColor mThemeColor = QColor(255,255,255);
     class QGoodWindowHelper *mainWindow = nullptr;
+    CrasterParabolicHeatmapWidget *w;
 
     // 中断解析
     std::atomic<bool> mInterrupted = false;
@@ -126,7 +144,9 @@ private:
 
     QMap<int, quint32> mDetectorSpecCount; //存放各个通道中能谱的数据,探测器编号：1~24
     QMap<int, bool> mDealSucess; //存放各个通道中子产额解析是否成功的标志,探测器编号：1~24
+    QMap<int, Sensor> myield; //存放各个通道中子产额。通道编号：1-24，通道经纬度，通道的中子产额
     ParseData* dealFile[24];
+    QString mfilePath; //待解析的文件名
 };
 
 #endif // NEUTRONYIELDSTATISTICSWINDOW_H

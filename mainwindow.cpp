@@ -89,7 +89,11 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     // 继电器
     connect(commHelper, &CommHelper::switcherConnected, this, [=](QString ip){
         mSwitcherConnected = true;
+<<<<<<< HEAD
         qInfo().nospace().noquote() << tr("交换机[%1]已连通").arg(ip);
+=======
+        qInfo().nospace().noquote() << tr("交换机[ %1 ]已连通").arg(ip);
+>>>>>>> 26822851222f1b350478b3dc690d0d41742dfecc
     });
 
     connect(commHelper, &CommHelper::switcherLogged, this, [=](QString ip){
@@ -100,7 +104,11 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
         updateConnectButtonState(true);
         ui->action_powerOn->setEnabled(true);
         ui->action_powerOff->setEnabled(true);
+<<<<<<< HEAD
         qInfo().nospace().noquote() << tr("交换机[%1]已登录").arg(ip);
+=======
+        qInfo().nospace().noquote() << tr("交换机[ %1 ]已登录").arg(ip);
+>>>>>>> 26822851222f1b350478b3dc690d0d41742dfecc
 
         /// 再给设备上电
         if (mEnableAutoMeasure)
@@ -786,7 +794,7 @@ void MainWindow::initUi()
 
         // 更新能谱显示
         updateSpectrumDisplay(index, data.spectrum);
-        qDebug()<<"Det index="<<index<<", sequenceID="<<fullSpectrum.sequence;
+        
         //最快每秒更新一次计数率,这里不考虑丢包带来的计数率修复
         quint32 accuTime = (fullSpectrum.sequence - data.lastSpectrumID) * fullSpectrum.measureTime;//单位ms
         double currenTime = 1.0 * fullSpectrum.sequence * fullSpectrum.measureTime / 1000; //单位s，这里最大数对应2^32/24/3600=49days
@@ -1221,9 +1229,13 @@ void MainWindow::on_action_startMeasure_triggered()
     ui->dateTimeEdit_autoTrigger->setEnabled(false);
     ui->cbb_measureMode->setEnabled(false);
     ui->pushButton_startMeasure->setEnabled(false);
+<<<<<<< HEAD
     ui->pushButton_stopMeasure->setEnabled(true);
     ui->action_waveformMode->setEnabled(false);
     ui->action_particalMode->setEnabled(false);
+=======
+    ui->pushButton_stopMeasure->setEnabled(false);
+>>>>>>> 26822851222f1b350478b3dc690d0d41742dfecc
 
     updateSpectrumPlotSettings();
 
@@ -1419,10 +1431,15 @@ void MainWindow::on_pushButton_startMeasure_clicked()
     // 测量中禁用参数配置
     mDetSettingWindow->setEnabled(false);
 
+<<<<<<< HEAD
     //ui->action_startMeasure->setEnabled(false);
     ui->action_stopMeasure->setEnabled(true);
     ui->action_waveformMode->setEnabled(false);
     ui->action_particalMode->setEnabled(false);
+=======
+    ui->action_startMeasure->setEnabled(false);
+    ui->action_stopMeasure->setEnabled(false);
+>>>>>>> 26822851222f1b350478b3dc690d0d41742dfecc
 }
 
 
@@ -1465,6 +1482,7 @@ void MainWindow::on_pushButton_stopMeasure_clicked()
         if (0 == row)
             continue;
 
+<<<<<<< HEAD
         quint8 index = row;
         commHelper->stopMeasure(index);
         m_selectedChannels.removeOne(index);
@@ -1483,6 +1501,13 @@ void MainWindow::on_pushButton_stopMeasure_clicked()
     }
 
     ui->pushButton_startMeasure->setEnabled(true);
+=======
+    // 非测量中可用参数配置
+    mDetSettingWindow->setEnabled(true);
+
+    ui->action_startMeasure->setEnabled(true);
+    ui->action_stopMeasure->setEnabled(true);
+>>>>>>> 26822851222f1b350478b3dc690d0d41742dfecc
 }
 
 
@@ -1500,9 +1525,13 @@ void MainWindow::on_action_stopMeasure_triggered()
     ui->dateTimeEdit_autoTrigger->setEnabled(true);
     ui->cbb_measureMode->setEnabled(true);
     ui->pushButton_startMeasure->setEnabled(true);
+<<<<<<< HEAD
     ui->pushButton_stopMeasure->setEnabled(false);
     ui->action_waveformMode->setEnabled(true);
     ui->action_particalMode->setEnabled(true);
+=======
+    ui->pushButton_stopMeasure->setEnabled(true);
+>>>>>>> 26822851222f1b350478b3dc690d0d41742dfecc
 
     if (mEnableAutoMeasure)
     {
@@ -1909,12 +1938,13 @@ void MainWindow::updateSpectrumDisplay(int detectorId, const quint32 spectrum[])
                 }
                 i++;
             }
+            int newCh = (i+1)/mergebin;
             double tempX;
             if (m_spectrumPlotSettings[detectorId-1].fitType == 1){
-                tempX = m_spectrumPlotSettings[detectorId-1].c0*i + m_spectrumPlotSettings[detectorId-1].c1;
+                tempX = m_spectrumPlotSettings[detectorId-1].c0*newCh + m_spectrumPlotSettings[detectorId-1].c1;
             } else if (m_spectrumPlotSettings[detectorId-1].fitType == 2){
                 //拟合参数赋值
-                tempX = m_spectrumPlotSettings[detectorId-1].c0*i*i + m_spectrumPlotSettings[detectorId-1].c1*i + m_spectrumPlotSettings[detectorId-1].c2;
+                tempX = m_spectrumPlotSettings[detectorId-1].c0*newCh*newCh + m_spectrumPlotSettings[detectorId-1].c1*newCh + m_spectrumPlotSettings[detectorId-1].c2;
             }
             x << tempX;
             y << mergeCount;
@@ -1935,7 +1965,8 @@ void MainWindow::updateSpectrumDisplay(int detectorId, const quint32 spectrum[])
                 }
                 i++;
             }
-            x << i;
+            int newCh = (i+1)/mergebin;
+            x << newCh;
             y << mergeCount;
         }
     }
@@ -1974,11 +2005,41 @@ void MainWindow::updateCountRateDisplay(int detectorId, double fpgaTime, double 
     // qDebug().nospace()<<"detID="<<detectorId<<", elapsedTime = "<<elapsedSeconds<<", fpgaTime = "<<fpgaTime;
     getGraph(detectorId, false)->addData(fpgaTime, countRate);
 
+<<<<<<< HEAD
     if (customPlot->property("enableAutoScale").toBool())
         customPlot->rescaleAxes(true);
     else if (customPlot->property("enableFixedScale").toBool()){
         // 显示最近300秒
         const int WINDOW = customPlot->property("xAxisFixedRange").toUInt();
+=======
+    // 显示最近300秒
+    const int WINDOW = 300;
+    // 统计总曲线X轴最大值范围
+    double x_max = WINDOW;//getGraph((detectorId-1)/12*12+1, false)->data()->at(0)->key;
+    for (int detectorIndex = (detectorId-1)/12*12+1; detectorIndex <= (detectorId-1)/12*12+12; ++detectorIndex){
+        QCPGraph* tempGraph = getGraph((detectorIndex-1)/12*12+1, false);
+        if (tempGraph->dataCount() <= 0)
+            continue;
+
+        x_max =  qMax(x_max, tempGraph->data()->at(tempGraph->dataCount() - 1)->key);
+    }
+    x_max = qMax(x_max, (double)WINDOW);
+    double x_min = qMax(0.0, x_max - WINDOW);
+    //customPlot->xAxis->setRange(qMax(0.0, fpgaTime*1.0 - WINDOW), fpgaTime + 1);
+    customPlot->xAxis->setRange(x_min, x_max);
+    
+    // y轴范围只由最近300秒的y决定
+    auto range = calcRecentYRange(data.countRateHistory, WINDOW);
+    double y_min = range.first;
+    double y_max = range.second;
+    // 统计总曲线Y轴最大、最小值范围
+    for (int detectorIndex = (detectorId-1)/12*12+1; detectorIndex <= (detectorId-1)/12*12+12; ++detectorIndex){
+        DetectorData &data = m_detectorData[detectorIndex];
+        auto range = calcRecentYRange(data.countRateHistory, WINDOW);
+        y_min = qMin(y_min, range.first);
+        y_max = qMax(y_max, range.second);
+    }
+>>>>>>> 26822851222f1b350478b3dc690d0d41742dfecc
 
         // 统计总曲线X轴最大值范围
         double x_max = getGraph((detectorId-1)/12*12+1, false)->data()->at(0)->key;

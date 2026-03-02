@@ -192,7 +192,11 @@ void DataProcessor::sendCmdToSocket(CommandItem cmdItem) const
     if (mTcpSocket && mTcpSocket->isOpen()){
         mTcpSocket->write(cmdItem.data);
         mTcpSocket->waitForBytesWritten();
+<<<<<<< HEAD
         ::QThread::msleep(5);// 每条指令发送完成暂停5毫秒
+=======
+        ::QThread::msleep(5);
+>>>>>>> 26822851222f1b350478b3dc690d0d41742dfecc
 
         qDebug().noquote()<< QString("[%1]Send HEX: %2 [%3]")
                                   .arg(mIndex)

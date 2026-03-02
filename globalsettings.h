@@ -676,6 +676,25 @@ typedef struct _DetParameter{
     //探测器ID
     quint8 id;
 
+<<<<<<< HEAD
+=======
+    //经度：0-360
+    double longitude;
+
+    //纬度：0-180
+    double latitude;
+
+    // 全局
+    //心跳时间(秒)
+    quint32 pluseCheckTime;
+    //交换机地址
+    //char switcherIp[IP_LENGTH];
+
+    //时间服务器
+    //IP地址
+    char timerSrvIp[IP_LENGTH];
+
+>>>>>>> 26822851222f1b350478b3dc690d0d41742dfecc
     //基本设置
     //增益
     /*
@@ -732,6 +751,16 @@ typedef struct _DetParameter{
     quint16 highVoltageOutLevel;
 
     _DetParameter(){
+<<<<<<< HEAD
+=======
+        longitude = 0.0;
+
+        latitude = 0.0;
+
+        // 全局
+        //心跳时间(秒)
+        pluseCheckTime = 10;
+>>>>>>> 26822851222f1b350478b3dc690d0d41742dfecc
         //交换机地址
         // memset(switcherIp, 0, sizeof(switcherIp));
         // qstrcpy(switcherIp, "192.168.1.253");
@@ -817,7 +846,7 @@ public:
 
     // 定义FullSpectrum的HDF5复合类型
     H5::CompType createH5SpectrumType();
-    H5::CompType createCfgDataType();
+    static H5::CompType createCfgDataType();
 
     void createH5Config();
     void createH5Spectrum(QString filePath);
