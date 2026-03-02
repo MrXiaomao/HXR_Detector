@@ -194,11 +194,14 @@
           <property name="sizeAdjustPolicy">
            <enum>QAbstractScrollArea::AdjustIgnored</enum>
           </property>
+          <property name="editTriggers">
+           <set>QAbstractItemView::NoEditTriggers</set>
+          </property>
           <property name="selectionMode">
-           <enum>QAbstractItemView::MultiSelection</enum>
+           <enum>QAbstractItemView::ExtendedSelection</enum>
           </property>
           <property name="selectionBehavior">
-           <enum>QAbstractItemView::SelectItems</enum>
+           <enum>QAbstractItemView::SelectRows</enum>
           </property>
           <property name="showGrid">
            <bool>false</bool>
@@ -1837,7 +1840,7 @@
     <addaction name="action_yieldCalibration"/>
     <addaction name="separator"/>
     <addaction name="action_waveformMode"/>
-    <addaction name="action_partical"/>
+    <addaction name="action_particalMode"/>
    </widget>
    <widget class="QMenu" name="menu_W">
     <property name="title">
@@ -2230,7 +2233,7 @@
   </action>
   <action name="action_waveformMode">
    <property name="checkable">
-    <bool>true</bool>
+    <bool>false</bool>
    </property>
    <property name="checked">
     <bool>false</bool>
@@ -2246,8 +2249,14 @@
    <property name="checked">
     <bool>true</bool>
    </property>
+   <property name="enabled">
+    <bool>true</bool>
+   </property>
    <property name="text">
     <string>能谱模式</string>
+   </property>
+   <property name="autoRepeat">
+    <bool>false</bool>
    </property>
   </action>
   <action name="action_yieldCalibration">
@@ -2262,7 +2271,7 @@
     <enum>QAction::NoRole</enum>
    </property>
   </action>
-  <action name="action_partical">
+  <action name="action_particalMode">
    <property name="text">
     <string>粒子测量</string>
    </property>

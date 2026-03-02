@@ -750,7 +750,7 @@ void CountRateStatisticsWindow::on_action_startMeasure_triggered()
 
                     deathTime += data->deathTime;
                 }
-                i += step;
+                i += qMax<quint8>(step, 1);
 
                 // 9. 能谱统计
                 for (int j=0; j<8192; ++j)

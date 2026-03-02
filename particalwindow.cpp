@@ -117,3 +117,13 @@ void ParticalWindow::on_pushButton_stop_clicked()
     ui->pushButton_stop->setEnabled(false);
 }
 
+
+#include <QCloseEvent>
+void ParticalWindow::closeEvent(QCloseEvent *event)
+{
+    if (!ui->pushButton_start->isEnabled()){
+        event->ignore();
+        QMessageBox::warning(this, tr("提示"), tr("测量过程中，禁止窗口关闭！"), QMessageBox::Ok, QMessageBox::Ok);
+        return;
+    }
+}

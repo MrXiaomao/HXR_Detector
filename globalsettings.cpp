@@ -105,7 +105,7 @@ void GlobalSettings::setRealtimeSave(bool realtime)
 }
 
 //////////////////////////////
-HDF5Settings::HDF5Settings(QObject *parent) : QObject(parent)
+HDF5Settings::HDF5Settings(QObject *parent) : QObject(parent), mPluseTime(10)
 {
     //初始化数据类型
     mCompDataType = createCfgDataType();
@@ -194,8 +194,6 @@ void HDF5Settings::writeDetParStrAttr(H5::DataSet& dataset)
 {
     // 给每个字段写解释（多个键）
     writeStrAttr(dataset, "id",   "通道号(0~23)");
-    writeStrAttr(dataset, "checkTime", "心跳时间(秒)");
-    writeStrAttr(dataset, "timerSrvIp", "授时服务器 IP 地址");
     writeStrAttr(dataset, "gain", "增益(0.08~10.0)");
     writeStrAttr(dataset, "deathT", "探测器死时间设定(*10ns)");
     writeStrAttr(dataset, "Threshold", "触发阈值，低于阈值的波形不计入能谱");
@@ -263,7 +261,9 @@ void HDF5Settings::createH5Config()
 {
     if (QFileInfo::exists(DEFAULT_HDF5_FILENAME))
     {
-        mfH5Setting = new H5::H5File(DEFAULT_HDF5_FILENAME, H5F_ACC_RDWR);
+        mfH5Setting = new H5::H5File(DEFAULT_HDF5_FILENAME, H5F_ACC_RDWR | H5F_ACC_SWMR_WRITE);
+        if (!mfH5Setting)
+            mfH5Setting = new H5::H5File(DEFAULT_HDF5_FILENAME, H5F_ACC_RDONLY | H5F_ACC_SWMR_READ);
         H5::Group cfgGroup = mfH5Setting->openGroup("Config");
         H5::DataSet globalDataset = cfgGroup.openDataSet("Detector");
         H5::DataSpace file_space = globalDataset.getSpace();
@@ -503,18 +503,6 @@ H5::CompType HDF5Settings::createCfgDataType()
     H5::StrType ipStrType(H5::PredType::C_S1, IP_LENGTH);
 
     type.insertMember("id", HOFFSET(DetParameter, id), H5::PredType::NATIVE_UINT8);
-
-    // 全局
-    {
-        //心跳时间(秒)
-        type.insertMember("checkTime", HOFFSET(DetParameter, pluseCheckTime), H5::PredType::NATIVE_INT);
-        //交换机地址
-        //type.insertMember("switcherIp", HOFFSET(DetParameter, switcherIp), ipStrType);
-
-        //时间服务器
-        //IP地址
-        type.insertMember("timerSrvIp", HOFFSET(DetParameter, timerSrvIp), ipStrType);
-    }
 
     //基本设置
     {

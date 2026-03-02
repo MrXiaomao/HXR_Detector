@@ -40,10 +40,6 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
         delegate->insertItem(QString("%1").arg(peerAddress));
     });
 
-    QRegExp regExp(R"(^((25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)\.){3}(25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)$)");
-    regExp.setPatternSyntax(QRegExp::RegExp2); // 启用Perl兼容语法（支持\d等元字符.exactMatch(str);）
-    ui->lineEdit_timerSrvIp->setValidator(new QRegExpValidator(regExp, ui->lineEdit_timerSrvIp));
-
     connect(this, &DetSettingWindow::disconnectPeerConnection, this, [=](QString peerAddress, quint16 peerPort){
         delegate->removeItem(QString("%1:%2").arg(peerAddress).arg(peerPort));
     });
@@ -367,13 +363,6 @@ void DetSettingWindow::saveAt(quint8 detId)
     QMap<quint8, DetParameter>& detParameters = settings->detParameters();
     DetParameter& detParameter = detParameters[detId];
 
-    detParameter.pluseCheckTime = static_cast<quint32>(ui->spinBox_pluseCheckTime->value());
-
-    //时间服务器
-    //IP地址
-    memset(detParameter.timerSrvIp, 0, IP_LENGTH);
-    strcpy(detParameter.timerSrvIp, ui->lineEdit_timerSrvIp->text().toStdString().c_str());
-
     //基本设置
     //增益，获取文本转double
     detParameter.gain = ui->comboBox_gain->currentText().toDouble();
@@ -430,13 +419,6 @@ void DetSettingWindow::loadAt(quint8 detId)
     HDF5Settings *settings = HDF5Settings::instance();
     QMap<quint8, DetParameter>& detParameters = settings->detParameters();
     DetParameter& detParameter = detParameters[detId];
-
-    //心跳指令间隔
-    ui->spinBox_pluseCheckTime->setValue(detParameter.pluseCheckTime);
-
-    //时间服务器
-    //IP地址
-    ui->lineEdit_timerSrvIp->setText(QString::fromStdString(detParameter.timerSrvIp));
 
     //基本设置
     //增益, 获取文本转double

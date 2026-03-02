@@ -676,16 +676,6 @@ typedef struct _DetParameter{
     //探测器ID
     quint8 id;
 
-    // 全局
-    //心跳时间(秒)
-    quint32 pluseCheckTime;
-    //交换机地址
-    //char switcherIp[IP_LENGTH];
-
-    //时间服务器
-    //IP地址
-    char timerSrvIp[IP_LENGTH];
-
     //基本设置
     //增益
     /*
@@ -742,17 +732,9 @@ typedef struct _DetParameter{
     quint16 highVoltageOutLevel;
 
     _DetParameter(){
-        // 全局
-        //心跳时间(秒)
-        pluseCheckTime = 10;
         //交换机地址
         // memset(switcherIp, 0, sizeof(switcherIp));
         // qstrcpy(switcherIp, "192.168.1.253");
-
-        //时间服务器
-        //IP地址
-        memset(timerSrvIp, 0, sizeof(timerSrvIp));
-        qstrcpy(timerSrvIp, "192.168.0.30");
 
         //基本设置
         //增益
@@ -767,7 +749,7 @@ typedef struct _DetParameter{
         //网络设置
         //IP地址
         memset(det_Ip_port, 0, sizeof(det_Ip_port));
-        qstrcpy(det_Ip_port, "0.0.0.0:6000");
+        qstrcpy(det_Ip_port, "0.0.0.0");
 
         //能谱设置
         //能谱刷新时间,单位ms
@@ -808,6 +790,8 @@ typedef struct _DetParameter{
 class HDF5Settings: public QObject
 {
     Q_OBJECT
+
+    Q_PROPERTY(quint32 pluseTime READ pluseTime WRITE setPluseTime NOTIFY pluseTimeChanged FINAL)
 public:
     explicit HDF5Settings(QObject *parent = nullptr);
     ~HDF5Settings();
@@ -868,6 +852,18 @@ public:
                                   const std::string& datasetName,
                                   std::function<void(const H5Spectrum&)> callback);
 
+    // Getter函数
+    quint32 pluseTime() const { return mPluseTime; }
+
+    // Setter函数（修改属性并发射信号）
+    void setPluseTime(quint32 newValue) {
+        if (mPluseTime != newValue) {
+            mPluseTime = newValue;
+            emit pluseTimeChanged(); // 通知属性变化
+        }
+    }
+
+    Q_SIGNAL void pluseTimeChanged(); // 信号声明
     Q_SIGNAL void sigSpectrum(const H5Spectrum&);
 
 private:
@@ -879,6 +875,7 @@ private:
     H5::CompType mSpectrumDataType;//复合数据类型
     QMap<quint8, DetParameter> mMapDetParameter;
     QMutex mWrite_mutex;
+    quint32 mPluseTime = 10;//心跳时间(秒)
 };
 
 #endif // GLOBALSETTINGS_H

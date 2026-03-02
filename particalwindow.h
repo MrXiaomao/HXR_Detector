@@ -18,6 +18,8 @@ public:
     explicit ParticalWindow(QWidget *parent = nullptr);
     ~ParticalWindow();
 
+    virtual void closeEvent(QCloseEvent *event) override;
+
 private slots:
     void on_pushButton_start_clicked();
 

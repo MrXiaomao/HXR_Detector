@@ -43,16 +43,32 @@ void CommHelper::initSocket()
 {
     this->mTcpServer = new TcpAgentServer();
     connect(this->mTcpServer, &TcpAgentServer::newConnection, this, [=](qintptr socketDescriptor){
-        QMutexLocker locker(&mPeersMutex);
         QTcpSocket* connection = new QTcpSocket(this);
         connection->setSocketDescriptor(socketDescriptor);
         connection->setSocketOption(QAbstractSocket::KeepAliveOption, QVariant(true)); // 启用保活
+
+        QString peerAddress = connection->peerAddress().toString();
+        quint16 peerPort = connection->peerPort();
+        qDebug().nospace() << "新客户端连接，地址：" << peerAddress << ", 端口：" << peerPort;
+        connection->setProperty("peerAddress", peerAddress);
+        connection->setProperty("peerPort", peerPort);
+        connection->setProperty("socketDescriptor", socketDescriptor);
+        QMetaObject::invokeMethod(this, "connectPeerConnection",
+                                  Qt::QueuedConnection,
+                                  Q_ARG(QString, peerAddress),
+                                  Q_ARG(quint16, peerPort));
+
+        {
+            QMutexLocker locker(&mPeersMutex);
+            this->mConnectionPeers.push_back(connection);
+        }
+
         //给新上线客户端分配数据处理器
         qint8 index = allocDataProcessor(connection);
         if (index < 0)
         {
-            connection->close();
-            delete connection;
+            //connection->close();
+            //delete connection;
             return;
         }
 
@@ -80,11 +96,10 @@ void CommHelper::initSocket()
             qDebug() << "设置保活参数失败，错误码：" << WSAGetLastError();
         }
 
-        this->mConnectionPeers.push_back(connection);
-
         connect(connection, &QAbstractSocket::disconnected, this, [=](){
             QString peerAddress = connection->property("peerAddress").toString();
             quint16 peerPort = connection->property("peerPort").toUInt();
+            qDebug().nospace() << "客户端断开连接，地址：" << peerAddress << ", 端口：" << peerPort;
 
             //根据配置解析是哪一路探测器下线了
             qint8 index = indexOfAddress(connection->socketDescriptor());// peerAddress, peerPort);
@@ -92,16 +107,21 @@ void CommHelper::initSocket()
             {
                 handleDetectorDisconnection(index);
             }
+            //移除连接列表
+            {
+                QMutexLocker locker(&mPeersMutex);
+                mConnectionPeers.removeOne(connection);
+            }
+            connection->deleteLater();
+
+            // 1. 触发 disconnectPeerConnection 信号
+            QMetaObject::invokeMethod(this, "disconnectPeerConnection",
+                                      Qt::QueuedConnection,
+                                      Q_ARG(QString, peerAddress),
+                                      Q_ARG(quint16, peerPort));
         });
 
-        QString peerAddress = connection->peerAddress().toString();
-        quint16 peerPort = connection->peerPort();
-        connection->setProperty("peerAddress", peerAddress);
-        connection->setProperty("peerPort", peerPort);
-        connection->setProperty("socketDescriptor", socketDescriptor);
         connection->setProperty("detectorIndex", index);
-
-        QMetaObject::invokeMethod(this, "connectPeerConnection", Qt::QueuedConnection, Q_ARG(QString, peerAddress), Q_ARG(quint16, peerPort));
         QMetaObject::invokeMethod(this, "detectorOnline", Qt::QueuedConnection, Q_ARG(quint8, index));
     });
 }
@@ -331,22 +351,26 @@ void CommHelper::initDataProcessor()
 
             for (int i=0; i<130; ++i)
             {
+                qDebug() << data.left(8).toHex(' ');
                 bool ok;
                 quint16 utc = data.mid(i*8, 2).toHex().toUInt(&ok, 16); // utc时间戳
-                quint16 msecond = 65536*1000/data.mid(i*8+2, 2).toHex().toUInt(&ok, 16); // 毫秒
+                quint16 msecond = data.mid(i*8+2, 2).toHex().toUInt(&ok, 16)*1000/65536; // 毫秒
                 quint16 deathT = data.mid(i*8+4, 2).toHex().toUShort(&ok, 16); // 死时间
                 quint16 _type = data.mid(i*8+6, 2).toHex().toUShort(&ok, 16); // 粒子类型
                 quint16 typeFlag = (_type & 0x8000) >> 15;// 类型 （0：γ；1：α）
                 quint16 amplitude = _type & 0x7FFF; // 幅度
 
                 // 保存时间、能量、粒子类型
-                QDateTime now = QDateTime::currentDateTimeUtc();
-                quint64 currUtc = now.toSecsSinceEpoch();
-                currUtc = currUtc & 0xffffffffffff0000; // 只保留高16位
-                currUtc = currUtc | utc; // 合成新的utc时间戳
-                currUtc = currUtc*1000 + msecond; // 转成毫秒时间戳
-                QDateTime tm = QDateTime::fromMSecsSinceEpoch(currUtc, Qt::TimeSpec::UTC);
-                tm = tm.addSecs(8*3600); // 转成北京时间
+                // 读取系统当前UTC时间戳（从1900年1月1日00：00：00开始计算，表示至今的整数秒数）
+                QDateTime epoch(QDate(1900, 1, 1), QTime(0, 0, 0), Qt::UTC);
+                quint64 tmUtc = epoch.secsTo(QDateTime::currentDateTimeUtc()); // UTC时间戳（1900）
+                // 获取UTC时间高16bit
+                tmUtc = tmUtc & 0xffffffffffff0000;
+                // 将新的高16位加上去
+                tmUtc = tmUtc | utc; // 合成新的utc时间戳
+                // UTC1900转UTC1970-Unix时间戳，也就是从1970年1月1日00：00：00开始计算的整数秒数
+                quint64 tmUnix = tmUtc - 2208988800; // UTC时间戳（1970）-unix时间戳
+                QDateTime tm = QDateTime::fromMSecsSinceEpoch(tmUnix*1000 + msecond);
 
                 if (mDetectorFileProcessor[processor->index()]->isOpen()){
                     QString line = QString("%1,%2,%3,%4\n")
@@ -369,9 +393,17 @@ void CommHelper::initDataProcessor()
             DataProcessor* processor = qobject_cast<DataProcessor*>(sender());
                 bool ok;
                 quint32 utc = data.mid(6, 4).toHex().toUInt(&ok, 16); // utc时间戳
-                quint32 second = data.mid(10, 4).toHex().toUInt(&ok, 16); // 小数秒
+                quint32 msecond = data.mid(10, 4).toHex().toUInt(&ok, 16); // 小数秒
 
-                QDateTime tm = QDateTime::fromSecsSinceEpoch(utc, Qt::TimeSpec::UTC, second).addSecs(8*3600);
+                QDateTime epoch(QDate(1900, 1, 1), QTime(0, 0, 0), Qt::UTC);
+                quint64 tmUtc = epoch.secsTo(QDateTime::currentDateTimeUtc()); // UTC时间戳（1900）
+                // 获取UTC时间高16bit
+                tmUtc = tmUtc & 0xffffffffffff0000;
+                // 将新的高16位加上去
+                tmUtc = tmUtc | utc; // 合成新的utc时间戳
+                // UTC转Unix时间戳，也就是从1970年1月1日00：00：00开始计算的整数秒数
+                quint64 tmUnix = tmUtc - 2208988800; // UTC时间戳（1970）-unix时间戳
+                QDateTime tm = QDateTime::fromMSecsSinceEpoch(tmUnix*1000 + msecond);
 
                 // 上报时间戳信息
                 emit reportTimestampe(index, tm);
@@ -380,7 +412,7 @@ void CommHelper::initDataProcessor()
         connect(detectorDataProcessor, &DataProcessor::reportParamterData, this, [=](QByteArray& data){
             DataProcessor* processor = qobject_cast<DataProcessor*>(sender());
 
-            // 上报时间戳信息
+            // 上报配置参数信息
             emit reportParamterData(index, data);
         });
     }
@@ -420,6 +452,7 @@ qint8 CommHelper::allocDataProcessor(QTcpSocket *socket)
 {
     mExtendTimeSynModule.reload();
     QString peerAddress = socket->peerAddress().toString();
+    quint32 peerPort = socket->peerPort();
     if (peerAddress == mExtendTimeSynModule.ip){
         //时钟同步模块不分配数据处理器
         socket->setProperty("isTimeSynModule", true);
@@ -441,6 +474,19 @@ qint8 CommHelper::allocDataProcessor(QTcpSocket *socket)
 
     HDF5Settings *settings = HDF5Settings::instance();
     QMap<quint8, DetParameter>& detParameters = settings->detParameters();
+
+    // IP+PORT匹配
+    {
+        for (int index = 1; index <= DET_NUM; ++index){
+            DetParameter& detParameter = detParameters[index];
+            QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
+            if (detectorAddress == QString("%1:%2").arg(peerAddress).arg(peerPort) &&
+                mDetectorDataProcessor[index]->isFreeSocket()){
+                mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
+                return index;
+            }
+        }
+    }
 
     // IP匹配
     {
@@ -866,6 +912,15 @@ void CommHelper::stopMeasure(quint8 index/* = 0*/)
                     mFileFlushInfo.remove(detIndex);
                 }
             });
+
+            //关闭网络存储文件
+            if (mNetRawFileProcessor.contains(index)){
+                QFile* file = mNetRawFileProcessor[index];
+                file->flush();
+                file->close();
+                file->deleteLater();
+                mNetRawFileProcessor.remove(index);
+            }
         }
     }
 }
@@ -979,15 +1034,6 @@ void CommHelper::handleDetectorDisconnection(quint8 index)
             continue;
         }
 
-        QString peerAddress = connection->property("peerAddress").toString();
-        quint16 peerPort = connection->property("peerPort").toUInt();
-
-        // 1. 触发 disconnectPeerConnection 信号
-        QMetaObject::invokeMethod(this, "disconnectPeerConnection",
-            Qt::QueuedConnection,
-            Q_ARG(QString, peerAddress),
-            Q_ARG(quint16, peerPort));
-
         // 2. 触发 detectorOffline 信号
         QMetaObject::invokeMethod(this, "detectorOffline",
             Qt::QueuedConnection,
@@ -996,16 +1042,12 @@ void CommHelper::handleDetectorDisconnection(quint8 index)
         // 3. 取消数据处理器关联
         freeDataProcessor(connection);
 
-        // 4. 删除连接并从列表中移除
-        connection->deleteLater();
-        it = mConnectionPeers.erase(it);
-
-        qInfo().nospace() << "谱仪[#" << index << "]心跳超时，已执行断开连接处理";
+        qInfo().nospace() << "谱仪[#" << index << "]下线，已执行断开连接处理";
         return; // 找到并处理完成，退出
     }
     
     // 如果没有找到对应的连接，仍然触发 offline 信号（可能连接已经断开）
-    qWarning().nospace() << "谱仪[#" << index << "]心跳超时，但未找到对应的TCP连接";
+    qWarning().nospace() << "谱仪[#" << index << "]下线，但未找到对应的TCP连接";
     QMetaObject::invokeMethod(this, "detectorOffline", 
         Qt::QueuedConnection, 
         Q_ARG(quint8, index));

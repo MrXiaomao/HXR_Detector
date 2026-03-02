@@ -235,10 +235,7 @@ void DataProcessor::restartTempTimeout() {
     //心跳超时时间应该是一个全局信息，不需要单独存放，暂时采用通道1的心跳时间进行存储。
     //从HDF5加载配置信息
     HDF5Settings *settings = HDF5Settings::instance();
-    QMap<quint8, DetParameter>& detParameters = settings->detParameters();
-    DetParameter& detParameter = detParameters[mIndex];
-
-    mTempTimeoutTimer.start(detParameter.pluseCheckTime*1000);
+    mTempTimeoutTimer.start(settings->pluseTime()*1000);
 }
 
 /**
@@ -319,17 +316,11 @@ void DataProcessor::inputSpectrumData(quint8 no, QByteArray& data){
             H5Spectrum h5Spectrum = FullSpectoH5Spec(fullSpectrumCopy);
             HDF5Settings::instance()->writeH5Spectrum(mIndex, h5Spectrum);
 
-            if(spectrumSeq%1000 == 0){
-                qDebug() << "Get a full spectrum, SpectrumID:" << spectrumSeq
+            //if(spectrumSeq%1000 == 0){
+                qDebug().nospace() << "谱仪[#" << mIndex << "]" << "Get a full spectrum, SpectrumID:" << spectrumSeq
                      << ", specMeasureTime(ms):" << fullSpectrum->measureTime
                      << ", deathTime(*10ns):" << fullSpectrum->deathTime;
-            }
-            if(spectrumSeq==297)
-            {
-                qDebug() << "Get a full spectrum, SpectrumID:" << spectrumSeq
-                         << ", specMeasureTime(ms):" << fullSpectrum->measureTime
-                         << ", deathTime(*10ns):" << fullSpectrum->deathTime;
-            }
+            //}
             // m_parseData->mergeSpecTime_online(*fullSpectrum);
 
             // 7. 清理已完成的能谱数据（释放内存，可选：若需保留历史数据可注释）

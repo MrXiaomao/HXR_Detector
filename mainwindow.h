@@ -165,7 +165,7 @@ private slots:
     void on_checkBox_continueMeasure_toggled(bool toggled);
     void on_cbb_measureMode_activated(int index);
     void on_cbb_energyCalibration_toggled(bool checked);
-    void on_action_partical_triggered();
+    void on_action_particalMode_triggered();
     // 计数率统计
     void on_action_countRateStatistics_triggered();
 
@@ -204,11 +204,12 @@ private:
     QTimer *mMeasureCountdownTimer = nullptr;
     int mRemainingCountdown = 0;  // 剩余倒计时（秒）
     int mTotalCountdown = 0;  // 总倒计时时间（秒），用于计算已测量时长
+    //bool mContinueMeasure = false; // 是否继续测量模式
 
     // 自动化测量延时器
     QTimer *mAutoMeasureDelayTimer = nullptr;
-    // 自动化测量计时器
-    QElapsedTimer *mAutoMeasureCountTimer = nullptr;
+    // 连续测量计时器
+    QElapsedTimer *mContinueMeasureTimer = nullptr;
 
     // 交换机连接状态管理
     bool mSwitcherLogged = false;  // 交换机是否已登录

@@ -392,12 +392,23 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
             }
         }
 
-        if (!findNaul && cachePool.size()>12){
-            /*包头/包尾不对*/
-            // qDebug() << "Invalid2: " << cachePool.left(4).toHex(' ');
+        if (findNaul){
+            //已经处理过完整的数据包
+
+            //继续判断剩下的数据包
+            if (cachePool.size() > 12)
+                continue;
+            else
+                break;
+        }
+        else if (cachePool.size() >= 12){
+            //没有找到有效包头
 
             /*继续寻找包头,删除包头继续寻找*/
             cachePool.remove(0, 1);
+            continue;
+        }
+        else{
             break;
         }
     }
@@ -432,7 +443,10 @@ void CommandAdapter::sendGain(bool isRead, double gain){
 
     askCurrentCmd[9] = (gainHex & 0xFF);
     
-    pushCmd({QString("增益配置：%1").arg(QString::number(gain)), askCurrentCmd});
+    if (isRead)
+        pushCmd({QString("读：增益配置：%1").arg(QString::number(gain)), askCurrentCmd});
+    else
+        pushCmd({QString("写：增益配置：%1").arg(QString::number(gain)), askCurrentCmd});
 }
 
 //死时间配置(*10ns)
@@ -443,7 +457,10 @@ void CommandAdapter::sendDeathTime(bool isRead, quint8 deathTime){
     else
         askCurrentCmd[3] = 0x0F;
     askCurrentCmd[9] = (deathTime & 0xFF);
-    pushCmd({QString("死时间配置：%1ns").arg(deathTime*10), askCurrentCmd});
+    if (isRead)
+        pushCmd({QString("读：死时间值(*10ns)").arg(deathTime*10), askCurrentCmd});
+    else
+        pushCmd({QString("写：死时间值：%1ns").arg(deathTime*10), askCurrentCmd});
 }
 
 //触发阈值
@@ -455,7 +472,10 @@ void CommandAdapter::sendTriggerThold(bool isRead, quint16 triggerThold){
         askCurrentCmd[3] = 0x0F;
     askCurrentCmd[8] = ((triggerThold >> 8) & 0xFF); // 高字节
     askCurrentCmd[9] = (triggerThold & 0xFF);        // 低字节
-    pushCmd({QString("触发阈值配置：%1").arg(triggerThold), askCurrentCmd});
+    if (isRead)
+        pushCmd({QString("读：触发阈值").arg(triggerThold), askCurrentCmd});
+    else
+        pushCmd({QString("写：触发阈值：%1").arg(triggerThold), askCurrentCmd});
 }
 
 /*********************************************************
@@ -494,8 +514,15 @@ void CommandAdapter::sendWaveformMode(bool isRead, TriggerMode triggerMode, quin
     }
 
     QString mode = (triggerMode == tmTimer) ? "定时触发模式" : "正常触发模式";
-    QString msg = QString("波形基本配置，触发模式：%1，波形长度：%2").arg(mode).arg(lengStr);
-    pushCmd({msg, askCurrentCmd});
+    if (isRead)
+    {
+        QString msg = QString("读：波形基本配置，触发模式和波形长度值").arg(mode).arg(lengStr);
+        pushCmd({msg, askCurrentCmd});
+    }
+    else{
+        QString msg = QString("写：波形基本配置，触发模式：%1，波形长度：%2").arg(mode).arg(lengStr);
+        pushCmd({msg, askCurrentCmd});
+    }
 }
 
 /*********************************************************
@@ -513,7 +540,11 @@ void CommandAdapter::sendSprectnumRefreshTimelength(bool isRead, quint32 spectru
         askCurrentCmd[8] = (spectrumRefreshTime >> 8)  & 0xFF;
         askCurrentCmd[9] = (spectrumRefreshTime)       & 0xFF;
     }
-    pushCmd({QString("能谱刷新时间:%1ms").arg(spectrumRefreshTime), askCurrentCmd});
+
+    if (isRead)
+        pushCmd({QString("读：能谱刷新时间(ms)").arg(spectrumRefreshTime), askCurrentCmd});
+    else
+        pushCmd({QString("写：能谱刷新时间:%1ms").arg(spectrumRefreshTime), askCurrentCmd});
 }
 
 /*********************************************************
@@ -535,7 +566,11 @@ void CommandAdapter::sendTrapTimeConst(bool isRead, quint16 c1, quint16 c2){
         askCurrentCmd[8] = ((c2 >> 8) & 0xFF);
         askCurrentCmd[9] = (c2 & 0xFF);
     }
-    pushCmd({QString("梯形成型时间常数配置:d1=%1，d2=%2").arg(c1).arg(c2), askCurrentCmd});
+
+    if (isRead)
+        pushCmd({QString("读：梯形成型时间常数").arg(c1).arg(c2), askCurrentCmd});
+    else
+        pushCmd({QString("写：梯形成型时间常数:d1=%1，d2=%2").arg(c1).arg(c2), askCurrentCmd});
 }
 
 //上升沿、平顶、下降沿长度配置
@@ -549,7 +584,11 @@ void CommandAdapter::sendRisePeakFallPoints(bool isRead, quint8 rise, quint8 pea
         askCurrentCmd[8] = peak;
         askCurrentCmd[9] = fall;
     }
-    pushCmd({QString("上升沿=%1，平顶=%2，下降沿=%3").arg(rise).arg(peak).arg(fall), askCurrentCmd});
+
+    if (isRead)
+        pushCmd({QString("读：上升沿值，平顶值，下降沿值").arg(rise).arg(peak).arg(fall), askCurrentCmd});
+    else
+        pushCmd({QString("写：上升沿=%1，平顶=%2，下降沿=%3").arg(rise).arg(peak).arg(fall), askCurrentCmd});
 }
 
 //梯形成型使能配置
@@ -561,7 +600,10 @@ void CommandAdapter::sendTrapShapeEnable(bool isRead, TrapShapeEnable trapShapeE
         askCurrentCmd[3] = 0x0F;
         askCurrentCmd[9] = trapShapeEnable;
     }
-    pushCmd({QString("梯形成型使能状态：%1").arg(trapShapeEnable == teClose ? "关闭" : "打开"), askCurrentCmd});
+    if (isRead)
+        pushCmd({QString("读：梯形成型使能状态").arg(trapShapeEnable == teClose ? "关闭" : "打开"), askCurrentCmd});
+    else
+        pushCmd({QString("写：梯形成型使能状态：%1").arg(trapShapeEnable == teClose ? "关闭" : "打开"), askCurrentCmd});
 }
 
 /*********************************************************
@@ -586,7 +628,11 @@ void CommandAdapter::sendHighVolgateOutLevel(bool isRead, quint16 highVolgateOut
         askCurrentCmd[8] = ((DAC >> 8) & 0xFF);
         askCurrentCmd[9] = (DAC & 0xFF);
     }
-    pushCmd({QString("高压电平配置：%1V").arg(highVolgateOutLevel), askCurrentCmd});
+
+    if (isRead)
+        pushCmd({QString("读：高压电平值").arg(highVolgateOutLevel), askCurrentCmd});
+    else
+        pushCmd({QString("写：高压电平值：%1V").arg(highVolgateOutLevel), askCurrentCmd});
 }
 
 // 高压输出使能配置
@@ -598,7 +644,11 @@ void CommandAdapter::sendHighVolgateOutLevelEnable(bool isRead, HighVolgateOutLe
         askCurrentCmd[3] = 0x0F;
         askCurrentCmd[9] = highVolgateOutLevelEnable;
     }
-    pushCmd({QString("高压输出使能状态：%1").arg(highVolgateOutLevelEnable == hvClose ? "关闭" : "打开"), askCurrentCmd});
+
+    if (isRead)
+        pushCmd({QString("读：高压输出使能状态").arg(highVolgateOutLevelEnable == hvClose ? "关闭" : "打开"), askCurrentCmd});
+    else
+        pushCmd({QString("写：高压输出使能状态：%1").arg(highVolgateOutLevelEnable == hvClose ? "关闭" : "打开"), askCurrentCmd});
 }
 
 /*********************************************************
@@ -612,7 +662,11 @@ void CommandAdapter::sendWorkMode(bool isRead, WorkMode workMode){
         askCurrentCmd[3] = 0x0F;
         askCurrentCmd[9] = workMode;
     }
-    pushCmd({QString("工作模式：%1").arg(workMode == wmSpectrum ? "能谱模式" : (workMode == wmWaveform ? "波形模式" : "粒子模式")), askCurrentCmd});
+
+    if (isRead)
+        pushCmd({QString("读：工作模式").arg(workMode == wmSpectrum ? "能谱模式" : (workMode == wmWaveform ? "波形模式" : "粒子模式")), askCurrentCmd});
+    else
+        pushCmd({QString("写：工作模式：%1").arg(workMode == wmSpectrum ? "能谱模式" : (workMode == wmWaveform ? "波形模式" : "粒子模式")), askCurrentCmd});
 }
 
 /*********************************************************

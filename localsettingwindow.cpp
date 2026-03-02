@@ -94,6 +94,9 @@ LocalSettingWindow::LocalSettingWindow(QWidget *parent)
     ui->comboBox_ip->addItem("0.0.0.0");
 
     GlobalSettings settings(CONFIG_FILENAME);
+    //心跳检测
+    ui->spinBox_pluseCheckTime->setValue(settings.value("Global/PluseTime", 10).toUInt());
+
     ui->comboBox_ip->setCurrentText(settings.value("Local/ServerIp", "0.0.0.0").toString());
     ui->spinBox_port->setValue(settings.value("Local/ServerPort", 6000).toUInt());
 
@@ -261,9 +264,14 @@ void LocalSettingWindow::updateData()
     }
 
     GlobalSettings settings(CONFIG_FILENAME);
+    //心跳检测
+    settings.setValue("Global/PluseTime", ui->spinBox_pluseCheckTime->value());
+    HDF5Settings::instance()->setPluseTime(ui->spinBox_pluseCheckTime->value());
+
     //本地服务配置
     settings.setValue("Local/ServerIp", ui->comboBox_ip->currentText());
     settings.setValue("Local/ServerPort", ui->spinBox_port->text());
+
     //交换机Telnet配置
     settings.setValue("Switcher/count", ui->checkBox->isChecked() ? (ui->checkBox_2->isChecked() ? 3 : 2) : 1);
     QCheckBox* checkBoxs[] = {nullptr, ui->checkBox, ui->checkBox_2};

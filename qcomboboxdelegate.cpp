@@ -53,7 +53,8 @@ void QComboBoxDelegate::setModelData(QWidget *editor, QAbstractItemModel *model,
 
 // 插入数据
 void QComboBoxDelegate::insertItem(QString str) {
-    this->mComboBoxItems.append(str);
+    if (!this->mComboBoxItems.contains(str))
+        this->mComboBoxItems.append(str);
 }
 
 // 移除数据

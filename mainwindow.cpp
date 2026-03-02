@@ -18,8 +18,9 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
 
     commHelper = CommHelper::instance();
 
+    // 连续测量计时器
+    mContinueMeasureTimer = new QElapsedTimer();
     // 自动化测量计时器
-    mAutoMeasureCountTimer = new QElapsedTimer();
     mAutoMeasureDelayTimer = new QTimer(this);
     mAutoMeasureDelayTimer->setInterval(1000); // 每秒触发一次
     connect(mAutoMeasureDelayTimer, &QTimer::timeout, this, [=](){
@@ -88,18 +89,18 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     // 继电器
     connect(commHelper, &CommHelper::switcherConnected, this, [=](QString ip){
         mSwitcherConnected = true;
-        qInfo().nospace().noquote() << tr("交换机[ %1 ]已连通").arg(ip);
+        qInfo().nospace().noquote() << tr("交换机[%1]已连通").arg(ip);
     });
 
     connect(commHelper, &CommHelper::switcherLogged, this, [=](QString ip){
         // QLabel* label_Connected = this->findChild<QLabel*>("label_Connected");
         // label_Connected->setStyleSheet("color:#00ff00;");
-        // label_Connected->setText(tr("交换机[ %1 ]已连通").arg(ip));
+        // label_Connected->setText(tr("交换机[%1]已连通").arg(ip));
         mSwitcherLogged = true;
         updateConnectButtonState(true);
         ui->action_powerOn->setEnabled(true);
         ui->action_powerOff->setEnabled(true);
-        qInfo().nospace().noquote() << tr("交换机[ %1 ]已登录").arg(ip);
+        qInfo().nospace().noquote() << tr("交换机[%1]已登录").arg(ip);
 
         /// 再给设备上电
         if (mEnableAutoMeasure)
@@ -290,6 +291,7 @@ void MainWindow::initUi()
     //加载界面参数
     {
         GlobalSettings settings(CONFIG_FILENAME);
+        HDF5Settings::instance()->setPluseTime(settings.value("Global/PluseTime", 10).toUInt());
         settings.beginGroup("mainWindow");
         bool flag = settings.value("ShotNumIsAutoIncrease", true).toBool();
         ui->checkBox_autoIncrease->setChecked(settings.value("ShotNumIsAutoIncrease", true).toBool());
@@ -413,9 +415,9 @@ void MainWindow::initUi()
         QString dayOfWeekString = dayNames.at(dayOfWeekNumber);
         this->findChild<QLabel*>("label_systemtime")->setText(QString(QObject::tr("系统时间：")) + currentDateTime.toString("yyyy/MM/dd hh:mm:ss ") + dayOfWeekString);
 
-        if (mAutoMeasureCountTimer && mAutoMeasureCountTimer->isValid())
+        if (mContinueMeasureTimer && mContinueMeasureTimer->isValid())
         {
-            ui->edit_measureTime->setText(formatTimeString(mAutoMeasureCountTimer->elapsed()));
+            ui->edit_measureTime->setText(formatTimeString(mContinueMeasureTimer->elapsed()));
         }
     });
     systemClockTimer->start(900);
@@ -511,12 +513,14 @@ void MainWindow::initUi()
         ui->rightSidewidget->setFixedWidth(30);
     }
 
+    ui->tableWidget_detector->verticalHeader()->setDefaultSectionSize(25); // 设置默认行高
+    ui->tableWidget_detector->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed); // 固定高度
     ui->tableWidget_detector->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     ui->tableWidget_detector->horizontalHeader()->setFixedHeight(25);
-    for (int i=0; i<25; ++i)
-         ui->tableWidget_detector->setRowHeight(i, 25);
+    // for (int i=0; i<25; ++i)
+    //      ui->tableWidget_detector->setRowHeight(i, 25);
     ui->tableWidget_detector->setRowHeight(0, 50);
-    ui->tableWidget_detector->setFixedHeight(675);
+    ui->tableWidget_detector->setFixedHeight(677);
     ui->tableWidget_detector->verticalHeaderItem(0)->setText("时间同步\n触发模块");
 
     for (int row=0; row<ui->tableWidget_detector->rowCount(); ++row){
@@ -1149,11 +1153,11 @@ void MainWindow::on_action_stopServer_triggered()
     foreach (quint8 index, mOnlineDetectors){   
         commHelper->manualCloseSwitcherPOEPower(index);
         //将响应在线图标设置为红色
-        int row = index - 1;
+        int row = index;
         QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 1));
-        cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::red));
+        cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::gray));
         cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 2));
-        cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::red));
+        cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::gray));
     }
     //清除联网的探测器ID
     mOnlineDetectors.clear();
@@ -1217,7 +1221,9 @@ void MainWindow::on_action_startMeasure_triggered()
     ui->dateTimeEdit_autoTrigger->setEnabled(false);
     ui->cbb_measureMode->setEnabled(false);
     ui->pushButton_startMeasure->setEnabled(false);
-    ui->pushButton_stopMeasure->setEnabled(false);
+    ui->pushButton_stopMeasure->setEnabled(true);
+    ui->action_waveformMode->setEnabled(false);
+    ui->action_particalMode->setEnabled(false);
 
     updateSpectrumPlotSettings();
 
@@ -1246,6 +1252,11 @@ void MainWindow::on_action_startMeasure_triggered()
         spectroMeter_bottom->replot();
     }
 
+    for (auto index : mOnlineDetectors){
+        if (index != 0)
+            m_selectedChannels.append(index);
+    }
+
     if (mEnableAutoMeasure)
     {
         mAutoMeasureDelayTimer->start();
@@ -1260,20 +1271,6 @@ void MainWindow::on_action_startMeasure_triggered()
 //单通道测量，单独测量某个通道
 void MainWindow::on_pushButton_startMeasure_clicked()
 {
-    QVector<double> keys, values;
-    for (int i=1; i<=2; ++i){
-        QCustomPlot *spectroMeter_top = this->findChild<QCustomPlot*>(QString("spectroMeter%1_top").arg(i));
-        for (int j=0; j<spectroMeter_top->graphCount(); ++j)
-            spectroMeter_top->graph(j)->data()->clear();
-
-        QCustomPlot *spectroMeter_bottom = this->findChild<QCustomPlot*>(QString("spectroMeter%1_bottom").arg(i));
-        for (int j=0; j<spectroMeter_bottom->graphCount(); ++j)
-            spectroMeter_bottom->graph(j)->data()->clear();
-
-        spectroMeter_top->replot();
-        spectroMeter_bottom->replot();
-    }
-
     /*设置发次信息*/
     QString shotDir = ui->lineEdit_filePath->text();
     QString shotNumStr = ui->lineEdit_shotNum->text();
@@ -1319,75 +1316,173 @@ void MainWindow::on_pushButton_startMeasure_clicked()
     std::sort(rows.begin(), rows.end(),
               [](const QModelIndex &a, const QModelIndex &b){ return a.row() < b.row(); });
 
-    if (ui->action_waveformMode->isChecked())
-    {
-        qInfo()<<"自定义通道测量，波形测量模式";
-        QString str = QString("开始测量，通道号：");
-        for (const auto &mi : rows) {
-            int row = mi.row();
-            if (0 == row)
-                continue;
-
-            quint8 index = row;
-            str += QString("%1, ").arg(index);
-            commHelper->startMeasure(CommandAdapter::WorkMode::wmWaveform, index);
-        }
-        qInfo()<<str;
-    }
-    else if (ui->action_spectrumMode->isChecked())
-    {
-        qInfo()<<"自定义通道测量，能谱测量模式";
-        QString str = QString("开始测量，通道号：");
-        for (const auto &mi : rows) {
-            int row = mi.row();
-            if (0 == row)
-                continue;
-
-            quint8 index = row;
-            str += QString("%1, ").arg(index);
-            commHelper->startMeasure(CommandAdapter::WorkMode::wmSpectrum, index);
-        }
-        qInfo()<<str;
-    }
-
-    //记录下所选的通道号，保存到成员变量中，停止测量的时候使用并清空
-    m_selectedChannels.clear();
+    // 过滤掉没有上线的探测器id
+    QModelIndexList validIndexes;
     for (const auto &mi : rows) {
         int row = mi.row();
         if (0 == row)
             continue;
 
         quint8 index = row;
-        m_selectedChannels.append(index);
+        if (mOnlineDetectors.contains(index))
+            validIndexes.append(mi);
+    }
+
+    if (validIndexes.size() <= 0){
+        QMessageBox::warning(
+            this,
+            tr("自定义通道测量——提示"),
+            tr("所选探测器通道未上线。")
+            );
+        return;
+    }
+
+    if (ui->action_waveformMode->isChecked())
+    {
+        qInfo()<<"自定义通道测量，波形测量模式";
+        QString str = QString("开始测量，通道号：");
+        for (const auto &mi : validIndexes) {
+            int row = mi.row();
+            if (0 == row)
+                continue;
+
+            quint8 index = row;
+
+            if (m_selectedChannels.contains(index))
+                continue;
+
+            // 先清空曲线内容
+            {
+                QCustomPlot* spectroMeter_bottom = getCustomPlot(index, true);
+                QCPGraph* graph = getGraph(index, true);
+                graph->data()->clear();
+                spectroMeter_bottom->replot();
+            }
+            {
+                QCustomPlot* spectroMeter_top = getCustomPlot(index, false);
+                QCPGraph* graph = getGraph(index, false);
+                graph->data()->clear();
+                spectroMeter_top->replot();
+            }
+
+            // 再发送开始测量指令
+            if (mOnlineDetectors.contains(index))
+            {
+                // 启动连续测量计时器
+                if (!mContinueMeasureTimer->isValid())
+                    mContinueMeasureTimer->start();
+
+                commHelper->startMeasure(CommandAdapter::WorkMode::wmWaveform, index);
+                //记录下所选的通道号，保存到成员变量中，停止测量的时候使用并清空
+                m_selectedChannels.append(index);
+            }
+        }
+    }
+    else if (ui->action_spectrumMode->isChecked())
+    {
+        qInfo()<<"自定义通道测量，能谱测量模式";
+        QString str = QString("开始测量，通道号：");
+        for (const auto &mi : validIndexes) {
+            int row = mi.row();
+            if (0 == row)
+                continue;
+
+            quint8 index = row;
+
+            if (m_selectedChannels.contains(index))
+                continue;
+
+            // 先清空曲线内容
+            {
+                QCustomPlot* spectroMeter_bottom = getCustomPlot(index, true);
+                QCPGraph* graph = getGraph(index, true);
+                graph->data()->clear();
+                spectroMeter_bottom->replot();
+            }
+            {
+                QCustomPlot* spectroMeter_top = getCustomPlot(index, false);
+                QCPGraph* graph = getGraph(index, false);
+                graph->data()->clear();
+                spectroMeter_top->replot();
+            }
+
+            // 再发送开始测量指令
+            if (mOnlineDetectors.contains(index))
+            {
+                commHelper->startMeasure(CommandAdapter::WorkMode::wmSpectrum, index);
+                //记录下所选的通道号，保存到成员变量中，停止测量的时候使用并清空
+                m_selectedChannels.append(index);
+            }
+        }
     }
 
     // 测量中禁用参数配置
     mDetSettingWindow->setEnabled(false);
 
-    ui->action_startMeasure->setEnabled(false);
-    ui->action_stopMeasure->setEnabled(false);
+    //ui->action_startMeasure->setEnabled(false);
+    ui->action_stopMeasure->setEnabled(true);
+    ui->action_waveformMode->setEnabled(false);
+    ui->action_particalMode->setEnabled(false);
 }
 
 
 //（自定义通道）停止测量，停止测量已选中的通道
 void MainWindow::on_pushButton_stopMeasure_clicked()
 {
-    for (const auto &index : m_selectedChannels)
-    {
-        commHelper->stopMeasure(index);
+    // 获取所选通道
+    // 再发开始测量指令
+    auto rows  = ui->tableWidget_detector->selectionModel()->selectedRows();
+    if (rows .isEmpty()) {
+        // 没有选中任何行
+        QMessageBox::warning(
+            this,
+            tr("自定义通道测量——提示"),
+            tr("请先选择一个探测器通道，再执行此操作。")
+            );
+        return;  // 或者给个提示
+    }
+    // 为了稳定，排序一下（可选）
+    std::sort(rows.begin(), rows.end(),
+              [](const QModelIndex &a, const QModelIndex &b){ return a.row() < b.row(); });
+
+    // 过滤掉没有上线的探测器id
+    QModelIndexList validIndexes;
+    for (const auto &mi : rows) {
+        int row = mi.row();
+        if (0 == row)
+            continue;
+
+        quint8 index = row;
+        if (mOnlineDetectors.contains(index))
+            validIndexes.append(mi);
     }
 
     //打印日志
     qInfo()<<"点击(自定义通道)停止测量";
 
-    //清空所选通道号列表
-    m_selectedChannels.clear();
+    for (const auto &mi : validIndexes) {
+        int row = mi.row();
+        if (0 == row)
+            continue;
 
-    // 非测量中可用参数配置
-    mDetSettingWindow->setEnabled(true);
+        quint8 index = row;
+        commHelper->stopMeasure(index);
+        m_selectedChannels.removeOne(index);
+    }
 
-    ui->action_startMeasure->setEnabled(true);
-    ui->action_stopMeasure->setEnabled(true);
+    if (m_selectedChannels.empty()){
+        // 非测量中可用参数配置
+        mDetSettingWindow->setEnabled(true);
+
+        ui->action_startMeasure->setEnabled(true);
+        ui->action_stopMeasure->setEnabled(false);
+
+        ui->pushButton_stopMeasure->setEnabled(false);
+        ui->action_waveformMode->setEnabled(true);
+        ui->action_particalMode->setEnabled(true);
+    }
+
+    ui->pushButton_startMeasure->setEnabled(true);
 }
 
 
@@ -1405,7 +1500,9 @@ void MainWindow::on_action_stopMeasure_triggered()
     ui->dateTimeEdit_autoTrigger->setEnabled(true);
     ui->cbb_measureMode->setEnabled(true);
     ui->pushButton_startMeasure->setEnabled(true);
-    ui->pushButton_stopMeasure->setEnabled(true);
+    ui->pushButton_stopMeasure->setEnabled(false);
+    ui->action_waveformMode->setEnabled(true);
+    ui->action_particalMode->setEnabled(true);
 
     if (mEnableAutoMeasure)
     {
@@ -1420,6 +1517,7 @@ void MainWindow::on_action_stopMeasure_triggered()
 
     // 停止测量
     stopMeasure();
+    m_selectedChannels.clear();
 
     mEnableAutoMeasure = false;
 }
@@ -1876,37 +1974,42 @@ void MainWindow::updateCountRateDisplay(int detectorId, double fpgaTime, double 
     // qDebug().nospace()<<"detID="<<detectorId<<", elapsedTime = "<<elapsedSeconds<<", fpgaTime = "<<fpgaTime;
     getGraph(detectorId, false)->addData(fpgaTime, countRate);
 
-    // 显示最近300秒
-    const int WINDOW = 300;
-    // 统计总曲线X轴最大值范围
-    double x_max = WINDOW;//getGraph((detectorId-1)/12*12+1, false)->data()->at(0)->key;
-    for (int detectorIndex = (detectorId-1)/12*12+1; detectorIndex <= (detectorId-1)/12*12+12; ++detectorIndex){
-        QCPGraph* tempGraph = getGraph((detectorIndex-1)/12*12+1, false);
-        if (tempGraph->dataCount() <= 0)
-            continue;
+    if (customPlot->property("enableAutoScale").toBool())
+        customPlot->rescaleAxes(true);
+    else if (customPlot->property("enableFixedScale").toBool()){
+        // 显示最近300秒
+        const int WINDOW = customPlot->property("xAxisFixedRange").toUInt();
 
-        x_max =  qMax(x_max, tempGraph->data()->at(tempGraph->dataCount() - 1)->key);
-    }
-    x_max = qMax(x_max, (double)WINDOW);
-    double x_min = qMax(0.0, x_max - WINDOW);
-    //customPlot->xAxis->setRange(qMax(0.0, fpgaTime*1.0 - WINDOW), fpgaTime + 1);
-    customPlot->xAxis->setRange(x_min, x_max);
-    
-    // y轴范围只由最近300秒的y决定
-    auto range = calcRecentYRange(data.countRateHistory, WINDOW);
-    double y_min = range.first;
-    double y_max = range.second;
-    // 统计总曲线Y轴最大、最小值范围
-    for (int detectorIndex = (detectorId-1)/12*12+1; detectorIndex <= (detectorId-1)/12*12+12; ++detectorIndex){
-        DetectorData &data = m_detectorData[detectorIndex];
+        // 统计总曲线X轴最大值范围
+        double x_max = getGraph((detectorId-1)/12*12+1, false)->data()->at(0)->key;
+        for (int detectorIndex = (detectorId-1)/12*12+1; detectorIndex <= (detectorId-1)/12*12+12; ++detectorIndex){
+            QCPGraph* tempGraph = getGraph(detectorIndex, false);
+            if (tempGraph->dataCount() <= 0)
+                continue;
+
+            x_max =  qMax(x_max, tempGraph->data()->at(tempGraph->dataCount() - 1)->key);
+        }
+        x_max = qMax(x_max, (double)WINDOW);
+        double x_min = qMax(0.0, x_max - WINDOW);
+        //customPlot->xAxis->setRange(qMax(0.0, fpgaTime*1.0 - WINDOW), fpgaTime + 1);
+        customPlot->xAxis->setRange(x_min, x_max);
+
+        // y轴范围只由最近300秒的y决定
         auto range = calcRecentYRange(data.countRateHistory, WINDOW);
-        y_min = qMin(y_min, range.first);
-        y_max = qMax(y_max, range.second);
-    }
+        double y_min = range.first;
+        double y_max = range.second;
+        // 统计总曲线Y轴最大、最小值范围
+        for (int detectorIndex = (detectorId-1)/12*12+1; detectorIndex <= (detectorId-1)/12*12+12; ++detectorIndex){
+            DetectorData &data = m_detectorData[detectorIndex];
+            auto range = calcRecentYRange(data.countRateHistory, WINDOW);
+            y_min = qMin(y_min, range.first);
+            y_max = qMax(y_max, range.second);
+        }
 
-    // 稍微留点头部空间
-    double pad = (y_max - y_min) * 0.1;
-    customPlot->yAxis->setRange(y_min - pad, y_max + pad);
+        // 稍微留点头部空间
+        double pad = (y_max - y_min) * 0.1;
+        customPlot->yAxis->setRange(y_min - pad, y_max + pad);
+    }
 
     customPlot->replot(QCustomPlot::rpQueuedReplot);
 }
@@ -2232,6 +2335,8 @@ void MainWindow::startMeasure()
     {
         // 初始化测量时长显示为 00:00:00
         ui->edit_measureTime->setText("00:00:00");
+        // 启动连续测量计时器
+        mContinueMeasureTimer->start();
     }
     else
     {
@@ -2267,8 +2372,8 @@ void MainWindow::stopMeasure()
         int elapsedSeconds = mTotalCountdown - mRemainingCountdown;
         ui->edit_measureTime->setText(formatTimeString(elapsedSeconds));
         qInfo() << "手动测量倒计时已停止";
-    } else if (mAutoMeasureCountTimer && mAutoMeasureCountTimer->isValid()){
-        mAutoMeasureCountTimer->invalidate();
+    } else if (mContinueMeasureTimer && mContinueMeasureTimer->isValid()){
+        mContinueMeasureTimer->invalidate();
         qInfo() << "自动测量倒计时已停止";
     } else {
         // 如果没有倒计时，清空显示
@@ -2424,7 +2529,7 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
 }
 
 #include "particalwindow.h"
-void MainWindow::on_action_partical_triggered()
+void MainWindow::on_action_particalMode_triggered()
 {
     /*设置发次信息*/
     QString shotDir = ui->lineEdit_filePath->text();
