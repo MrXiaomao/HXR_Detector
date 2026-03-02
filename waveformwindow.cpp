@@ -117,7 +117,6 @@ void WaveformWindow::on_pushButton_stop_clicked()
     ui->pushButton_stop->setEnabled(false);
 }
 
-<<<<<<< HEAD
 #include <QCloseEvent>
 void WaveformWindow::closeEvent(QCloseEvent *event)
 {
@@ -127,5 +126,3 @@ void WaveformWindow::closeEvent(QCloseEvent *event)
         return;
     }
 }
-=======
->>>>>>> 26822851222f1b350478b3dc690d0d41742dfecc

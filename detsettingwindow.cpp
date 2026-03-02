@@ -11,8 +11,6 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
-<<<<<<< HEAD
-=======
     // 设置每个列宽都可拉伸
     QHeaderView* header = ui->tableWidget->horizontalHeader();
     header->setSectionResizeMode(QHeaderView::Interactive);
@@ -24,7 +22,6 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
     ui->tableWidget->setColumnWidth(2, 100);
     ui->tableWidget->setColumnWidth(3, 100);
 
->>>>>>> 26822851222f1b350478b3dc690d0d41742dfecc
     QList<QSpinBox*> spinBoxs = this->findChildren<QSpinBox*>();
     for (auto spinBox: spinBoxs){
         spinBox->installEventFilter(this);
@@ -34,7 +31,6 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
     for (auto comboBox: comboBoxs){
         comboBox->installEventFilter(this);
     }
-<<<<<<< HEAD
 
     // 创建模型和视图
     // QStandardItemModel model(24, 2);
@@ -43,8 +39,6 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
     //     model.setData(model.index(i, 1), "0.0.0.0");
     // }
     // ui->tableWidget->setModel(&model);
-=======
->>>>>>> 26822851222f1b350478b3dc690d0d41742dfecc
 
     QComboBoxDelegate *delegate = new QComboBoxDelegate(this);
     delegate->insertItem(QString("0.0.0.0"));
@@ -547,8 +541,6 @@ bool DetSettingWindow::eventFilter(QObject *obj, QEvent *event) {
 
     return QWidget::eventFilter(obj, event);
 }
-<<<<<<< HEAD
-=======
 
 void DetSettingWindow::on_tableWidget_itemChanged(QTableWidgetItem *item)
 {
@@ -588,4 +580,3 @@ void DetSettingWindow::on_tableWidget_itemChanged(QTableWidgetItem *item)
         item->setText("0");
     }
 }
->>>>>>> 26822851222f1b350478b3dc690d0d41742dfecc

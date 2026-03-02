@@ -106,18 +106,6 @@ void ParticalWindow::on_pushButton_save_clicked()
     } else {
         QMessageBox::information(this, tr("提示"), tr("数据导出失败！"), QMessageBox::Ok, QMessageBox::Ok);
     }
-<<<<<<< HEAD
-=======
-}
-
-
-void ParticalWindow::on_pushButton_stop_clicked()
-{
-    commHelper->stopMeasure();
-    ui->pushButton_save->setEnabled(true);
-    ui->pushButton_start->setEnabled(true);
-    ui->pushButton_stop->setEnabled(false);
->>>>>>> 26822851222f1b350478b3dc690d0d41742dfecc
 }
 
 

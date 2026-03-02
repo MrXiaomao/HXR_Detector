@@ -354,18 +354,13 @@ void CommHelper::initDataProcessor()
                 qDebug() << data.left(8).toHex(' ');
                 bool ok;
                 quint16 utc = data.mid(i*8, 2).toHex().toUInt(&ok, 16); // utc时间戳
-<<<<<<< HEAD
                 quint16 msecond = data.mid(i*8+2, 2).toHex().toUInt(&ok, 16)*1000/65536; // 毫秒
-=======
-                quint16 msecond = 65536*1000/data.mid(i*8+2, 2).toHex().toUInt(&ok, 16); // 毫秒
->>>>>>> 26822851222f1b350478b3dc690d0d41742dfecc
                 quint16 deathT = data.mid(i*8+4, 2).toHex().toUShort(&ok, 16); // 死时间
                 quint16 _type = data.mid(i*8+6, 2).toHex().toUShort(&ok, 16); // 粒子类型
                 quint16 typeFlag = (_type & 0x8000) >> 15;// 类型 （0：γ；1：α）
                 quint16 amplitude = _type & 0x7FFF; // 幅度
 
                 // 保存时间、能量、粒子类型
-<<<<<<< HEAD
                 // 读取系统当前UTC时间戳（从1900年1月1日00：00：00开始计算，表示至今的整数秒数）
                 QDateTime epoch(QDate(1900, 1, 1), QTime(0, 0, 0), Qt::UTC);
                 quint64 tmUtc = epoch.secsTo(QDateTime::currentDateTimeUtc()); // UTC时间戳（1900）
@@ -376,15 +371,6 @@ void CommHelper::initDataProcessor()
                 // UTC1900转UTC1970-Unix时间戳，也就是从1970年1月1日00：00：00开始计算的整数秒数
                 quint64 tmUnix = tmUtc - 2208988800; // UTC时间戳（1970）-unix时间戳
                 QDateTime tm = QDateTime::fromMSecsSinceEpoch(tmUnix*1000 + msecond);
-=======
-                QDateTime now = QDateTime::currentDateTimeUtc();
-                quint64 currUtc = now.toSecsSinceEpoch();
-                currUtc = currUtc & 0xffffffffffff0000; // 只保留高16位
-                currUtc = currUtc | utc; // 合成新的utc时间戳
-                currUtc = currUtc*1000 + msecond; // 转成毫秒时间戳
-                QDateTime tm = QDateTime::fromMSecsSinceEpoch(currUtc, Qt::TimeSpec::UTC);
-                tm = tm.addSecs(8*3600); // 转成北京时间
->>>>>>> 26822851222f1b350478b3dc690d0d41742dfecc
 
                 if (mDetectorFileProcessor[processor->index()]->isOpen()){
                     QString line = QString("%1,%2,%3,%4\n")

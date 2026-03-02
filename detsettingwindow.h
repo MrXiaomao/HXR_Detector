@@ -82,11 +82,8 @@ private slots:
     void on_pushButton_cancel_clicked();
 
     void on_pushButton_read_clicked();
-<<<<<<< HEAD
-=======
 
     void on_tableWidget_itemChanged(QTableWidgetItem *item);
->>>>>>> 26822851222f1b350478b3dc690d0d41742dfecc
 
 private:
     //获取指定行的经纬度，这里row从0开始计数

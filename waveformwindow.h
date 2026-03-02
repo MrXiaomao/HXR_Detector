@@ -18,11 +18,8 @@ public:
     explicit WaveformWindow(QWidget *parent = nullptr);
     ~WaveformWindow();
 
-<<<<<<< HEAD
     virtual void closeEvent(QCloseEvent *event) override;
 
-=======
->>>>>>> 26822851222f1b350478b3dc690d0d41742dfecc
 private slots:
     void on_pushButton_start_clicked();
 
