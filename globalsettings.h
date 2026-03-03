@@ -711,6 +711,12 @@ typedef struct _DetParameter{
     //能谱长度
     quint32 spectrumLength;
 
+    //能谱能量范围(主界面勾选能量刻度后才起作用)
+    //能谱最小能量
+    double spectrumPlotEnMin;
+    //能谱最大能量
+    double spectrumPlotEnMax;
+
     //波形设置
     //触发模式
     quint8 waveformTriggerMode;
@@ -762,6 +768,12 @@ typedef struct _DetParameter{
         spectrumRefreshTime = 1000;
         //能谱长度
         spectrumLength = 8192;
+
+        //能谱能量范围(刻度后才起作用)
+        //能谱最小能量/keV
+        spectrumPlotEnMin = 0.0;
+        //能谱最大能量/keV
+        spectrumPlotEnMax = 3000.0;
 
         //波形设置
         //触发模式 0-定时触发 1-普通触发

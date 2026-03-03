@@ -437,9 +437,15 @@ void DetSettingWindow::saveAt(quint8 detId)
     //能谱设置
     //能谱刷新时间（毫秒）
     detParameter.spectrumRefreshTime = static_cast<quint32>(ui->spinBox_spectrumRefreshTime->value());
-    //能谱长度
+    //能谱长度（多道道数，探测器内部，永远是8192道能谱数据上传，但是界面显示能谱受该道址数控制）
     detParameter.spectrumLength = static_cast<quint32>(ui->comboBox_spectrumLength->currentText().toUInt());
 
+    //能谱能量范围
+    //能谱最小能量
+    detParameter.spectrumPlotEnMin = ui->dsp_spectrumPlotEnMin->value();
+    //能谱最大能量
+    detParameter.spectrumPlotEnMax = ui->dsp_spectrumPlotEnMax->value();
+    
     //波形设置
     //触发模式
     detParameter.waveformTriggerMode = static_cast<quint8>(ui->comboBox_waveformTriggerMode->currentIndex());
@@ -496,6 +502,12 @@ void DetSettingWindow::loadAt(quint8 detId)
     ui->spinBox_spectrumRefreshTime->setValue(detParameter.spectrumRefreshTime);
     //能谱长度
     ui->comboBox_spectrumLength->setCurrentText(QString::number(detParameter.spectrumLength));
+
+    //能谱能量范围
+    //能谱最小能量
+    ui->dsp_spectrumPlotEnMin->setValue(detParameter.spectrumPlotEnMin);
+    //能谱最大能量
+    ui->dsp_spectrumPlotEnMax->setValue(detParameter.spectrumPlotEnMax);
 
     //波形设置
     //触发模式

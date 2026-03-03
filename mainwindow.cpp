@@ -2493,11 +2493,12 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
         // 判断是否勾选能量刻度
         GlobalSettings settings(CONFIG_FILENAME);
         settings.beginGroup("EnCalibration");
+        int fitType = 1;
         if (settings.contains(QString("Detector%1/pointsX").arg(detectorId)) == true)
         {
             settings.beginGroup(QString("Detector%1").arg(detectorId));
             //拟合参数赋值
-            int fitType = settings.value("type", 0).toInt();
+            m_spectrumPlotSettings[detectorId-1].fitType = settings.value("type", 1).toInt();
             if (fitType == 1){
                 //拟合参数赋值
                 double k = settings.value("c0", 0.0).toDouble();
@@ -2522,18 +2523,83 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
                 m_spectrumPlotSettings[detectorId-1].c2 = c;
             }
 
-            m_spectrumPlotSettings[detectorId-1].xMin = xMin;
-            m_spectrumPlotSettings[detectorId-1].xMax = xMax;
+            m_spectrumPlotSettings[detectorId-1].xMin = detParameter.spectrumPlotEnMin;
+            m_spectrumPlotSettings[detectorId-1].xMax = detParameter.spectrumPlotEnMax;
             m_spectrumPlotSettings[detectorId-1].fitType = fitType;
             settings.endGroup();
         }
 
         settings.endGroup();
+
+        //获取图表数据
+        QCPGraph* graph = getGraph(detectorId, true);
+        if (graph->dataCount() > 0){
+            // 更新图表数据
+            QVector<double> x, y;
+            for (int i = 0; i < graph->dataCount(); ++i) {
+                double key = graph->data()->at(i)->key;
+                double value = graph->data()->at(i)->value;
+                double newKey= 0.0;
+                if (fitType == 1){
+                    newKey = m_spectrumPlotSettings[detectorId-1].c0*key + m_spectrumPlotSettings[detectorId-1].c1;
+                } else if (fitType == 2){
+                    newKey = m_spectrumPlotSettings[detectorId-1].c0*key*key + m_spectrumPlotSettings[detectorId-1].c1*key + m_spectrumPlotSettings[detectorId-1].c2;
+                }
+                x << newKey;
+                y << value;
+            }
+            graph->setData(x, y);
+        }
+    
+        // 更新X轴范围
+        ui->spectroMeter1_bottom->xAxis->setRange(detParameter.spectrumPlotEnMin, detParameter.spectrumPlotEnMax);
+        ui->spectroMeter2_bottom->xAxis->setRange(detParameter.spectrumPlotEnMin, detParameter.spectrumPlotEnMax);
+        ui->spectroMeter1_bottom->replot();
+        ui->spectroMeter2_bottom->replot();
     }
     else
     {
         m_spectrumPlotSettings[detectorId-1].xMin = xMin;
         m_spectrumPlotSettings[detectorId-1].xMax = xMax;
+        //获取图表数据
+        QCPGraph* graph = getGraph(detectorId, true);
+        if (graph->dataCount() > 0){
+            // 更新图表数据
+            QVector<double> x, y;
+            for (int i = 0; i < graph->dataCount(); ++i) {
+                double key = graph->data()->at(i)->key;
+                double value = graph->data()->at(i)->value;
+                // 反能量刻度转换回道数
+                double newKey;
+                if (m_spectrumPlotSettings[detectorId-1].fitType == 1){
+                    newKey = (key - m_spectrumPlotSettings[detectorId-1].c1) / m_spectrumPlotSettings[detectorId-1].c0;
+                } else if (m_spectrumPlotSettings[detectorId-1].fitType == 2){
+                    // 二次拟合反算道数，使用求根公式
+                    double a = m_spectrumPlotSettings[detectorId-1].c0;
+                    double b = m_spectrumPlotSettings[detectorId-1].c1;
+                    double c = m_spectrumPlotSettings[detectorId-1].c2 - key;
+                    double discriminant = b * b - 4 * a * c;
+                    if (discriminant >= 0) {
+                        double sqrtDiscriminant = sqrt(discriminant);
+                        double root1 = (-b + sqrtDiscriminant) / (2 * a);
+                        double root2 = (-b - sqrtDiscriminant) / (2 * a);
+                        // 选择合理的根作为道数（通常是正数且在范围内）
+                        if (root1 >= 0 && root1 <= m_spectrumPlotSettings[detectorId-1].multiChannel) {
+                            newKey = root1;
+                        } else if (root2 >= 0 && root2 <= m_spectrumPlotSettings[detectorId-1].multiChannel) {
+                            newKey = root2;
+                        } else {
+                            newKey = key; // 如果没有合理的根，保持原值
+                        }
+                    } else {
+                        newKey = key; // 如果判别式为负，保持原值
+                    }
+                }
+                x << newKey;
+                y << value;
+            }
+            graph->setData(x, y);
+        }
     }
 }
 

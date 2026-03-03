@@ -199,9 +199,11 @@ void HDF5Settings::writeDetParStrAttr(H5::DataSet& dataset)
     writeStrAttr(dataset, "gain", "增益(0.08~10.0)");
     writeStrAttr(dataset, "deathT", "探测器死时间设定(*10ns)");
     writeStrAttr(dataset, "Threshold", "触发阈值，低于阈值的波形不计入能谱");
-    writeStrAttr(dataset, "detIpPort", "探测器 IP 地址和端口号");
+    writeStrAttr(dataset, "detIpPort", "探测器 IP 地址");
     writeStrAttr(dataset, "specDeltaT", "能谱刷新时间(毫秒)");
     writeStrAttr(dataset, "specLen", "能谱长度");
+    writeStrAttr(dataset, "specEnergyMin", "能谱绘制最小能量(keV)");
+    writeStrAttr(dataset, "specEnergyMax", "能谱绘制最大能量(keV)");
     writeStrAttr(dataset, "waveTrigMode", "波形触发模式(0-定时触发 1-普通触发)");
     writeStrAttr(dataset, "waveLen", "波形长度");
     writeStrAttr(dataset, "TShapeEnable", "梯形成型使能(0/1)");
@@ -550,6 +552,12 @@ H5::CompType HDF5Settings::createCfgDataType()
         //能谱长度
         type.insertMember("specLen", HOFFSET(DetParameter, spectrumLength), H5::PredType::NATIVE_ULONG);
     }
+
+    //能谱能量范围
+    //能谱绘制最小能量
+    type.insertMember("specEnergyMin", HOFFSET(DetParameter, spectrumPlotEnMin), H5::PredType::NATIVE_DOUBLE);
+    //能谱最大能量
+    type.insertMember("specEnergyMax", HOFFSET(DetParameter, spectrumPlotEnMax), H5::PredType::NATIVE_DOUBLE);
 
     //波形设置
     {
