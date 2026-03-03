@@ -4,6 +4,24 @@
 #include <QTimer>
 #include "globalsettings.h"
 
+const QByteArray CommandAdapter::kCmdTempHead = QByteArray::fromHex("12 34 00 0A DA 11");
+const QByteArray CommandAdapter::kCmdGainHead = QByteArray::fromHex("12 34 00 0A FA 10");
+const QByteArray CommandAdapter::kCmdDeadHead = QByteArray::fromHex("12 34 00 0A FA 11");
+const QByteArray CommandAdapter::kCmdThresHead = QByteArray::fromHex("12 34 00 0A FA 12");
+const QByteArray CommandAdapter::kCmdWaveformLengthHead = QByteArray::fromHex("12 34 00 0A FC 10");
+const QByteArray CommandAdapter::kCmdSpectrumRefreshTimeHead = QByteArray::fromHex("12 34 00 0A FD 10");
+const QByteArray CommandAdapter::kCmdTrapezoidTimeConstantHead = QByteArray::fromHex("12 34 00 0A FE 10");
+const QByteArray CommandAdapter::kCmdTrapezoidLengthHead = QByteArray::fromHex("12 34 00 0A FE 11");
+const QByteArray CommandAdapter::kCmdTrapShapeEnableHead = QByteArray::fromHex("12 34 00 0A FE 12");
+const QByteArray CommandAdapter::kCmdHVOutputHead = QByteArray::fromHex("12 34 00 0A F9 10");
+const QByteArray CommandAdapter::kCmdHVEnableHead = QByteArray::fromHex("12 34 00 0A F9 11");
+const QByteArray CommandAdapter::kCmdWorkModeHead = QByteArray::fromHex("12 34 00 0A FF 10");
+const QByteArray CommandAdapter::kCmdFPGAVersionHead = QByteArray::fromHex("12 34 00 0A DA 10");
+const QByteArray CommandAdapter::kCmdReloadFPGAHead = QByteArray::fromHex("12 34 00 0A FF 13");
+const QByteArray CommandAdapter::kspecHead = QByteArray::fromHex("FF FF AA B1");
+const QByteArray CommandAdapter::kspecTail = QByteArray::fromHex("FF FF CC D1");
+
+
 CommandAdapter::CommandAdapter(QObject *parent)
     : QObject{parent}
 {
@@ -86,7 +104,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
         bool findNaul = false;
 
         //温度监测（心跳检测）
-        if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A DA 11"))){
+        if (cachePool.startsWith(kCmdTempHead)){
             QByteArray data = cachePool.mid(6, 4);
             qint32 t = qFromBigEndian<qint32>(data.constData());
             float temperature = t * 0.0001;// 换算系数
@@ -101,7 +119,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
 
         //增益指令
         {
-            if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FA 10"))){
+            if (cachePool.startsWith(kCmdGainHead)){
                 //qInfo().noquote() << "增益：" << cachePool.at(9);
 
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
@@ -113,7 +131,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
 
         //死时间配置(ns)
         {
-            if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FA 11"))){
+            if (cachePool.startsWith(kCmdDeadHead)){
                 qInfo().noquote() << "死时间/ns：" << cachePool.mid(8, 2).toShort();
 
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
@@ -125,7 +143,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
 
         //触发阈值
         {
-            if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FA 12"))){
+            if (cachePool.startsWith(kCmdThresHead)){
                 //qInfo().noquote() << "触发阈值：" << cachePool.mid(8, 2).toShort();
 
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
@@ -139,7 +157,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
          波形基本配置
         ***********************************************************/
         {
-            if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FC 10"))){
+            if (cachePool.startsWith(kCmdWaveformLengthHead)){
                 //qInfo().noquote() << "触发模式：" << (cachePool.mid(7, 1).toShort() == tmTimer ? "定时触发" : "正常触发模式");
                 WaveformLength waveformLength = (WaveformLength)cachePool.mid(9, 1).toShort();
                 if (waveformLength == wl64)
@@ -163,8 +181,9 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
         /*********************************************************
          能谱基本配置
         ***********************************************************/
+        //能谱刷新时间/ms
         {
-            if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FD 10"))){
+            if (cachePool.startsWith(kCmdSpectrumRefreshTimeHead)){
                 //qInfo().noquote() << "能谱刷新时间/ms：" << cachePool.mid(6, 4).toUInt();
 
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
@@ -179,7 +198,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
         ***********************************************************/
         //梯形成型时间常数配置
         {
-            if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FE 10"))){
+            if (cachePool.startsWith(kCmdTrapezoidTimeConstantHead)){
                 quint16 d1 = cachePool.mid(6, 2).toShort();
                 quint16 d2 = cachePool.mid(8, 9).toShort();
                 float f1 = (float)d1 / 65536;
@@ -195,7 +214,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
 
         //上升沿、平顶、下降沿长度配置
         {
-            if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FE 11"))){
+            if (cachePool.startsWith(kCmdTrapezoidLengthHead)){
                 quint8 rise = (quint8)cachePool.at(7);
                 quint8 peak = (quint8)cachePool.at(8);
                 quint8 fall = (quint8)cachePool.at(9);
@@ -210,7 +229,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
 
         //梯形成型使能配置
         {
-            if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FE 12"))){
+            if (cachePool.startsWith(kCmdTrapShapeEnableHead)){
                 quint8 rise = (quint8)cachePool.at(7);
                 quint8 peak = (quint8)cachePool.at(8);
                 quint8 fall = (quint8)cachePool.at(9);
@@ -227,7 +246,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
          工作模式配置
         ***********************************************************/
         {
-            if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FF 10"))){
+            if (cachePool.startsWith(kCmdWorkModeHead)){
                 WorkMode workMode = (WorkMode)cachePool.at(9);
                 if (workMode == wmWaveform)
                     qInfo().noquote() << "工作模式：波形模式";
@@ -250,7 +269,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
         ***********************************************************/
         //高压使能配置
         {
-            if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A F9 11"))){
+            if (cachePool.startsWith(kCmdHVEnableHead)){
                 HighVolgateOutLevelEnable highVoltageEnable = (HighVolgateOutLevelEnable)cachePool.at(9);
                 //qInfo().noquote() << "高压使能状态：" << (highVoltageEnable ? "关闭" : "打开");
 
@@ -263,7 +282,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
 
         //DAC输出电平配置
         {
-            if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A F9 10"))){
+            if (cachePool.startsWith(kCmdHVOutputHead)){
                 quint16 level = cachePool.mid(8, 2).toShort();
                 //qInfo().noquote() << "DAC输出电平值：" << level;
 
@@ -278,7 +297,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
          应答类指令
         ***********************************************************/
         //程序版本号查询
-        if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A DA 10"))){
+        if (cachePool.startsWith(kCmdFPGAVersionHead)){
             //硬件版本号
             QString hardVersion = QString("%1.%2.%3").arg(cachePool.at(6)).arg(cachePool.at(7)).arg(cachePool.at(8));
             //测试版本标志位
@@ -299,7 +318,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
         //OTA更新数据传输指令
 
         //重加载FPGA程序
-        if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0F CA 12"))){
+        if (cachePool.startsWith(kCmdReloadFPGAHead)){
             qInfo().noquote() << "下发指令返回：停止测量";
 
             findNaul = true;
@@ -314,7 +333,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
             findNaul = false;
         }
 
-        if (cachePool.startsWith(QByteArray::fromHex("FF FF AA B1"))){
+        if (cachePool.startsWith(kspecHead)){
             findNaul = true;
 
             //有效数据包长度
@@ -358,7 +377,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                 QByteArray chunk = cachePool.left(onePkgSize);
 
                 //继续检查包尾
-                if (chunk.endsWith(QByteArray::fromHex(QString("FF FF CC D1").toUtf8()))){
+                if (chunk.endsWith(kspecTail)){
                     mValidDataPkgRef++;
                     cachePool.remove(0, onePkgSize);
 
