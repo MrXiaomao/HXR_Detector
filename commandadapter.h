@@ -163,6 +163,40 @@ protected:
     void analyzeCommands(QByteArray &cachePool);
 
 private:
+    // 预定义指令头部（只构造一次）
+    // 温度指令数据头部
+    static const QByteArray kCmdTempHead;
+    // 增益指令数据头部
+    static const QByteArray kCmdGainHead;
+    // 死时间指令头部
+    static const QByteArray kCmdDeadHead;
+    // 阈值指令头部
+    static const QByteArray kCmdThresHead;
+    // 波形长度指令头部
+    static const QByteArray kCmdWaveformLengthHead;
+    // 能谱刷新时间指令头部
+    static const QByteArray kCmdSpectrumRefreshTimeHead;
+    // 梯形成型时间常数指令头部
+    static const QByteArray kCmdTrapezoidTimeConstantHead;
+    // 梯形成型上升沿、平顶、下降沿长度指令头部
+    static const QByteArray kCmdTrapezoidLengthHead;
+    // 梯形成型使能指令头部
+    static const QByteArray kCmdTrapShapeEnableHead;
+    // 高压输出电平指令头部
+    static const QByteArray kCmdHVOutputHead;
+    // 高压输出电平使能指令头部
+    static const QByteArray kCmdHVEnableHead;
+    // 工作模式指令头部
+    static const QByteArray kCmdWorkModeHead;
+    // 设备查询指令-程序版本号查询头部
+    static const QByteArray kCmdFPGAVersionHead;
+    // 重加载FPGA程序指令头部
+    static const QByteArray kCmdReloadFPGAHead;
+    // 测量数据头部
+    static const QByteArray kspecHead;
+    // 测量数据尾部
+    static const QByteArray kspecTail;
+
     bool mAskStopMeasure = false; //是否请求结束测量(如果已经请求了结束测量，那么就有必要解析结束测量指令)
     QVector<CommandItem> cmdPool;//发送指令等候区
 

@@ -398,12 +398,6 @@ void HDF5Settings::createH5Spectrum(QString filePath)
             QByteArray filePathBytes = gbk_codec->fromUnicode(filePath);
             mfH5Spectrum = new H5::H5File(filePathBytes.toStdString(), H5F_ACC_TRUNC);//, H5::FileCreatPropList::DEFAULT, fapl);
 
-            for (int i=1; i<=DET_NUM; ++i){
-                DetParameter detParameter;
-                detParameter.id = i;
-                mMapDetParameter[i] = detParameter;
-            }
-
             // 写入配置信息分组
             {
                 QVector<DetParameter> data;
@@ -417,6 +411,28 @@ void HDF5Settings::createH5Spectrum(QString filePath)
                 H5::Group cfgGroup = mfH5Spectrum->createGroup("Config");
                 H5::DataSet dataset = cfgGroup.createDataSet("Detector", mCompDataType, dataspace);
                 dataset.write(data.data(), mCompDataType);
+
+                // 写入当前时间到"Config"组中，以字符串的形式写入
+                QString startTime = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss");
+                std::string timeStr = startTime.toStdString();
+
+                // 1. 创建可变长度字符串类型
+                H5::StrType strType(H5::PredType::C_S1, H5T_VARIABLE);
+
+                // 2. 创建标量 dataspace（不是数组！）
+                H5::DataSpace scalarSpace(H5S_SCALAR);
+
+                // 3. 创建数据集
+                H5::DataSet dataset2 = cfgGroup.createDataSet(
+                    "StartTime",
+                    strType,
+                    scalarSpace);
+
+                // 4. 写入
+                dataset2.write(timeStr, strType);
+
+                // dataset2.write(startTime.toStdString().c_str(), H5::PredType::NATIVE_CHAR);
+                // writeStrAttr(dataset, "StartTime", startTime.toStdString());
                 //H5Dflush(dataset.getId());
                 //H5Fflush(dataset.getId(), H5F_SCOPE_GLOBAL);
                 //H5Fflush(mfH5Spectrum->getId(), H5F_SCOPE_GLOBAL);  // 同步文件元数据

@@ -1463,7 +1463,7 @@
                      </item>
                      <item>
                       <property name="text">
-                       <string>自动测量</string>
+                       <string>自动化测量</string>
                       </property>
                      </item>
                     </widget>
@@ -1797,7 +1797,7 @@
      <x>0</x>
      <y>0</y>
      <width>1431</width>
-     <height>18</height>
+     <height>21</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">

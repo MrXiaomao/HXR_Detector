@@ -1231,7 +1231,7 @@ void MainWindow::on_action_startMeasure_triggered()
 
     if (mEnableAutoMeasure)
     {
-        qInfo().nospace().noquote() << tr("开启自动测量");
+        qInfo().nospace().noquote() << tr("开启自动化测量");
     }
     else
     {
@@ -1513,7 +1513,7 @@ void MainWindow::on_action_stopMeasure_triggered()
 
     if (mEnableAutoMeasure)
     {
-        qInfo().nospace().noquote() << tr("人工停止自动测量");
+        qInfo().nospace().noquote() << tr("人工停止自动化测量");
     }
     else
     {
@@ -2383,7 +2383,7 @@ void MainWindow::stopMeasure()
         qInfo() << "手动测量倒计时已停止";
     } else if (mContinueMeasureTimer && mContinueMeasureTimer->isValid()){
         mContinueMeasureTimer->invalidate();
-        qInfo() << "自动测量倒计时已停止";
+        qInfo() << "自动化测量倒计时已停止";
     } else {
         // 如果没有倒计时，清空显示
         ui->edit_measureTime->setText("00:00:00");
