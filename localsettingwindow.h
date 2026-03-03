@@ -15,6 +15,8 @@ public:
     explicit LocalSettingWindow(QWidget *parent = nullptr);
     ~LocalSettingWindow();
 
+    virtual bool eventFilter(QObject *watched, QEvent *event) override;
+
     Q_SLOT void updateData();
 
 private slots:

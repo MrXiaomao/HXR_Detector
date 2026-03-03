@@ -86,7 +86,10 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
 
         ui->tableWidget->setItem(row, 1, new QTableWidgetItem(""));
         ui->tableWidget->item(row, 1)->setTextAlignment(Qt::AlignCenter);
-        // ui->tableWidget->item(row, 2)->
+        ui->tableWidget->setItem(row, 2, new QTableWidgetItem(""));
+        ui->tableWidget->item(row, 2)->setTextAlignment(Qt::AlignCenter);
+        ui->tableWidget->setItem(row, 3, new QTableWidgetItem(""));
+        ui->tableWidget->item(row, 3)->setTextAlignment(Qt::AlignCenter);
     }
 
     // 初始化表格时：给每行第0列放checkbox

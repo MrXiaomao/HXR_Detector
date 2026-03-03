@@ -173,6 +173,8 @@ private slots:
 
     void on_action_waveformMode_triggered();
 
+    void on_lineEdit_filePath_editingFinished();
+
 private:
     QString increaseShotNumSuffix(QString shotNumStr);
     QCustomPlot* getCustomPlot(int detectorId, bool isSpectrum = true);
