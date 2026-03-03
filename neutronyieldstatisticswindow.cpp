@@ -872,7 +872,9 @@ void NeutronYieldStatisticsWindow::on_action_open_triggered()
         try
         {
             // 1. 打开文件
-            H5::H5File file(filePath.toStdString(), H5F_ACC_RDONLY);
+            QTextCodec* gbk_codec = QTextCodec::codecForName("GBK");
+            QByteArray filePathBytes = gbk_codec->fromUnicode(filePath);
+            H5::H5File file(filePathBytes.toStdString(), H5F_ACC_RDONLY);
 
             //获取经纬度
             H5::Group group = file.openGroup("Config");

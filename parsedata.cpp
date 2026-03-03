@@ -801,6 +801,13 @@ void ParseData::clearFitResult()
     specStripData_residualRate.clear(); //残差
 }
 
+#include <QTextCodec>
+/**
+ * @brief parseH5File 解析h5文件，获取能谱数据
+ * @param filePath h5文件路径
+ * @param detectorId 探测器ID
+ * @return 成功解析的能谱数量
+ */
 int ParseData::parseH5File(const QString& filePath, const quint32 detectorId)
 {
     mDetId = detectorId;
@@ -810,7 +817,9 @@ int ParseData::parseH5File(const QString& filePath, const quint32 detectorId)
     }
 
     // 解析文件，获取能谱
-    bool readFlag = HDF5Settings::readAllH5Spectrum(filePath.toStdString(), detectorId, m_allSpec);
+    QTextCodec* gbk_codec = QTextCodec::codecForName("GBK");
+    QByteArray filePathBytes = gbk_codec->fromUnicode(filePath);
+    bool readFlag = HDF5Settings::readAllH5Spectrum(filePathBytes.toStdString(), detectorId, m_allSpec);
     if(readFlag)  return m_allSpec.size();
     else return 0;
 }

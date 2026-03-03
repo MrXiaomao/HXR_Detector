@@ -263,9 +263,7 @@ void HDF5Settings::createH5Config()
 {
     if (QFileInfo::exists(DEFAULT_HDF5_FILENAME))
     {
-        mfH5Setting = new H5::H5File(DEFAULT_HDF5_FILENAME, H5F_ACC_RDWR | H5F_ACC_SWMR_WRITE);
-        if (!mfH5Setting)
-            mfH5Setting = new H5::H5File(DEFAULT_HDF5_FILENAME, H5F_ACC_RDONLY | H5F_ACC_SWMR_READ);
+        mfH5Setting = new H5::H5File(DEFAULT_HDF5_FILENAME, H5F_ACC_RDWR);
         H5::Group cfgGroup = mfH5Setting->openGroup("Config");
         H5::DataSet globalDataset = cfgGroup.openDataSet("Detector");
         H5::DataSpace file_space = globalDataset.getSpace();
@@ -396,7 +394,9 @@ void HDF5Settings::createH5Spectrum(QString filePath)
 
         try {
             mSpectrumRef = 0;
-            mfH5Spectrum = new H5::H5File(filePath.toStdString(), H5F_ACC_TRUNC);//, H5::FileCreatPropList::DEFAULT, fapl);
+            QTextCodec* gbk_codec = QTextCodec::codecForName("GBK");
+            QByteArray filePathBytes = gbk_codec->fromUnicode(filePath);
+            mfH5Spectrum = new H5::H5File(filePathBytes.toStdString(), H5F_ACC_TRUNC);//, H5::FileCreatPropList::DEFAULT, fapl);
 
             for (int i=1; i<=DET_NUM; ++i){
                 DetParameter detParameter;

@@ -573,7 +573,9 @@ void CountRateStatisticsWindow::on_action_open_triggered()
     // 解析文件，获取能谱范围时长
     {
         // 1. 打开文件
-        H5::H5File file(filePath.toStdString(), H5F_ACC_RDONLY);
+        QTextCodec* gbk_codec = QTextCodec::codecForName("GBK");
+        QByteArray filePathBytes = gbk_codec->fromUnicode(filePath);
+        H5::H5File file(filePathBytes.toStdString(), H5F_ACC_RDONLY);
 
         // 2. 打开分组核数据集
         H5::Group group = file.openGroup("Detector#1");
@@ -668,8 +670,9 @@ void CountRateStatisticsWindow::on_action_startMeasure_triggered()
     QString filePath = ui->textBrowser_filepath->toPlainText();
 
     // 1. 打开文件
-    H5::H5File file(filePath.toStdString(), H5F_ACC_RDONLY);
-
+    QTextCodec* gbk_codec = QTextCodec::codecForName("GBK");
+    QByteArray filePathBytes = gbk_codec->fromUnicode(filePath);
+    H5::H5File file(filePathBytes.toStdString(), H5F_ACC_RDONLY);
 
     //for (int index = 1; index <= DET_NUM; ++index)
     {
