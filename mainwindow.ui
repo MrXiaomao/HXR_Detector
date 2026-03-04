@@ -1477,6 +1477,9 @@
                    </item>
                    <item row="5" column="2">
                     <widget class="QDateTimeEdit" name="dateTime_shotTime">
+                     <property name="enabled">
+                      <bool>false</bool>
+                     </property>
                      <property name="sizePolicy">
                       <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
                        <horstretch>0</horstretch>
@@ -1539,7 +1542,7 @@
                      </property>
                     </widget>
                    </item>
-                   <item row="1" column="2">
+                   <item row="1" column="2" colspan="2">
                     <widget class="QSpinBox" name="spinBox_coolTimeLength">
                      <property name="maximum">
                       <number>99999999</number>
@@ -1588,7 +1591,11 @@
                     </widget>
                    </item>
                    <item>
-                    <widget class="QLineEdit" name="lineEdit_filePath"/>
+                    <widget class="QLineEdit" name="lineEdit_filePath">
+                     <property name="placeholderText">
+                      <string>./cache</string>
+                     </property>
+                    </widget>
                    </item>
                   </layout>
                  </widget>

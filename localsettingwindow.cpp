@@ -223,15 +223,53 @@ LocalSettingWindow::LocalSettingWindow(QWidget *parent)
     connect(ui->spinBox_port, &QSpinBox::textChanged, this, &LocalSettingWindow::updateData);
     connect(ui->checkBox, &QCheckBox::stateChanged, this, &LocalSettingWindow::updateData);
     connect(ui->checkBox_2, &QCheckBox::stateChanged, this, &LocalSettingWindow::updateData);
-    connect(ui->lineEdit_switcherIp_1, &QLineEdit::textChanged, this, &LocalSettingWindow::updateData);
-    connect(ui->lineEdit_switcherIp_2, &QLineEdit::textChanged, this, &LocalSettingWindow::updateData);
-    connect(ui->lineEdit_switcherIp_3, &QLineEdit::textChanged, this, &LocalSettingWindow::updateData);
+    connect(ui->lineEdit_switcherIp_1, &QLineEdit::editingFinished, this, &LocalSettingWindow::updateData);
+    connect(ui->lineEdit_switcherIp_2, &QLineEdit::editingFinished, this, &LocalSettingWindow::updateData);
+    connect(ui->lineEdit_switcherIp_3, &QLineEdit::editingFinished, this, &LocalSettingWindow::updateData);
+
+    ui->comboBox_ip->installEventFilter(this);
+    ui->lineEdit->installEventFilter(this);
+    ui->lineEdit_switcherIp_1->installEventFilter(this);
+    ui->lineEdit_switcherIp_2->installEventFilter(this);
+    ui->lineEdit_switcherIp_3->installEventFilter(this);
 }
 
 LocalSettingWindow::~LocalSettingWindow()
 {
     delete ui;
 }
+
+#include <QMessageBox>
+bool LocalSettingWindow::eventFilter(QObject *watched, QEvent *event) {
+    // 1. 过滤目标 QLineEdit 控件
+    QLineEdit* ip_edit = nullptr;
+    if (watched == ui->comboBox_ip){
+        QComboBox *comboBox = static_cast<QComboBox *>(watched);
+        ip_edit = comboBox->lineEdit();
+    }
+    else{
+        ip_edit = qobject_cast<QLineEdit*>(watched);
+    }
+
+    if (!ip_edit || !(watched == ui->lineEdit || watched == ui->lineEdit_switcherIp_1 ||
+                      watched == ui->lineEdit_switcherIp_2 || watched == ui->lineEdit_switcherIp_3 || watched == ui->comboBox_ip)) {
+        return QWidget::eventFilter(watched, event);
+    }
+
+    // 2. 监听焦点失去事件（FocusOut）
+    if (event->type() == QEvent::FocusOut) {
+        QRegExp ip_port_regex(R"(^((25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)\.){3}(25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)?$)");
+        if (!ip_port_regex.exactMatch(ip_edit->text())) {
+            QMessageBox::warning(this, "错误", "请输入合法的 IP 格式！\r\n如 192.168.1.1");
+            // 3. 强制将焦点拉回当前控件（用户必须修正）
+            ip_edit->setFocus();
+            return true; // 拦截事件，阻止焦点转移
+        }
+    }
+
+    return QWidget::eventFilter(watched, event);
+}
+
 
 void LocalSettingWindow::updateData()
 {

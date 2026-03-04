@@ -25,8 +25,9 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     mAutoMeasureDelayTimer->setInterval(1000); // 每秒触发一次
     connect(mAutoMeasureDelayTimer, &QTimer::timeout, this, [=](){
         QDateTime now = QDateTime::currentDateTime();
-        quint32 coolTimelength = ui->spinBox_coolTimeLength->value();
-        QDateTime delay = ui->dateTimeEdit_autoTrigger->dateTime().addSecs(coolTimelength-30); // 提前30秒做好准备工作
+        qint32 coolTimelength = ui->spinBox_coolTimeLength->value();
+        QDateTime delay = ui->dateTimeEdit_autoTrigger->dateTime();
+        delay = delay.addSecs(coolTimelength-30); // 提前30秒做好准备工作
         if (now >= delay)
         {
             mAutoMeasureDelayTimer->stop();
@@ -89,7 +90,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     // 继电器
     connect(commHelper, &CommHelper::switcherConnected, this, [=](QString ip){
         mSwitcherConnected = true;
-        qInfo().nospace().noquote() << tr("交换机[ %1 ]已连通").arg(ip);
+        qInfo().nospace().noquote() << tr("交换机[%1]已连通").arg(ip);
     });
 
     connect(commHelper, &CommHelper::switcherLogged, this, [=](QString ip){
@@ -100,7 +101,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
         updateConnectButtonState(true);
         ui->action_powerOn->setEnabled(true);
         ui->action_powerOff->setEnabled(true);
-        qInfo().nospace().noquote() << tr("交换机[ %1 ]已登录").arg(ip);
+        qInfo().nospace().noquote() << tr("交换机[%1]已登录").arg(ip);
 
         /// 再给设备上电
         if (mEnableAutoMeasure)
@@ -122,7 +123,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
         updateConnectButtonState(false);
         ui->action_powerOn->setEnabled(false);
         ui->action_powerOff->setEnabled(false);
-        qCritical().nospace().noquote() << tr("交换机[ %1 ]连接已断开").arg(ip);
+        qCritical().nospace().noquote() << tr("交换机[%1]连接已断开").arg(ip);
     });
 
     // 探测器
@@ -1190,7 +1191,7 @@ void MainWindow::onTriggerModelChanged(int index)
     case 0: // 软件触发
         ui->label_7->setVisible(false);
         ui->lineEdit_triggerflag->setVisible(false);
-        ui->dateTime_shotTime->setEnabled(true);
+        ui->dateTime_shotTime->setEnabled(false);
         break;
     case 1: // 外触发
         ui->label_7->setVisible(true);
@@ -1274,6 +1275,10 @@ void MainWindow::on_pushButton_startMeasure_clicked()
     /*设置发次信息*/
     QString shotDir = ui->lineEdit_filePath->text();
     QString shotNumStr = ui->lineEdit_shotNum->text();
+    if (shotDir.isEmpty()){
+        shotDir = "./cache";
+        ui->lineEdit_filePath->setText(shotDir);
+    }
 
     // 保存测量数据
     QString savePath = QString(tr("%1/%2")).arg(shotDir).arg(shotNumStr);
@@ -1496,7 +1501,7 @@ void MainWindow::on_action_stopMeasure_triggered()
 {
     ui->action_startMeasure->setEnabled(true);
     ui->action_stopMeasure->setEnabled(false);
-    ui->dateTime_shotTime->setEnabled(true);
+    ui->dateTime_shotTime->setEnabled(false);
     ui->com_triggerModel->setEnabled(true);
     ui->lineEdit_shotNum->setEnabled(true);
     ui->checkBox_autoIncrease->setEnabled(true);
@@ -1593,7 +1598,7 @@ void MainWindow::onMeasureCountdownTimeout()
             ui->action_stopMeasure->setEnabled(false);
             ui->pushButton_startMeasure->setEnabled(false);
             ui->pushButton_stopMeasure->setEnabled(false);
-            ui->dateTime_shotTime->setEnabled(true);
+            ui->dateTime_shotTime->setEnabled(false);
             ui->com_triggerModel->setEnabled(true);
             ui->lineEdit_shotNum->setEnabled(true);
             ui->checkBox_autoIncrease->setEnabled(true);
@@ -1610,7 +1615,7 @@ void MainWindow::onMeasureCountdownTimeout()
             ui->action_stopMeasure->setEnabled(false);
             ui->pushButton_startMeasure->setEnabled(true);
             ui->pushButton_stopMeasure->setEnabled(false);
-            ui->dateTime_shotTime->setEnabled(true);
+            ui->dateTime_shotTime->setEnabled(false);
             ui->com_triggerModel->setEnabled(true);
             ui->lineEdit_shotNum->setEnabled(true);
             ui->checkBox_autoIncrease->setEnabled(true);
@@ -2313,6 +2318,10 @@ void MainWindow::startMeasure()
     /*设置发次信息*/
     QString shotDir = ui->lineEdit_filePath->text();
     QString shotNumStr = ui->lineEdit_shotNum->text().trimmed(); //去掉 开头 和 结尾 的空白,不会删除中间的空格
+    if (shotDir.isEmpty()){
+        shotDir = "./cache";
+        ui->lineEdit_filePath->setText(shotDir);
+    }
 
     // 保存测量数据
     QString savePath = QString(tr("%1/%2")).arg(shotDir).arg(shotNumStr);
@@ -2434,13 +2443,19 @@ void MainWindow::on_cbb_measureMode_activated(int index)
 {
     if (index == 0)
     {
+        // 手动测量
         ui->label_18->hide();
         ui->dateTimeEdit_autoTrigger->hide();
+        ui->label_11->hide();
+        ui->spinBox_coolTimeLength->hide();
     }
     else
     {
+        // 自动化测量
         ui->label_18->show();
         ui->dateTimeEdit_autoTrigger->show();
+        ui->label_11->show();
+        ui->spinBox_coolTimeLength->show();
     }
 }
 
@@ -2609,6 +2624,10 @@ void MainWindow::on_action_particalMode_triggered()
     /*设置发次信息*/
     QString shotDir = ui->lineEdit_filePath->text();
     QString shotNumStr = ui->lineEdit_shotNum->text();
+    if (shotDir.isEmpty()){
+        shotDir = "./cache";
+        ui->lineEdit_filePath->setText(shotDir);
+    }
 
     // 保存测量数据
     QString savePath = QString(tr("%1/%2")).arg(shotDir).arg(shotNumStr);
@@ -2666,6 +2685,10 @@ void MainWindow::on_action_waveformMode_triggered()
     /*设置发次信息*/
     QString shotDir = ui->lineEdit_filePath->text();
     QString shotNumStr = ui->lineEdit_shotNum->text();
+    if (shotDir.isEmpty()){
+        shotDir = "./cache";
+        ui->lineEdit_filePath->setText(shotDir);
+    }
 
     // 保存测量数据
     QString savePath = QString(tr("%1/%2")).arg(shotDir).arg(shotNumStr);
@@ -2681,5 +2704,15 @@ void MainWindow::on_action_waveformMode_triggered()
     w->setWindowFlags(Qt::WindowCloseButtonHint|Qt::Dialog); // 只显示关闭按钮
     w->setWindowModality(Qt::ApplicationModal);//模态属性，NonModal=非模态，ApplicationModal=应用程序模态（阻塞本程序所有窗口），WindowModal=窗口模态（阻塞父窗口）
     w->show();
+}
+
+
+void MainWindow::on_lineEdit_filePath_editingFinished()
+{
+    QString shotDir = ui->lineEdit_filePath->text();
+    if (shotDir.isEmpty()){
+        shotDir = "./cache";
+        ui->lineEdit_filePath->setText(shotDir);
+    }
 }
 
