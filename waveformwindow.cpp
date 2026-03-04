@@ -20,7 +20,7 @@ WaveformWindow::WaveformWindow(QWidget *parent)
             timerStart = QDateTime::currentDateTime();
             timer->start(1000);
             ui->pushButton_save->setEnabled(false);
-            ui->pushButton_start->setEnabled(false);
+            ui->pushButton_start->setEnabled(true);
             ui->pushButton_stop->setEnabled(true);
             ui->label_2->setText(timerStart.toString("yyyy-MM-dd HH:mm:ss"));
         }
@@ -48,7 +48,7 @@ WaveformWindow::WaveformWindow(QWidget *parent)
     });
 
     ui->pushButton_save->setEnabled(false);
-    ui->pushButton_start->setEnabled(commHelper->isOpen());
+    // ui->pushButton_start->setEnabled(commHelper->isOpen());
 }
 
 WaveformWindow::~WaveformWindow()
