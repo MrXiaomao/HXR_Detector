@@ -227,22 +227,7 @@ void CommHelper::initDataProcessor()
                     mTriggerTimer = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
                 }
 
-                if (!mNetRawFileProcessor.contains(processor->index())){
-                    QString filePath = QString("%1/%2/%3_%4_Net.dat").arg(mShotDir).arg(mShotNum).arg(mTriggerTimer).arg(processor->index());
-                    mNetRawFileProcessor[processor->index()] = new QFile(filePath);
-                    mNetRawFileProcessor[processor->index()]->open(QIODevice::WriteOnly | QIODevice::Append); //覆盖式写入
-                    mDataFileList.push_back(filePath);
-
-                    // 初始化flush信息
-                    {
-                        QMutexLocker flushLocker(&mMutexFileFlush);
-                        mFileFlushInfo[processor->index()] = FileFlushInfo();
-                    }
-
-                    qInfo().nospace() << "谱仪[#"<< processor->index() << "]创建存储文件：" << filePath;
-                }
-
-                if (mNetRawFileProcessor[processor->index()]->isOpen()){
+                if (mNetRawFileProcessor.contains(processor->index()) && mNetRawFileProcessor[processor->index()]->isOpen()){
                     qint64 bytesWritten = mNetRawFileProcessor[processor->index()]->write((const char *)data.constData(), data.size());
                     // 实时flush，确保数据都存下来了
                     mNetRawFileProcessor[processor->index()]->flush();
@@ -750,6 +735,22 @@ void CommHelper::startMeasure(CommandAdapter::WorkMode mode, quint8 index/* = 0*
             if (!detectorDataProcessor->isFreeSocket()){
                 detectorDataProcessor->startMeasure(mode);
                 emit measureStart(index);
+
+                //初始化网络数据文件存储
+                if (!mNetRawFileProcessor.contains(index)){
+                    QString filePath = QString("%1/%2/%3_%4_Net.dat").arg(mShotDir).arg(mShotNum).arg(mTriggerTimer).arg(index);
+                    mNetRawFileProcessor[index] = new QFile(filePath);
+                    mNetRawFileProcessor[index]->open(QIODevice::WriteOnly | QIODevice::Append); //覆盖式写入
+                    mDataFileList.push_back(filePath);
+
+                    // 初始化flush信息
+                    {
+                        QMutexLocker flushLocker(&mMutexFileFlush);
+                        mFileFlushInfo[index] = FileFlushInfo();
+                    }
+
+                    qInfo().nospace() << "谱仪[#"<< index << "]创建存储文件：" << filePath;
+                }
             }
         }
 

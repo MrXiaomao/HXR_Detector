@@ -199,8 +199,8 @@ private:
     QString mTriggerTimer;//触发时钟
 
     QMap<quint8, DataProcessor*> mDetectorDataProcessor;//24路探测器数据处理器
-    QMap<quint8, QFile*> mDetectorFileProcessor;//24路探测器数据处理器
-    QMap<quint8, QFile*> mNetRawFileProcessor;//24路探测器原始网络数据处理器
+    QMap<quint8, QFile*> mDetectorFileProcessor;//24路探测器有效数据文件存储句柄
+    QMap<quint8, QFile*> mNetRawFileProcessor;  //24路探测器原始数据文件存储句柄
     QMap<quint8, QVector<quint16>> mWaveAllData;
     QString mResMatrixFileName;
 

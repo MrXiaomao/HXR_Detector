@@ -48,7 +48,7 @@ public:
     void restoreSettings();
     void initCustomPlot(int index, QCustomPlot* customPlot, QString axisXLabel, QString axisYLabel, QString title, int graphCount = 1);
     //清除全部图像数据（计数曲线、能谱曲线）
-    void clearCustomPlotGraph();
+    void clearCustomPlotData();
     void applyColorTheme();
 
     // 新增的探测器数据管理方法

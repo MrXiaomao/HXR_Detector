@@ -1025,12 +1025,19 @@ void MainWindow::initCustomPlot(int index, QCustomPlot* customPlot, QString axis
 }
 
 //清除全部图像数据（计数曲线、能谱曲线）
-void MainWindow::clearCustomPlotGraph()
+void MainWindow::clearCustomPlotData()
 {
-    for (int i = 0; i < 24; ++i) {
-        QCustomPlot* customPlot = getCustomPlot(i, true); // 获取能谱图像
-        if (customPlot) {
-            customPlot->clearGraphs();
+    for (int i = 0; i < 24; ++i)
+    {
+        QCustomPlot* customPlot = getCustomPlot(i, true);
+
+        if (customPlot)
+        {
+            for (int g = 0; g < customPlot->graphCount(); ++g)
+            {
+                customPlot->graph(g)->data()->clear();  // 只清数据
+            }
+
             customPlot->replot();
         }
     }
@@ -1236,7 +1243,7 @@ void MainWindow::onTriggerModelChanged(int index)
 // 开始测量 全部通道测量
 void MainWindow::on_action_startMeasure_triggered()
 {
-    clearCustomPlotGraph();
+    clearCustomPlotData();
     //先检查路径有效性 lineEdit_filePath
     QString filePath = ui->lineEdit_filePath->text();
     QDir dir(filePath);
@@ -1307,8 +1314,8 @@ void MainWindow::on_action_startMeasure_triggered()
 //单通道测量，单独测量某个通道
 void MainWindow::on_pushButton_startMeasure_clicked()
 {
-    clearCustomPlotGraph();
-    
+    clearCustomPlotData();
+
     //先检查路径有效性 lineEdit_filePath
     QString filePath = ui->lineEdit_filePath->text();
     QDir dir1(filePath);
@@ -1353,7 +1360,7 @@ void MainWindow::on_pushButton_startMeasure_clicked()
     commHelper->setShotInformation(shotDir, shotNumStr);
     // 再发开始测量指令
     auto rows  = ui->tableWidget_detector->selectionModel()->selectedRows();
-    if (rows .isEmpty()) {
+    if (rows.isEmpty()) {
         // 没有选中任何行
         QMessageBox::warning(
             this,
@@ -2520,18 +2527,18 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
             updateSpectrumPlotSettings(index);
         }
 
-        double xMin = m_spectrumPlotSettings[0].xMin;
-        double xMax = m_spectrumPlotSettings[0].xMax;
-        for(int index = 1; index < DET_NUM; ++index)
-        {
-            xMin = qMin(xMin, m_spectrumPlotSettings[index].xMin);
-            xMax = qMax(xMax, m_spectrumPlotSettings[index].xMax);
-        }
+        // double xMin = m_spectrumPlotSettings[0].xMin;
+        // double xMax = m_spectrumPlotSettings[0].xMax;
+        // for(int index = 1; index < DET_NUM; ++index)
+        // {
+        //     xMin = qMin(xMin, m_spectrumPlotSettings[index].xMin);
+        //     xMax = qMax(xMax, m_spectrumPlotSettings[index].xMax);
+        // }
 
-        ui->spectroMeter1_bottom->xAxis->setRange(xMin, xMax);
-        ui->spectroMeter2_bottom->xAxis->setRange(xMin, xMax);
-        ui->spectroMeter1_bottom->replot();
-        ui->spectroMeter2_bottom->replot();
+        // ui->spectroMeter1_bottom->xAxis->setRange(xMin, xMax);
+        // ui->spectroMeter2_bottom->xAxis->setRange(xMin, xMax);
+        // ui->spectroMeter1_bottom->replot();
+        // ui->spectroMeter2_bottom->replot();
         return;
     }
 
