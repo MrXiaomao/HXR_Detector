@@ -1210,6 +1210,14 @@ void MainWindow::onTriggerModelChanged(int index)
 // 开始测量 全部通道测量
 void MainWindow::on_action_startMeasure_triggered()
 {
+    //先检查路径有效性 lineEdit_filePath
+    QString filePath = ui->lineEdit_filePath->text();
+    QDir dir(filePath);
+    if (!dir.exists()) {
+        QMessageBox::warning(this, tr("警告"), tr("数据保存路径不存在，请检查数据保存路径设置！"));
+        return;
+    }
+
     ui->action_startMeasure->setEnabled(false);
     ui->action_stopMeasure->setEnabled(true);
     ui->dateTime_shotTime->setEnabled(false);
@@ -1272,6 +1280,14 @@ void MainWindow::on_action_startMeasure_triggered()
 //单通道测量，单独测量某个通道
 void MainWindow::on_pushButton_startMeasure_clicked()
 {
+    //先检查路径有效性 lineEdit_filePath
+    QString filePath = ui->lineEdit_filePath->text();
+    QDir dir1(filePath);
+    if (!dir1.exists()) {
+        QMessageBox::warning(this, tr("警告"), tr("数据保存路径不存在，请检查数据保存路径设置！"));
+        return;
+    }
+    
     /*设置发次信息*/
     QString shotDir = ui->lineEdit_filePath->text();
     QString shotNumStr = ui->lineEdit_shotNum->text();
