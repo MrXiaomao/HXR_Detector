@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-04-20 09:21:28
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-03-02 19:43:33
+ * @LastEditTime: 2026-03-04 17:15:27
  * @Description: 离线数据分析
  */
 #include "neutronyieldstatisticswindow.h"
@@ -1061,7 +1061,7 @@ void NeutronYieldStatisticsWindow::on_action_startCalculate_triggered()
     // 去掉最后一个逗号
     if (!detectorList.isEmpty())
         detectorList.chop(1);
-    QString msg = QString("谱仪%1解析完成").arg(detectorList);
+    QString msg = QString("文件全部解析完成，包含谱仪：%1").arg(detectorList);
     emit reporWriteLog(msg);
 
     QMessageBox::information(this, tr("提示"), msg);

@@ -30,7 +30,7 @@ ParticalWindow::ParticalWindow(QWidget *parent)
 
     //波形路径
     {
-        QAction *action = ui->lineEdit_path->addAction(QIcon(":/resource/open.png"), QLineEdit::TrailingPosition);
+        QAction *action = ui->lineEdit_path->addAction(QIcon(":/open.png"), QLineEdit::TrailingPosition);
         QToolButton* button = qobject_cast<QToolButton*>(action->associatedWidgets().last());
         button->setCursor(QCursor(Qt::PointingHandCursor));
         connect(button, &QToolButton::pressed, this, [=](){

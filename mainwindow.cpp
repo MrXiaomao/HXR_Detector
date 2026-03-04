@@ -1024,19 +1024,39 @@ void MainWindow::initCustomPlot(int index, QCustomPlot* customPlot, QString axis
     //connect(customPlot, SIGNAL(mouseMove(QMouseEvent*)), this,SLOT(slotShowTracer(QMouseEvent*)));
 }
 
-void MainWindow::closeEvent(QCloseEvent *event) {
-    if (mIsMeasuring){
-        QMessageBox::information(this, tr("系统退出提示"), tr("测量中禁止退出软件系统！"),
-                                             QMessageBox::Ok, QMessageBox::Ok);
-        event->ignore();
+//清除全部图像数据（计数曲线、能谱曲线）
+void MainWindow::clearCustomPlotGraph()
+{
+    for (int i = 0; i < 24; ++i) {
+        QCustomPlot* customPlot = getCustomPlot(i, true); // 获取能谱图像
+        if (customPlot) {
+            customPlot->clearGraphs();
+            customPlot->replot();
+        }
     }
-    else
-    {
+}
+
+void MainWindow::closeEvent(QCloseEvent *event) {
+    //确认是否退出
+    int ret = QMessageBox::question(this, tr("系统退出提示"), tr("确定要退出软件系统吗？"),
+                                            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (ret == QMessageBox::No) {
+        event->ignore();
+        return;
+    }
+
+    // if (mIsMeasuring){
+    //     QMessageBox::information(this, tr("系统退出提示"), tr("测量中禁止退出软件系统！"),
+    //                                          QMessageBox::Ok, QMessageBox::Ok);
+    //     event->ignore();
+    // }
+    // else
+    // {
         // 断开网络
         commHelper->stopMeasure();
         commHelper->stopServer();
         event->accept();
-    }
+    // }
 }
 
 bool MainWindow::checkStatusTipEvent(QEvent * event) {
@@ -1181,6 +1201,12 @@ void MainWindow::on_action_stopServer_triggered()
     label_LocalServer->setText(tr("本地网络服务：断开"));
 }
 
+//视图
+void MainWindow::on_actiontoolBar_triggered()
+{
+    ui->toolBar->setVisible(!ui->toolBar->isVisible());
+}
+
 /**
  * @brief MainWindow::onTriggerModelChanged 触发模式选择：软件触发/外触发
  * @param index 下拉框序号，触发类型
@@ -1210,6 +1236,7 @@ void MainWindow::onTriggerModelChanged(int index)
 // 开始测量 全部通道测量
 void MainWindow::on_action_startMeasure_triggered()
 {
+    clearCustomPlotGraph();
     //先检查路径有效性 lineEdit_filePath
     QString filePath = ui->lineEdit_filePath->text();
     QDir dir(filePath);
@@ -1280,6 +1307,8 @@ void MainWindow::on_action_startMeasure_triggered()
 //单通道测量，单独测量某个通道
 void MainWindow::on_pushButton_startMeasure_clicked()
 {
+    clearCustomPlotGraph();
+    
     //先检查路径有效性 lineEdit_filePath
     QString filePath = ui->lineEdit_filePath->text();
     QDir dir1(filePath);
@@ -1287,7 +1316,7 @@ void MainWindow::on_pushButton_startMeasure_clicked()
         QMessageBox::warning(this, tr("警告"), tr("数据保存路径不存在，请检查数据保存路径设置！"));
         return;
     }
-    
+
     /*设置发次信息*/
     QString shotDir = ui->lineEdit_filePath->text();
     QString shotNumStr = ui->lineEdit_shotNum->text();

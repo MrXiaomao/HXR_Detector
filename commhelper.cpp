@@ -327,7 +327,7 @@ void CommHelper::initDataProcessor()
                     mDetectorFileProcessor[processor->index()]->open(QIODevice::WriteOnly | QIODevice::Append); //覆盖式写入
                     mDataFileList.push_back(filePath);
                     // 写入表头
-                    QString line = QString("序号,时间,幅度,类型\n");
+                    QString line = QString("测量时长(s),时间,ADC采样幅度,粒子类型\n");
                     qint64 bytesWritten = mDetectorFileProcessor[processor->index()]->write((const char *)line.toUtf8());
                     // 检查是否需要flush（每10秒或每1MB）
 
