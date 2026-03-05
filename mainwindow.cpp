@@ -2457,7 +2457,7 @@ void MainWindow::stopMeasure()
         settings.setValue("mainWindow/ShotNumStr", ui->lineEdit_shotNum->text());
     }
 
-    // 停止波形测量
+    // 停止测量
     commHelper->stopMeasure();
     //清空温度超时报警的探测器ID
     mTemperatureTimeoutDetectors.clear();
@@ -2525,8 +2525,14 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
         for(int index = 1; index <= DET_NUM; ++index)
         {
             updateSpectrumPlotSettings(index);
+            // 更新X轴范围
+            ui->spectroMeter1_bottom->xAxis->setRange(m_spectrumPlotSettings[index-1].xMin, m_spectrumPlotSettings[index-1].xMax);
+            ui->spectroMeter2_bottom->xAxis->setRange(m_spectrumPlotSettings[index-1].xMin, m_spectrumPlotSettings[index-1].xMax);
+            ui->spectroMeter1_bottom->replot();
+            ui->spectroMeter2_bottom->replot();
         }
 
+        // 取公共最小值/最大值
         // double xMin = m_spectrumPlotSettings[0].xMin;
         // double xMax = m_spectrumPlotSettings[0].xMax;
         // for(int index = 1; index < DET_NUM; ++index)
@@ -2535,10 +2541,6 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
         //     xMax = qMax(xMax, m_spectrumPlotSettings[index].xMax);
         // }
 
-        // ui->spectroMeter1_bottom->xAxis->setRange(xMin, xMax);
-        // ui->spectroMeter2_bottom->xAxis->setRange(xMin, xMax);
-        // ui->spectroMeter1_bottom->replot();
-        // ui->spectroMeter2_bottom->replot();
         return;
     }
 
@@ -2556,6 +2558,10 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
 
     if (mEnScale)
     {
+        
+        m_spectrumPlotSettings[detectorId-1].xMin = detParameter.spectrumPlotEnMin;
+        m_spectrumPlotSettings[detectorId-1].xMax = detParameter.spectrumPlotEnMax;
+
         // 读取能量刻度系数
         // 判断是否勾选能量刻度
         GlobalSettings settings(CONFIG_FILENAME);
@@ -2590,8 +2596,6 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
                 m_spectrumPlotSettings[detectorId-1].c2 = c;
             }
 
-            m_spectrumPlotSettings[detectorId-1].xMin = detParameter.spectrumPlotEnMin;
-            m_spectrumPlotSettings[detectorId-1].xMax = detParameter.spectrumPlotEnMax;
             m_spectrumPlotSettings[detectorId-1].fitType = fitType;
             settings.endGroup();
         }
@@ -2617,12 +2621,6 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
             }
             graph->setData(x, y);
         }
-    
-        // 更新X轴范围
-        ui->spectroMeter1_bottom->xAxis->setRange(detParameter.spectrumPlotEnMin, detParameter.spectrumPlotEnMax);
-        ui->spectroMeter2_bottom->xAxis->setRange(detParameter.spectrumPlotEnMin, detParameter.spectrumPlotEnMax);
-        ui->spectroMeter1_bottom->replot();
-        ui->spectroMeter2_bottom->replot();
     }
     else
     {

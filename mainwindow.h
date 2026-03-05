@@ -235,8 +235,8 @@ private:
         double yMin = 0.0;
         double yMax = 100.0;
 
-        int fitType = 0;
-        double c0 = 0.0;
+        int fitType = 1;
+        double c0 = 1.0;
         double c1 = 0.0;
         double c2 = 0.0;
     };

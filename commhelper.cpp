@@ -169,19 +169,12 @@ void CommHelper::initDataProcessor()
             });
         });
 
+        // 能谱数据
         connect(detectorDataProcessor, &DataProcessor::reportSpectrumData, this, [=](QByteArray& data){
             DataProcessor* processor = qobject_cast<DataProcessor*>(sender());
-            /*
-                保存数据
-            */
             {
-                QMutexLocker locker(&mMutexTriggerTimer);
-                if (mTriggerTimer.isEmpty()){
-                    mTriggerTimer = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
-                }
-
                 if (!mDetectorFileProcessor.contains(processor->index())){
-                    QString filePath = QString("%1/%2/%3_%4_能谱.dat").arg(mShotDir).arg(mShotNum).arg(mTriggerTimer).arg(processor->index());
+                    QString filePath = QString("%1/%2/%3_%4_能谱.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(processor->index());
                     mDetectorFileProcessor[processor->index()] = new QFile(filePath);
                     mDetectorFileProcessor[processor->index()]->open(QIODevice::WriteOnly);
                     mDataFileList.push_back(filePath);
@@ -192,9 +185,11 @@ void CommHelper::initDataProcessor()
                         mFileFlushInfo[processor->index()] = FileFlushInfo();
                     }
 
-                    qInfo().nospace() << "谱仪[#"<< processor->index() << "]创建存储文件：" << filePath;
+                    QFileInfo info(filePath);
+                    QString absolutePath = info.absoluteFilePath();
+                    qInfo().nospace() << "谱仪[#"<< processor->index() << "]创建存储文件：" << absolutePath;
 
-                    filePath = QString("%1/%2/%3.H5").arg(mShotDir).arg(mShotNum).arg(mTriggerTimer);
+                    filePath = QString("%1/%2/%3.H5").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime);
                     HDF5Settings::instance()->createH5Spectrum(filePath);
                 }
 
@@ -222,11 +217,6 @@ void CommHelper::initDataProcessor()
             */
             quint8 detId = processor->index();
             {
-                QMutexLocker locker(&mMutexTriggerTimer);
-                if (mTriggerTimer.isEmpty()){
-                    mTriggerTimer = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
-                }
-
                 if (mNetRawFileProcessor.contains(processor->index()) && mNetRawFileProcessor[processor->index()]->isOpen()){
                     qint64 bytesWritten = mNetRawFileProcessor[processor->index()]->write((const char *)data.constData(), data.size());
                     // 实时flush，确保数据都存下来了
@@ -235,6 +225,7 @@ void CommHelper::initDataProcessor()
             }
         });
 
+        //波形数据
         connect(detectorDataProcessor, &DataProcessor::reportWaveformData, this, [=](QByteArray& data){
             DataProcessor* processor = qobject_cast<DataProcessor*>(sender());
             /*
@@ -242,13 +233,13 @@ void CommHelper::initDataProcessor()
             */
             quint8 detId = processor->index();
             {
-                QMutexLocker locker(&mMutexTriggerTimer);
-                if (mTriggerTimer.isEmpty()){
-                    mTriggerTimer = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
-                }
+                // QMutexLocker locker(&mMutexTriggerTime);
+                // if (mTriggerTime.isEmpty()){
+                //     mTriggerTime = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
+                // }
 
                 if (!mDetectorFileProcessor.contains(processor->index())){
-                    QString filePath = QString("%1/%2/%3_%4_波形.dat").arg(mShotDir).arg(mShotNum).arg(mTriggerTimer).arg(processor->index());
+                    QString filePath = QString("%1/%2/%3_%4_波形.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(processor->index());
                     mDetectorFileProcessor[processor->index()] = new QFile(filePath);
                     mDetectorFileProcessor[processor->index()]->open(QIODevice::WriteOnly | QIODevice::Append); //覆盖式写入
                     mDataFileList.push_back(filePath);
@@ -259,7 +250,9 @@ void CommHelper::initDataProcessor()
                         mFileFlushInfo[processor->index()] = FileFlushInfo();
                     }
 
-                    qInfo().nospace() << "谱仪[#"<< processor->index() << "]创建存储文件：" << filePath;
+                    QFileInfo info(filePath);
+                    QString absolutePath = info.absoluteFilePath();
+                    qInfo().nospace() << "谱仪[#"<< processor->index() << "]创建存储文件：" << absolutePath;
                 }
 
                 if (mDetectorFileProcessor[processor->index()]->isOpen()){
@@ -293,6 +286,7 @@ void CommHelper::initDataProcessor()
             }
         });
 
+        //粒子数据
         connect(detectorDataProcessor, &DataProcessor::reportParticleData, this, [=](QByteArray& data){
             DataProcessor* processor = qobject_cast<DataProcessor*>(sender());
 
@@ -301,13 +295,13 @@ void CommHelper::initDataProcessor()
             */
             quint8 detId = processor->index();
             {
-                QMutexLocker locker(&mMutexTriggerTimer);
-                if (mTriggerTimer.isEmpty()){
-                    mTriggerTimer = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
-                }
+                // QMutexLocker locker(&mMutexTriggerTime);
+                // if (mTriggerTime.isEmpty()){
+                //     mTriggerTime = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
+                // }
 
                 if (!mDetectorFileProcessor.contains(processor->index())){
-                    QString filePath = QString("%1/%2/%3_%4_粒子.txt").arg(mShotDir).arg(mShotNum).arg(mTriggerTimer).arg(processor->index());
+                    QString filePath = QString("%1/%2/%3_%4_粒子.txt").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(processor->index());
                     mDetectorFileProcessor[processor->index()] = new QFile(filePath);
                     mDetectorFileProcessor[processor->index()]->open(QIODevice::WriteOnly | QIODevice::Append); //覆盖式写入
                     mDataFileList.push_back(filePath);
@@ -322,7 +316,9 @@ void CommHelper::initDataProcessor()
                         mFileFlushInfo[processor->index()] = FileFlushInfo();
                     }
 
-                    qInfo().nospace() << "谱仪[#"<< processor->index() << "]创建存储文件：" << filePath;
+                    QFileInfo info(filePath);
+                    QString absolutePath = info.absoluteFilePath();
+                    qInfo().nospace() << "谱仪[#"<< processor->index() << "]创建存储文件：" << absolutePath;
                 }
             }
 
@@ -713,8 +709,10 @@ void CommHelper::setShotInformation(const QString shotDir, const QString shotNum
 void CommHelper::startMeasure(CommandAdapter::WorkMode mode, quint8 index/* = 0*/)
 {
     mWaveAllData.clear();
-    mTriggerTimer.clear();
+    mMeasureStartTime.clear();
     mDataFileList.clear();
+
+    mMeasureStartTime = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
 
     if (index == 0){
         for (index = 1; index <= DET_NUM; ++index){
@@ -733,12 +731,9 @@ void CommHelper::startMeasure(CommandAdapter::WorkMode mode, quint8 index/* = 0*
 
             DataProcessor* detectorDataProcessor = mDetectorDataProcessor[index];
             if (!detectorDataProcessor->isFreeSocket()){
-                detectorDataProcessor->startMeasure(mode);
-                emit measureStart(index);
-
                 //初始化网络数据文件存储
                 if (!mNetRawFileProcessor.contains(index)){
-                    QString filePath = QString("%1/%2/%3_%4_Net.dat").arg(mShotDir).arg(mShotNum).arg(mTriggerTimer).arg(index);
+                    QString filePath = QString("%1/%2/%3_%4_Net.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(index);
                     mNetRawFileProcessor[index] = new QFile(filePath);
                     mNetRawFileProcessor[index]->open(QIODevice::WriteOnly | QIODevice::Append); //覆盖式写入
                     mDataFileList.push_back(filePath);
@@ -751,6 +746,9 @@ void CommHelper::startMeasure(CommandAdapter::WorkMode mode, quint8 index/* = 0*
 
                     qInfo().nospace() << "谱仪[#"<< index << "]创建存储文件：" << filePath;
                 }
+                
+                detectorDataProcessor->startMeasure(mode);
+                emit measureStart(index);
             }
         }
 
@@ -836,12 +834,14 @@ void CommHelper::stopMeasure(quint8 index/* = 0*/)
     //默认情况所有通道直接一次性停止测量
     if (index == 0){
         for (index = 1; index <= DET_NUM; ++index){
-            if (mDetectorFileProcessor.contains(index)){
-                DataProcessor* detectorDataProcessor = mDetectorDataProcessor[index];
+            DataProcessor* detectorDataProcessor = mDetectorDataProcessor[index];
+            if (!detectorDataProcessor->isFreeSocket()){
                 detectorDataProcessor->stopMeasure();
-
                 emit measureStop(index);
+            }
 
+            if (mDetectorFileProcessor.contains(index)){
+                
                 //延迟关闭文件，确保尾包数据能够正常存储
                 if (mDetectorFileProcessor.contains(index)){
                     QFile* file = mDetectorFileProcessor[index];
@@ -884,9 +884,10 @@ void CommHelper::stopMeasure(quint8 index/* = 0*/)
     }
     else if (index >= 1 && index <= DET_NUM){ //关闭单个通道
         DataProcessor* detectorDataProcessor = mDetectorDataProcessor[index];
-        detectorDataProcessor->stopMeasure();
-
-        emit measureStop(index);
+        if (!detectorDataProcessor->isFreeSocket()){
+            detectorDataProcessor->stopMeasure();
+            emit measureStop(index);
+        }
 
         //延迟关闭文件，确保尾包数据能够正常存储
         if (mDetectorFileProcessor.contains(index)){
