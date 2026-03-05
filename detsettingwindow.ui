@@ -343,7 +343,7 @@
                    </sizepolicy>
                   </property>
                   <property name="text">
-                   <string>能谱刷新时长：</string>
+                   <string>测量时间步长：</string>
                   </property>
                  </widget>
                 </item>

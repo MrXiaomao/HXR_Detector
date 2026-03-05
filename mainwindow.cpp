@@ -1029,8 +1029,23 @@ void MainWindow::clearCustomPlotData()
 {
     for (int i = 0; i < 24; ++i)
     {
-        QCustomPlot* customPlot = getCustomPlot(i, true);
+        // 计数率图
+        {
+            QCustomPlot* customPlot = getCustomPlot(i, false);
 
+            if (customPlot)
+            {
+                for (int g = 0; g < customPlot->graphCount(); ++g)
+                {
+                    customPlot->graph(g)->data()->clear();  // 只清数据
+                }
+
+                customPlot->replot();
+            }
+        }
+
+        // 能谱图
+        QCustomPlot* customPlot = getCustomPlot(i, true);
         if (customPlot)
         {
             for (int g = 0; g < customPlot->graphCount(); ++g)
@@ -1264,7 +1279,7 @@ void MainWindow::on_action_startMeasure_triggered()
     ui->dateTimeEdit_autoTrigger->setEnabled(false);
     ui->cbb_measureMode->setEnabled(false);
     ui->pushButton_startMeasure->setEnabled(false);
-    ui->pushButton_stopMeasure->setEnabled(true);
+    ui->pushButton_stopMeasure->setEnabled(false);
     ui->action_waveformMode->setEnabled(false);
     ui->action_particalMode->setEnabled(false);
 
@@ -1314,6 +1329,7 @@ void MainWindow::on_action_startMeasure_triggered()
 //单通道测量，单独测量某个通道
 void MainWindow::on_pushButton_startMeasure_clicked()
 {
+    //清空图像中的曲线数据
     clearCustomPlotData();
 
     //先检查路径有效性 lineEdit_filePath
@@ -1408,20 +1424,6 @@ void MainWindow::on_pushButton_startMeasure_clicked()
             if (m_selectedChannels.contains(index))
                 continue;
 
-            // 先清空曲线内容
-            {
-                QCustomPlot* spectroMeter_bottom = getCustomPlot(index, true);
-                QCPGraph* graph = getGraph(index, true);
-                graph->data()->clear();
-                spectroMeter_bottom->replot();
-            }
-            {
-                QCustomPlot* spectroMeter_top = getCustomPlot(index, false);
-                QCPGraph* graph = getGraph(index, false);
-                graph->data()->clear();
-                spectroMeter_top->replot();
-            }
-
             // 再发送开始测量指令
             if (mOnlineDetectors.contains(index))
             {
@@ -1466,6 +1468,29 @@ void MainWindow::on_pushButton_startMeasure_clicked()
             // 再发送开始测量指令
             if (mOnlineDetectors.contains(index))
             {
+                // 判断是否连续测量
+                if (ui->checkBox_continueMeasure->isChecked())
+                {
+                    // 初始化测量时长显示为 00:00:00
+                    ui->edit_measureTime->setText("00:00:00");
+                    // 启动连续测量计时器
+                    mContinueMeasureTimer->start();
+                    qInfo().nospace() << QString("开始测量，连续测量模式");
+                }
+                else
+                {
+                    // 读取倒计时时间（秒）
+                    int countdownSeconds = ui->spinBox_measureTime->value();
+                    if (countdownSeconds > 0) {
+                        mRemainingCountdown = countdownSeconds;
+                        mTotalCountdown = countdownSeconds;
+                        mMeasureCountdownTimer->start();
+                        // 初始化测量时长显示为 00:00:00
+                        ui->edit_measureTime->setText("00:00:00");
+                        qInfo().nospace() << QString("开始测量，倒计时：%1 秒").arg(countdownSeconds);
+                    }
+                }
+
                 commHelper->startMeasure(CommandAdapter::WorkMode::wmSpectrum, index);
                 //记录下所选的通道号，保存到成员变量中，停止测量的时候使用并清空
                 m_selectedChannels.append(index);
@@ -1476,8 +1501,8 @@ void MainWindow::on_pushButton_startMeasure_clicked()
     // 测量中禁用参数配置
     mDetSettingWindow->setEnabled(false);
 
-    //ui->action_startMeasure->setEnabled(false);
-    ui->action_stopMeasure->setEnabled(true);
+    ui->action_startMeasure->setEnabled(false);
+    ui->action_stopMeasure->setEnabled(false);
     ui->action_waveformMode->setEnabled(false);
     ui->action_particalMode->setEnabled(false);
 }
@@ -1486,6 +1511,21 @@ void MainWindow::on_pushButton_startMeasure_clicked()
 //（自定义通道）停止测量，停止测量已选中的通道
 void MainWindow::on_pushButton_stopMeasure_clicked()
 {
+    // 停止倒计时定时器
+    if (mMeasureCountdownTimer && mMeasureCountdownTimer->isActive()) {
+        mMeasureCountdownTimer->stop();
+        // 显示最终测量时长
+        int elapsedSeconds = mTotalCountdown - mRemainingCountdown;
+        ui->edit_measureTime->setText(formatTimeString(elapsedSeconds));
+        qInfo() << "手动测量倒计时已停止";
+    } else if (mContinueMeasureTimer && mContinueMeasureTimer->isValid()){
+        mContinueMeasureTimer->invalidate();
+        qInfo() << "自动化测量倒计时已停止";
+    } else {
+        // 如果没有倒计时，清空显示
+        ui->edit_measureTime->setText("00:00:00");
+    }
+    
     // 获取所选通道
     // 再发开始测量指令
     auto rows  = ui->tableWidget_detector->selectionModel()->selectedRows();
@@ -1540,12 +1580,13 @@ void MainWindow::on_pushButton_stopMeasure_clicked()
     }
 
     ui->pushButton_startMeasure->setEnabled(true);
+    ui->pushButton_stopMeasure->setEnabled(false);
 
     // 非测量中可用参数配置
     mDetSettingWindow->setEnabled(true);
 
     ui->action_startMeasure->setEnabled(true);
-    ui->action_stopMeasure->setEnabled(true);
+    ui->action_stopMeasure->setEnabled(false);
 }
 
 
