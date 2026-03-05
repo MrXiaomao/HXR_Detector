@@ -1501,6 +1501,8 @@ void MainWindow::on_pushButton_startMeasure_clicked()
     // 测量中禁用参数配置
     mDetSettingWindow->setEnabled(false);
 
+    ui->pushButton_startMeasure->setEnabled(false);
+    ui->pushButton_stopMeasure->setEnabled(true);
     ui->action_startMeasure->setEnabled(false);
     ui->action_stopMeasure->setEnabled(false);
     ui->action_waveformMode->setEnabled(false);
@@ -1525,7 +1527,7 @@ void MainWindow::on_pushButton_stopMeasure_clicked()
         // 如果没有倒计时，清空显示
         ui->edit_measureTime->setText("00:00:00");
     }
-    
+
     // 获取所选通道
     // 再发开始测量指令
     auto rows  = ui->tableWidget_detector->selectionModel()->selectedRows();
