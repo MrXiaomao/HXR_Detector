@@ -15,22 +15,26 @@ ParticalWindow::ParticalWindow(QWidget *parent)
     commHelper = CommHelper::instance();
     connect(commHelper, &CommHelper::reportParticleCurveData, this, [=]{
         pkgCount++;
+        // if (!measuring){
+        //     measuring = true;
+        //     timerStart = QDateTime::currentDateTime();
+        //     timer->start(1000);
+        //     ui->pushButton_save->setEnabled(false);
+        //     ui->pushButton_start->setEnabled(false);
+        //     ui->pushButton_stop->setEnabled(true);
+        //     ui->label_2->setText(timerStart.toString("yyyy-MM-dd HH:mm:ss"));
+        // }
         if (!measuring){
-            measuring = true;
-            timerStart = QDateTime::currentDateTime();
-            timer->start(1000);
-            ui->pushButton_save->setEnabled(false);
-            ui->pushButton_start->setEnabled(true);
             ui->pushButton_stop->setEnabled(true);
-            ui->label_2->setText(timerStart.toString("yyyy-MM-dd HH:mm:ss"));
+            ui->pushButton_start->setEnabled(false);
+            ui->pushButton_save->setEnabled(false);
         }
-
         ui->lineEdit_pkgCount->setText(QString::number(pkgCount));
     });
 
     //波形路径
     {
-        QAction *action = ui->lineEdit_path->addAction(QIcon(":/resource/open.png"), QLineEdit::TrailingPosition);
+        QAction *action = ui->lineEdit_path->addAction(QIcon(":/open.png"), QLineEdit::TrailingPosition);
         QToolButton* button = qobject_cast<QToolButton*>(action->associatedWidgets().last());
         button->setCursor(QCursor(Qt::PointingHandCursor));
         connect(button, &QToolButton::pressed, this, [=](){
@@ -75,12 +79,16 @@ void ParticalWindow::on_pushButton_start_clicked()
     ui->pushButton_start->setEnabled(false);
     ui->pushButton_stop->setEnabled(true);
 
-    QTimer::singleShot(3000, this, [=](){
+    measuring = true;
+    timerStart = QDateTime::currentDateTime();
+    timer->start(1000);
+    ui->label_2->setText(timerStart.toString("yyyy-MM-dd HH:mm:ss"));
+    /*QTimer::singleShot(3000, this, [=](){
         //指定时间未收到开始测量指令，则按钮恢复初始状态
         if (!measuring){
             ui->pushButton_start->setEnabled(true);
         }
-    });
+    });*/
 }
 
 
@@ -112,6 +120,8 @@ void ParticalWindow::on_pushButton_save_clicked()
 void ParticalWindow::on_pushButton_stop_clicked()
 {
     commHelper->stopMeasure();
+    timer->stop();
+    measuring = false;
     ui->pushButton_save->setEnabled(true);
     ui->pushButton_start->setEnabled(true);
     ui->pushButton_stop->setEnabled(false);

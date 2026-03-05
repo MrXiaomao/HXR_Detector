@@ -142,7 +142,7 @@
            </column>
            <column>
             <property name="text">
-             <string>维度(0-180°)</string>
+             <string>纬度(0-180°)</string>
             </property>
            </column>
           </widget>
@@ -555,6 +555,9 @@
                 </item>
                 <item>
                  <widget class="QSpinBox" name="spinBox_highVoltageOutLevel">
+                  <property name="enabled">
+                   <bool>false</bool>
+                  </property>
                   <property name="maximum">
                    <number>1000</number>
                   </property>

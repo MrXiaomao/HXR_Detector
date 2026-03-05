@@ -1024,19 +1024,46 @@ void MainWindow::initCustomPlot(int index, QCustomPlot* customPlot, QString axis
     //connect(customPlot, SIGNAL(mouseMove(QMouseEvent*)), this,SLOT(slotShowTracer(QMouseEvent*)));
 }
 
-void MainWindow::closeEvent(QCloseEvent *event) {
-    if (mIsMeasuring){
-        QMessageBox::information(this, tr("系统退出提示"), tr("测量中禁止退出软件系统！"),
-                                             QMessageBox::Ok, QMessageBox::Ok);
-        event->ignore();
-    }
-    else
+//清除全部图像数据（计数曲线、能谱曲线）
+void MainWindow::clearCustomPlotData()
+{
+    for (int i = 0; i < 24; ++i)
     {
+        QCustomPlot* customPlot = getCustomPlot(i, true);
+
+        if (customPlot)
+        {
+            for (int g = 0; g < customPlot->graphCount(); ++g)
+            {
+                customPlot->graph(g)->data()->clear();  // 只清数据
+            }
+
+            customPlot->replot();
+        }
+    }
+}
+
+void MainWindow::closeEvent(QCloseEvent *event) {
+    //确认是否退出
+    int ret = QMessageBox::question(this, tr("系统退出提示"), tr("确定要退出软件系统吗？"),
+                                            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (ret == QMessageBox::No) {
+        event->ignore();
+        return;
+    }
+
+    // if (mIsMeasuring){
+    //     QMessageBox::information(this, tr("系统退出提示"), tr("测量中禁止退出软件系统！"),
+    //                                          QMessageBox::Ok, QMessageBox::Ok);
+    //     event->ignore();
+    // }
+    // else
+    // {
         // 断开网络
         commHelper->stopMeasure();
         commHelper->stopServer();
         event->accept();
-    }
+    // }
 }
 
 bool MainWindow::checkStatusTipEvent(QEvent * event) {
@@ -1181,6 +1208,12 @@ void MainWindow::on_action_stopServer_triggered()
     label_LocalServer->setText(tr("本地网络服务：断开"));
 }
 
+//视图
+void MainWindow::on_actiontoolBar_triggered()
+{
+    ui->toolBar->setVisible(!ui->toolBar->isVisible());
+}
+
 /**
  * @brief MainWindow::onTriggerModelChanged 触发模式选择：软件触发/外触发
  * @param index 下拉框序号，触发类型
@@ -1210,6 +1243,15 @@ void MainWindow::onTriggerModelChanged(int index)
 // 开始测量 全部通道测量
 void MainWindow::on_action_startMeasure_triggered()
 {
+    clearCustomPlotData();
+    //先检查路径有效性 lineEdit_filePath
+    QString filePath = ui->lineEdit_filePath->text();
+    QDir dir(filePath);
+    if (!dir.exists()) {
+        QMessageBox::warning(this, tr("警告"), tr("数据保存路径不存在，请检查数据保存路径设置！"));
+        return;
+    }
+
     ui->action_startMeasure->setEnabled(false);
     ui->action_stopMeasure->setEnabled(true);
     ui->dateTime_shotTime->setEnabled(false);
@@ -1272,6 +1314,16 @@ void MainWindow::on_action_startMeasure_triggered()
 //单通道测量，单独测量某个通道
 void MainWindow::on_pushButton_startMeasure_clicked()
 {
+    clearCustomPlotData();
+
+    //先检查路径有效性 lineEdit_filePath
+    QString filePath = ui->lineEdit_filePath->text();
+    QDir dir1(filePath);
+    if (!dir1.exists()) {
+        QMessageBox::warning(this, tr("警告"), tr("数据保存路径不存在，请检查数据保存路径设置！"));
+        return;
+    }
+
     /*设置发次信息*/
     QString shotDir = ui->lineEdit_filePath->text();
     QString shotNumStr = ui->lineEdit_shotNum->text();
@@ -1308,7 +1360,7 @@ void MainWindow::on_pushButton_startMeasure_clicked()
     commHelper->setShotInformation(shotDir, shotNumStr);
     // 再发开始测量指令
     auto rows  = ui->tableWidget_detector->selectionModel()->selectedRows();
-    if (rows .isEmpty()) {
+    if (rows.isEmpty()) {
         // 没有选中任何行
         QMessageBox::warning(
             this,
@@ -2405,7 +2457,7 @@ void MainWindow::stopMeasure()
         settings.setValue("mainWindow/ShotNumStr", ui->lineEdit_shotNum->text());
     }
 
-    // 停止波形测量
+    // 停止测量
     commHelper->stopMeasure();
     //清空温度超时报警的探测器ID
     mTemperatureTimeoutDetectors.clear();
@@ -2473,20 +2525,22 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
         for(int index = 1; index <= DET_NUM; ++index)
         {
             updateSpectrumPlotSettings(index);
+            // 更新X轴范围
+            ui->spectroMeter1_bottom->xAxis->setRange(m_spectrumPlotSettings[index-1].xMin, m_spectrumPlotSettings[index-1].xMax);
+            ui->spectroMeter2_bottom->xAxis->setRange(m_spectrumPlotSettings[index-1].xMin, m_spectrumPlotSettings[index-1].xMax);
+            ui->spectroMeter1_bottom->replot();
+            ui->spectroMeter2_bottom->replot();
         }
 
-        double xMin = m_spectrumPlotSettings[0].xMin;
-        double xMax = m_spectrumPlotSettings[0].xMax;
-        for(int index = 1; index < DET_NUM; ++index)
-        {
-            xMin = qMin(xMin, m_spectrumPlotSettings[index].xMin);
-            xMax = qMax(xMax, m_spectrumPlotSettings[index].xMax);
-        }
+        // 取公共最小值/最大值
+        // double xMin = m_spectrumPlotSettings[0].xMin;
+        // double xMax = m_spectrumPlotSettings[0].xMax;
+        // for(int index = 1; index < DET_NUM; ++index)
+        // {
+        //     xMin = qMin(xMin, m_spectrumPlotSettings[index].xMin);
+        //     xMax = qMax(xMax, m_spectrumPlotSettings[index].xMax);
+        // }
 
-        ui->spectroMeter1_bottom->xAxis->setRange(xMin, xMax);
-        ui->spectroMeter2_bottom->xAxis->setRange(xMin, xMax);
-        ui->spectroMeter1_bottom->replot();
-        ui->spectroMeter2_bottom->replot();
         return;
     }
 
@@ -2504,6 +2558,10 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
 
     if (mEnScale)
     {
+        
+        m_spectrumPlotSettings[detectorId-1].xMin = detParameter.spectrumPlotEnMin;
+        m_spectrumPlotSettings[detectorId-1].xMax = detParameter.spectrumPlotEnMax;
+
         // 读取能量刻度系数
         // 判断是否勾选能量刻度
         GlobalSettings settings(CONFIG_FILENAME);
@@ -2538,8 +2596,6 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
                 m_spectrumPlotSettings[detectorId-1].c2 = c;
             }
 
-            m_spectrumPlotSettings[detectorId-1].xMin = detParameter.spectrumPlotEnMin;
-            m_spectrumPlotSettings[detectorId-1].xMax = detParameter.spectrumPlotEnMax;
             m_spectrumPlotSettings[detectorId-1].fitType = fitType;
             settings.endGroup();
         }
@@ -2565,12 +2621,6 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
             }
             graph->setData(x, y);
         }
-    
-        // 更新X轴范围
-        ui->spectroMeter1_bottom->xAxis->setRange(detParameter.spectrumPlotEnMin, detParameter.spectrumPlotEnMax);
-        ui->spectroMeter2_bottom->xAxis->setRange(detParameter.spectrumPlotEnMin, detParameter.spectrumPlotEnMax);
-        ui->spectroMeter1_bottom->replot();
-        ui->spectroMeter2_bottom->replot();
     }
     else
     {

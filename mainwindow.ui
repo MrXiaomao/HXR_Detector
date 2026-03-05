@@ -1855,15 +1855,25 @@
     </property>
     <addaction name="action_spectrumMode"/>
    </widget>
+   <widget class="QMenu" name="menu_view">
+    <property name="title">
+     <string>视图(&amp;V)</string>
+    </property>
+    <addaction name="actiontoolBar"/>
+   </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_setup"/>
    <addaction name="menu_W"/>
    <addaction name="menu_tool"/>
    <addaction name="menu_theme"/>
+   <addaction name="menu_view"/>
    <addaction name="menu_help"/>
   </widget>
   <widget class="QStatusBar" name="statusbar"/>
   <widget class="QToolBar" name="toolBar">
+   <property name="enabled">
+    <bool>true</bool>
+   </property>
    <property name="windowTitle">
     <string>toolBar</string>
    </property>
@@ -2308,6 +2318,17 @@
    </property>
    <property name="menuRole">
     <enum>QAction::NoRole</enum>
+   </property>
+  </action>
+  <action name="actiontoolBar">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>toolBar</string>
    </property>
   </action>
  </widget>
