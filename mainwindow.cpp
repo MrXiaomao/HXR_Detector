@@ -26,6 +26,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     connect(mAutoMeasureDelayTimer, &QTimer::timeout, this, [=](){
         if (mAutoMeasureDelayActive)
         {
+            ui->lineEdit_triggerflag->setText("已经触发");
             QDateTime now = QDateTime::currentDateTime();
             QDateTime tmStart = ui->dateTimeEdit_autoTrigger->dateTime().addSecs(-30);// 提前30秒做好准备工作
             if (now >= tmStart)
@@ -1309,6 +1310,7 @@ void MainWindow::on_action_startMeasure_triggered()
     ui->pushButton_stopMeasure->setEnabled(false);
     ui->action_waveformMode->setEnabled(false);
     ui->action_particalMode->setEnabled(false);
+    ui->spinBox_coolTimeLength->setEnabled(false);
 
     updateSpectrumPlotSettings();
 
@@ -1344,6 +1346,7 @@ void MainWindow::on_action_startMeasure_triggered()
 
     if (mEnableAutoMeasure)
     {
+        ui->lineEdit_triggerflag->setText("未触发");
         mAutoMeasureDelayActive = ui->com_triggerModel->currentIndex() == 0;
 
         mAutoMeasureDelayTimer->start();
@@ -1638,7 +1641,7 @@ void MainWindow::on_action_stopMeasure_triggered()
     ui->pushButton_stopMeasure->setEnabled(false);
     ui->action_waveformMode->setEnabled(true);
     ui->action_particalMode->setEnabled(true);
-
+    ui->spinBox_coolTimeLength->setEnabled(true);
 
     if (mEnableAutoMeasure)
     {
