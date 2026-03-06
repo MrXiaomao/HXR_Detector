@@ -210,6 +210,12 @@ void CommHelper::initDataProcessor()
 
 
         // 原始网络数据
+        connect(detectorDataProcessor, &DataProcessor::reportOTAUpgradeData, this, [=](const QByteArray& data){
+            DataProcessor* processor = qobject_cast<DataProcessor*>(sender());
+            quint8 detId = processor->index();
+            emit reportOTAUpgradeData(detId, data);
+        });
+
         connect(detectorDataProcessor, &DataProcessor::reportRawNetData, this, [=](const QByteArray& data){
             DataProcessor* processor = qobject_cast<DataProcessor*>(sender());
             /*
@@ -372,22 +378,16 @@ void CommHelper::initDataProcessor()
 
         connect(detectorDataProcessor, &DataProcessor::reportTimestampData, this, [=](QByteArray& data){
             DataProcessor* processor = qobject_cast<DataProcessor*>(sender());
-                bool ok;
-                quint32 utc = data.mid(6, 4).toHex().toUInt(&ok, 16); // utc时间戳
-                quint32 msecond = data.mid(10, 4).toHex().toUInt(&ok, 16); // 小数秒
+            bool ok;
+            quint32 utc = data.mid(6, 4).toHex().toUInt(&ok, 16); // utc时间戳
+            quint32 msecond = data.mid(10, 4).toHex().toUInt(&ok, 16)*1000/65536; // 毫秒
 
-                QDateTime epoch(QDate(1900, 1, 1), QTime(0, 0, 0), Qt::UTC);
-                quint64 tmUtc = epoch.secsTo(QDateTime::currentDateTimeUtc()); // UTC时间戳（1900）
-                // 获取UTC时间高16bit
-                tmUtc = tmUtc & 0xffffffffffff0000;
-                // 将新的高16位加上去
-                tmUtc = tmUtc | utc; // 合成新的utc时间戳
-                // UTC转Unix时间戳，也就是从1970年1月1日00：00：00开始计算的整数秒数
-                quint64 tmUnix = tmUtc - 2208988800; // UTC时间戳（1970）-unix时间戳
-                QDateTime tm = QDateTime::fromMSecsSinceEpoch(tmUnix*1000 + msecond);
+            // UTC转Unix时间戳，也就是从1970年1月1日00：00：00开始计算的整数秒数
+            quint64 tmUnix = utc - 2208988800; // UTC时间戳（1970）-unix时间戳
+            QDateTime tm = QDateTime::fromMSecsSinceEpoch(tmUnix*1000 + msecond);
 
-                // 上报时间戳信息
-                emit reportTimestampe(index, tm);
+            // 上报时间戳信息
+            emit reportTimestampe(index, tm);
         });
 
         connect(detectorDataProcessor, &DataProcessor::reportParamterData, this, [=](QByteArray& data){
@@ -626,17 +626,31 @@ void CommHelper::connectSwitcher(bool query)
         QString ass = settings.value(QString("Switcher/%1/detector").arg(i+1), "").toString();
         QHuaWeiSwitcherHelper* huaWeiSwitcherHelper = new QHuaWeiSwitcherHelper(ip);
         huaWeiSwitcherHelper->setAssociatedDetector(ass);
+        mExtendTimeSynModule.reload();
+        if (mExtendTimeSynModule.switcherIndex == (i+1))
+            huaWeiSwitcherHelper->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
 
         connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::switcherLogged, this, &CommHelper::switcherLogged);
         connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::switcherConnected, this, &CommHelper::switcherConnected);
         connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::switcherDisconnected, this, &CommHelper::switcherDisconnected);
-        connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::reportPoePowerStatus, this, &CommHelper::reportPoePowerStatus);
+        //connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::reportPoePowerStatus, this, &CommHelper::reportPoePowerStatus);
+        connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::reportPoePowerStatus, this, [=](quint8 index, bool on){
+            mExtendTimeSynModule.reload();
+            if (huaWeiSwitcherHelper == mHuaWeiSwitcherHelper[mExtendTimeSynModule.switcherIndex-1] && index == mExtendTimeSynModule.poeIndex)
+                emit reportPoePowerStatus(0, on); // 时间同步模块特殊处理
+            else
+                emit reportPoePowerStatus(index, on);
+        });
 
         mHuaWeiSwitcherHelper.push_back(huaWeiSwitcherHelper);
     }
 
     for (auto switcherHelper : mHuaWeiSwitcherHelper)
     {
+        mExtendTimeSynModule.reload();
+        if (switcherHelper == mHuaWeiSwitcherHelper[mExtendTimeSynModule.switcherIndex-1])
+            switcherHelper->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
+
         if (query)
             switcherHelper->queryPowerStatus();
         else
@@ -665,6 +679,9 @@ void CommHelper::openPower()
         {
             if (switcherHelper->ip() == ip){
                 switcherHelper->setAssociatedDetector(ass);
+                mExtendTimeSynModule.reload();
+                if (mExtendTimeSynModule.switcherIndex == (i+1))
+                    switcherHelper->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
                 switcherHelper->openSwitcherPOEPower(0x00);
             }
         }
@@ -684,6 +701,9 @@ void CommHelper::closePower(bool disconnect)
         {
             if (switcherHelper->ip() == ip){
                 switcherHelper->setAssociatedDetector(ass);
+                mExtendTimeSynModule.reload();
+                if (mExtendTimeSynModule.switcherIndex == (i+1))
+                    switcherHelper->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
                 switcherHelper->closeSwitcherPOEPower(0x00, disconnect);
             }
         }
@@ -1066,4 +1086,19 @@ bool CommHelper::readParamters(quint8 detIndex)
     else{
         return false;
     }
+}
+
+void CommHelper::startOTAUpgrade(quint8 index)
+{
+    mDetectorDataProcessor[index]->startOTAUpgrade();
+}
+
+void CommHelper::endOTAUpgrade(quint8 index)
+{
+    mDetectorDataProcessor[index]->endOTAUpgrade();
+}
+
+bool CommHelper::sendOTAUpgradeData(quint8 index, const QByteArray& data)
+{
+    return mDetectorDataProcessor[index]->sendOTAUpgradeData(data);
 }

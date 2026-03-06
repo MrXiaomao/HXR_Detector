@@ -1804,7 +1804,7 @@
      <x>0</x>
      <y>0</y>
      <width>1431</width>
-     <height>21</height>
+     <height>18</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">
@@ -1848,6 +1848,8 @@
     <addaction name="separator"/>
     <addaction name="action_waveformMode"/>
     <addaction name="action_particalMode"/>
+    <addaction name="separator"/>
+    <addaction name="action_OTA"/>
    </widget>
    <widget class="QMenu" name="menu_W">
     <property name="title">

@@ -348,6 +348,14 @@ qint8 QHuaWeiSwitcherHelper::indexOfPort(quint8 port)
     return -1;
 }
 
+void QHuaWeiSwitcherHelper::setAssociatedDetector(quint8 detectorId)
+{
+    if (detectorId >= 1 && detectorId<=DET_NUM){
+        if (!mMapAssociatedDetector.contains(detectorId))
+            mMapAssociatedDetector.push_back(detectorId);
+    }
+}
+
 void QHuaWeiSwitcherHelper::setAssociatedDetector(QString text)
 {
     mMapAssociatedDetector.clear();
@@ -523,8 +531,11 @@ void QHuaWeiSwitcherHelper::checkLoginAlive()
         return;
     }
 
-    QString cmd = "display clock\r";
-    mTelnet->sendData(cmd.toStdString().c_str(), cmd.size());
+    mCurrentCommand = "display clock\r";
+    mWaitingHeartbeatResponse = true;
+    mLastHeartbeatTime.restart();
+    mTelnet->sendData(mCurrentCommand.toStdString().c_str(), mCurrentCommand.size());
+    qDebug().nospace().noquote() << "交换机[" << mIp << "]发送心跳检测命令";
 }
 
 // 启动心跳检测
@@ -585,11 +596,7 @@ void QHuaWeiSwitcherHelper::performHeartbeatCheck()
     
     // 发送心跳命令
     if (!mSwitcherIsBusy) {
-        mCurrentCommand = "display clock\r";
-        mWaitingHeartbeatResponse = true;
-        mLastHeartbeatTime.restart();
-        mTelnet->sendData(mCurrentCommand.toStdString().c_str(), mCurrentCommand.size());
-        qDebug().nospace().noquote() << "交换机[" << mIp << "]发送心跳检测命令";
+        checkLoginAlive();
     }
 }
 

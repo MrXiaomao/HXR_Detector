@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>上线客户端列表</string>
+   <string>在线模块网络信息列表</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>

@@ -6,6 +6,7 @@
 #include "clientpeerswindow.h"
 #include "detsettingwindow.h"
 #include "QGoodWindowHelper"
+#include "otaupgradewindow.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -179,6 +180,8 @@ private slots:
 
     void on_lineEdit_filePath_editingFinished();
 
+    void on_action_OTA_triggered();
+
 private:
     QString increaseShotNumSuffix(QString shotNumStr);
     QCustomPlot* getCustomPlot(int detectorId, bool isSpectrum = true);
@@ -188,6 +191,7 @@ private:
     Ui::MainWindow *ui;
     ClientPeersWindow *mClientPeersWindow = nullptr;
     DetSettingWindow *mDetSettingWindow = nullptr;
+    OTAUpgradeWindow *mOTAUpgradeWindow = nullptr;
     bool mIsMeasuring = false;
 
     QVector<quint8> m_selectedChannels; // 记录所选的通道号，停止测量时使用(自定义通道测量)
@@ -214,6 +218,7 @@ private:
 
     // 自动化测量延时器
     QTimer *mAutoMeasureDelayTimer = nullptr;
+    bool mAutoMeasureDelayActive = false; // 自动测量延时器是否正在倒计时
     // 连续测量计时器
     QElapsedTimer *mContinueMeasureTimer = nullptr;
 

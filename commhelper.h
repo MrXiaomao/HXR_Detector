@@ -103,6 +103,10 @@ public:
     */
     bool exportFile(QString dstPath);
 
+    void startOTAUpgrade(quint8 index);
+    bool sendOTAUpgradeData(quint8 index, const QByteArray& data);
+    void endOTAUpgrade(quint8 index);
+
     Q_SIGNAL void connectPeerConnection(QString,quint16);//客户端上线
     Q_SIGNAL void disconnectPeerConnection(QString,quint16);//客户端上线
 
@@ -123,9 +127,11 @@ public:
     Q_SIGNAL void reportFullSpectrum(quint8 index, const FullSpectrum& fullSpectrum); // 发送完整的能谱数据
     Q_SIGNAL void reportWaveformCurveData(quint8, QVector<quint16>& data);
     Q_SIGNAL void reportParticleCurveData(quint8, quint32);
+    Q_SIGNAL void reportOTAUpgrateData(quint8, QVector<quint16>& data);
     Q_SIGNAL void reportTimestampe(quint8, QDateTime&);
     Q_SIGNAL void reportParamterData(quint8, const QByteArray&);
     Q_SIGNAL void reportPoePowerStatus(quint8, bool); //POE电源开关
+    Q_SIGNAL void reportOTAUpgradeData(quint8, const QByteArray& data); // 上报OTA升级数据
 
     void exportEnergyPlot(const QString fileDir, const QString triggerTime);
 

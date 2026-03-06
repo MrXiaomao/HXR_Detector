@@ -37,6 +37,7 @@ public:
     //根据谱仪编号找POE端口号
     qint8 portOfIndex(quint8 index);
 
+    void setAssociatedDetector(quint8 index);
     void setAssociatedDetector(QString);
 
     /*

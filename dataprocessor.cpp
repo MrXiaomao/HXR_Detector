@@ -165,6 +165,26 @@ void DataProcessor::startMeasure(WorkMode workMode)
     // 创建新对象，初始化测量状态
     m_parseData = new ParseData();
 
+    if (mNetFile)
+    {
+        mNetFile->close();
+        mNetFile->deleteLater();
+        mNetFile = nullptr;
+    }
+
+    QString mMeasureStartTime = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
+    QString filePath = QString("./cache/net/%1_%2_Net.dat").arg(mIndex).arg(mMeasureStartTime);
+    if (mIndex != 0)
+    {
+        // 时钟同步模块不需要录制网络数据
+        mNetFile = new QFile(filePath);
+        if (!mNetFile->open(QIODevice::WriteOnly | QIODevice::Append))
+        {
+            mNetFile->deleteLater();
+            mNetFile = nullptr;
+        }
+    }
+
     //测量前下发配置
     //HDF5Settings *settings = HDF5Settings::instance();
     //QMap<quint8, DetParameter>& detParameters = settings->detParameters();
@@ -187,6 +207,13 @@ void DataProcessor::stopMeasure()
 {
     //#16 停止测量=1|0|26|1234000FEA1000000000ABCD
     this->sendStopMeasure();
+
+    if (mNetFile)
+    {
+        mNetFile->close();
+        mNetFile->deleteLater();
+        mNetFile = nullptr;
+    }
 }
 
 void DataProcessor::sendCmdToSocket(CommandItem cmdItem) const
@@ -210,8 +237,17 @@ void DataProcessor::readyRead()
         return;
 
     QByteArray rawData = socket->readAll();
+    if (mNetFile)
+    {
+        mNetFile->write(rawData);
+        mNetFile->flush();
+    }
+
     // 上报原始网络数据
-    emit reportRawNetData(rawData);
+    if (mIsUpgrading)
+        emit reportOTAUpgradeData(rawData);
+    else
+        emit reportRawNetData(rawData);
 
     this->inputData(rawData);
 }
@@ -362,4 +398,16 @@ bool DataProcessor::extractSpectrumData(const QByteArray& packetData, SubSpectru
     // qDebug() << tm.toString("yyyy-MM-dd HH:mm:ss.zzz");
 
     return true;
+}
+
+bool DataProcessor::sendOTAUpgradeData(const QByteArray& data)
+{
+    if (mTcpSocket){
+        //qDebug() << "Send OTA: " << data.toHex(' ');
+        mTcpSocket->write(data);
+        mTcpSocket->waitForBytesWritten();
+        return true;
+    }
+    else
+        return false;
 }

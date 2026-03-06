@@ -25,7 +25,7 @@ const QByteArray CommandAdapter::kspecTail = QByteArray::fromHex("FF FF CC D1");
 CommandAdapter::CommandAdapter(QObject *parent)
     : QObject{parent}
 {
-    mCmdProcessThread = new QLiteThread(this);
+    mCmdProcessThread = new QLiteThread(this) ;
     //mCmdProcessThread->setObjectName("mCmdProcessThread");
     mCmdProcessThread->setWorkThreadProc([=](){
         qRegisterMetaType<QByteArray>("QByteArray&");
@@ -398,7 +398,16 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                 }
                 else {
                     /*异常数据，一定要注意！！！！！！！！！！！！！！！！！*/
-                    findNaul = false;                
+                    findNaul = false;
+
+                    static bool isFirstError = true;
+                    if (isFirstError) {
+                        qInfo() << "数据包尾部错误，后续相似错误将不再打印日志";
+                        isFirstError = false;
+                        qDebug().nospace().noquote() << "数据包尾部错误[" << chunk.size() << "]：" << chunk.toHex(' ');
+                        QThread::msleep(200);
+                        qDebug().nospace().noquote() << "数据包原始数据[" << cachePool.size() << "]：" << cachePool.toHex(' ');
+                    }
 
                     // 包头/包尾不对 重新开始寻找包头
                     cachePool.remove(0, 4);

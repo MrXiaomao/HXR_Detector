@@ -59,6 +59,10 @@ public:
 
     bool extractSpectrumData(const QByteArray& packetData, SubSpectrumPacket& subSpec);
 
+    void startOTAUpgrade(){mIsUpgrading = true;}
+    void endOTAUpgrade(){mIsUpgrading = false;};
+    bool sendOTAUpgradeData(const QByteArray& data);
+
 public slots:
     void readyRead();
     void restartTempTimeout();   // 收到温度时调用
@@ -78,10 +82,12 @@ signals:
 
     void reportTemperatureTimeout(); // 温度心跳超时信号
     void reportRawNetData(const QByteArray& data); // 上报原始网络数据
+    void reportOTAUpgradeData(const QByteArray& data); // 上报OTA升级数据
 
 private:
     quint8 mIndex;//探测器索引
     QTcpSocket *mTcpSocket = nullptr;
+    QFile* mNetFile = nullptr;
 
     QByteArray mRawData; // 存储网络原始数据
     QByteArray mCachePool; // 缓存数据，数据处理之前，先转移到二级缓存池
@@ -105,6 +111,7 @@ private:
     QTimer mTempTimeoutTimer; //心跳检测定时器
 
     QFile *mNetDataFile = nullptr;//网络数据保存文件
+    bool mIsUpgrading = false; // 是否正在进行OTA升级
 };
 
 #endif // DATAPROCESSOR_H

@@ -29,6 +29,7 @@ SOURCES += \
     neutronyieldcalibration.cpp \
     neutronyieldstatisticswindow.cpp \
     offlinewindow.cpp \
+    otaupgradewindow.cpp \
     parsedata.cpp \
     particalwindow.cpp \
     qcomboboxdelegate.cpp \
@@ -54,6 +55,7 @@ HEADERS += \
     neutronyieldcalibration.h \
     neutronyieldstatisticswindow.h \
     offlinewindow.h \
+    otaupgradewindow.h \
     parsedata.h \
     particalwindow.h \
     qcomboboxdelegate.h \
@@ -76,6 +78,7 @@ FORMS += \
     neutronyieldcalibration.ui \
     neutronyieldstatisticswindow.ui \
     offlinewindow.ui \
+    otaupgradewindow.ui \
     particalwindow.ui \
     waveformwindow.ui
 

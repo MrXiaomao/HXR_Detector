@@ -24,22 +24,23 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     mAutoMeasureDelayTimer = new QTimer(this);
     mAutoMeasureDelayTimer->setInterval(1000); // 每秒触发一次
     connect(mAutoMeasureDelayTimer, &QTimer::timeout, this, [=](){
-        QDateTime now = QDateTime::currentDateTime();
-        qint32 coolTimelength = ui->spinBox_coolTimeLength->value();
-        QDateTime delay = ui->dateTimeEdit_autoTrigger->dateTime();
-        delay = delay.addSecs(coolTimelength-30); // 提前30秒做好准备工作
-        if (now >= delay)
+        if (mAutoMeasureDelayActive)
         {
-            mAutoMeasureDelayTimer->stop();
-
-            // 第一步 先启动服务
-            if (!commHelper->isOpen())
+            QDateTime now = QDateTime::currentDateTime();
+            QDateTime tmStart = ui->dateTimeEdit_autoTrigger->dateTime().addSecs(-30);// 提前30秒做好准备工作
+            if (now >= tmStart)
             {
-                emit ui->action_startServer->trigger();
-            }
+                mAutoMeasureDelayTimer->stop();
 
-            // 第二步 先连接交换机
-            commHelper->connectSwitcher(false);
+                // 第一步 先启动服务
+                if (!commHelper->isOpen())
+                {
+                    emit ui->action_startServer->trigger();
+                }
+
+                // 第二步 先连接交换机
+                commHelper->connectSwitcher(false);
+            }
         }
     });
 
@@ -191,7 +192,10 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     connect(commHelper, &CommHelper::reportPoePowerStatus, this, [=](quint8 index, bool on){
         int row = index;
         SwitchButton* cell =  qobject_cast<SwitchButton*>(ui->tableWidget_detector->cellWidget(row, 0));
-        qInfo().nospace() << "谱仪[#" << index << "]POE电源状态: " << (on ? "开" : "关");
+        if (row == 0)
+            qInfo().nospace() << "时间同步触发模块电源状态: " << (on ? "开" : "关");
+        else
+            qInfo().nospace() << "谱仪[#" << index << "]POE电源状态: " << (on ? "开" : "关");
         cell->setChecked(on);
     });
 
@@ -319,6 +323,10 @@ void MainWindow::initUi()
     connect(commHelper, &CommHelper::connectPeerConnection, mClientPeersWindow, &ClientPeersWindow::connectPeerConnection);
     connect(commHelper, &CommHelper::disconnectPeerConnection, mClientPeersWindow, &ClientPeersWindow::disconnectPeerConnection);
 
+    mOTAUpgradeWindow = new OTAUpgradeWindow();
+    mOTAUpgradeWindow->setWindowFlags(Qt::Widget | Qt::WindowStaysOnTopHint);
+    mOTAUpgradeWindow->hide();
+
     mDetSettingWindow = new DetSettingWindow();
     mDetSettingWindow->setWindowFlags(Qt::Widget | Qt::WindowStaysOnTopHint);
     mDetSettingWindow->hide();
@@ -418,7 +426,7 @@ void MainWindow::initUi()
 
         if (mContinueMeasureTimer && mContinueMeasureTimer->isValid())
         {
-            ui->edit_measureTime->setText(formatTimeString(mContinueMeasureTimer->elapsed()));
+            ui->edit_measureTime->setText(formatTimeString(mContinueMeasureTimer->elapsed() / 1000));
         }
     });
     systemClockTimer->start(900);
@@ -538,7 +546,10 @@ void MainWindow::initUi()
                     if (row == 0)
                     {
                         // 时间同步模块
-                        commHelper->openSwitcherPOEPower(row);
+                        if (!cell->getChecked())
+                            commHelper->openSwitcherExtendPOEPower();
+                        else
+                            commHelper->closeSwitcherExtendPOEPower();
                     }
                     else
                     {
@@ -825,7 +836,14 @@ void MainWindow::initUi()
 
     // 接收时间戳属性据
     connect(commHelper, &CommHelper::reportTimestampe, this, [=](quint8 index, QDateTime& tm){
-        ui->dateTimeEdit_autoTrigger->setDateTime(tm);
+        if (mEnableAutoMeasure && !mAutoMeasureDelayActive)
+        {
+            // 只有开启了自动化测量，才接收自动触发的时间戳，并更新界面显示
+            ui->dateTime_shotTime->setDateTime(tm);
+            qint32 coolTimelength = ui->spinBox_coolTimeLength->value();
+            ui->dateTimeEdit_autoTrigger->setDateTime(tm.addSecs(coolTimelength));
+            mAutoMeasureDelayActive = true;
+        }
     });
 
     // QTimer *timer = new QTimer(this);
@@ -1302,6 +1320,8 @@ void MainWindow::on_action_startMeasure_triggered()
 
     if (mEnableAutoMeasure)
     {
+        mAutoMeasureDelayActive = ui->com_triggerModel->currentIndex() == 0;
+
         mAutoMeasureDelayTimer->start();
     }
     else
@@ -2764,5 +2784,11 @@ void MainWindow::on_lineEdit_filePath_editingFinished()
         shotDir = "./cache";
         ui->lineEdit_filePath->setText(shotDir);
     }
+}
+
+
+void MainWindow::on_action_OTA_triggered()
+{
+    mOTAUpgradeWindow->show();
 }
 
