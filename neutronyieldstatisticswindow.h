@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2026-01-15 21:24:55
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-03-02 19:39:13
+ * @LastEditTime: 2026-03-06 09:29:58
  * @Description: 请填写简介
  */
 #ifndef NEUTRONYIELDSTATISTICSWINDOW_H
@@ -116,6 +116,8 @@ private slots:
 
     // 选中行发生改变
     void on_tableWidget_selectionChanged();
+
+    void on_bt_saveResult_clicked();
 
 private:
     Ui::NeutronYieldStatisticsWindow *ui;

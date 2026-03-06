@@ -49,7 +49,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     mMeasureCountdownTimer->setSingleShot(false);
     mMeasureCountdownTimer->setInterval(1000); // 每秒触发一次
     connect(mMeasureCountdownTimer, &QTimer::timeout, this, &MainWindow::onMeasureCountdownTimeout);
-    
+
     // 初始化连接按钮禁用定时器
     mConnectButtonDisableTimer = new QTimer(this);
     mConnectButtonDisableTimer->setSingleShot(true);
@@ -61,7 +61,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
             ui->action_connectSwitch->setEnabled(true);
         }
     });
-    
+
     initUi();
     initNet();
 
@@ -80,7 +80,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     ui->action_stopMeasure->setEnabled(false);
     ui->pushButton_startMeasure->setEnabled(false);
     ui->pushButton_stopMeasure->setEnabled(false);
-    
+
     // 初始化连接按钮状态（未连接状态）
     updateConnectButtonState(false);
 
@@ -110,7 +110,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
             commHelper->openPower();
 
             // 第三步 30s之后开始自动测量
-            ui->action_stopMeasure->setEnabled(false);            
+            ui->action_stopMeasure->setEnabled(false);
             QTimer::singleShot(30000, this, [=](){
                 ui->action_stopMeasure->setEnabled(true);
 
@@ -192,10 +192,19 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     connect(commHelper, &CommHelper::reportPoePowerStatus, this, [=](quint8 index, bool on){
         int row = index;
         SwitchButton* cell =  qobject_cast<SwitchButton*>(ui->tableWidget_detector->cellWidget(row, 0));
-        if (row == 0)
-            qInfo().nospace() << "时间同步触发模块电源状态: " << (on ? "开" : "关");
-        else
-            qInfo().nospace() << "谱仪[#" << index << "]POE电源状态: " << (on ? "开" : "关");
+        // qInfo().nospace() << "谱仪[#" << index << "]POE电源状态: " << (on ? "开" : "关");
+        if(on)
+        {
+            if (row == 0)
+                qInfo().nospace() << "时间同步触发模块POE电源状态: 开，模块开机中...";
+            else
+                qInfo().nospace() << "谱仪[#" << index << "]POE电源状态: 开，谱仪开机中...";
+        }else{
+            if (row == 0)
+                qInfo().nospace() << "时间同步触发模块已关机，POE电源状态: 关";
+            else
+                qInfo().nospace() << "谱仪[#" << index << "]谱仪已关机，POE电源状态: 关";
+        }
         cell->setChecked(on);
     });
 
@@ -292,7 +301,7 @@ void MainWindow::initUi()
     ui->centralHboxTabWidget->setTabVisible(1, false);
     ui->centralHboxTabWidget->setTabVisible(2, false);
     ui->centralHboxTabWidget->setTabVisible(3, false);
-    
+
     //加载界面参数
     {
         GlobalSettings settings(CONFIG_FILENAME);
@@ -752,7 +761,7 @@ void MainWindow::initUi()
         int row = index;
         QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 3));
         cell->setText(QString::number(temperature, 'f', 1) + " ℃");
-        
+
         //将温度数据保存到文件中，实时写入，文件名称为探测器编号-日期.txt，路径为应用程序目录下的temperature文件夹中
         QString temperatureFilePath = QApplication::applicationDirPath() + "/temperature/" + QString::number(index) + "-" + QDateTime::currentDateTime().toString("yyyy-MM-dd") + ".txt";
         QFile temperatureFile(temperatureFilePath);
@@ -770,7 +779,7 @@ void MainWindow::initUi()
             cell->setStyleSheet("color: green;");
         }
     }, Qt::QueuedConnection);
-    
+
     connect(commHelper, &CommHelper::reportTemperatureTimeout, this, [=](quint8 index){
         QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(index, 3));
         cell->setStyleSheet("color: gray;");//灰色字体
@@ -778,7 +787,7 @@ void MainWindow::initUi()
     }, Qt::QueuedConnection);
 
     // 接收完整的能谱数据
-    connect(commHelper, &CommHelper::reportFullSpectrum, this, [=](quint8 index, const FullSpectrum& fullSpectrum){ 
+    connect(commHelper, &CommHelper::reportFullSpectrum, this, [=](quint8 index, const FullSpectrum& fullSpectrum){
         if (index < 1 || index > 24) {
             qWarning() << "Invalid detector ID:" << index;
             return;
@@ -798,7 +807,7 @@ void MainWindow::initUi()
 
         // 更新能谱显示
         updateSpectrumDisplay(index, data.spectrum);
-        
+
         //最快每秒更新一次计数率,这里不考虑丢包带来的计数率修复
         quint32 accuTime = (fullSpectrum.sequence - data.lastSpectrumID) * fullSpectrum.measureTime;//单位ms
         double currenTime = 1.0 * fullSpectrum.sequence * fullSpectrum.measureTime / 1000; //单位s，这里最大数对应2^32/24/3600=49days
@@ -811,7 +820,7 @@ void MainWindow::initUi()
             updateCountRateDisplay(index, currenTime, countRate);
         }
     });
-    
+
     // 接收波形曲线数据
     connect(commHelper, &CommHelper::reportWaveformCurveData, this, [=](quint8 index, QVector<quint16>& data){
         return; // 不显示波形
@@ -934,7 +943,7 @@ void MainWindow::initCustomPlot(int index, QCustomPlot* customPlot, QString axis
     QCustomPlotHelper* customPlotHelper = new QCustomPlotHelper(customPlot, this);
     //customPlot->installEventFilter(this);
     customPlot->setProperty("index", index);
-    
+
     // 创建标题文本元素
     QCPItemText *textLabel = new QCPItemText(customPlot);
     textLabel->setObjectName("title");
@@ -1047,8 +1056,23 @@ void MainWindow::clearCustomPlotData()
 {
     for (int i = 0; i < 24; ++i)
     {
-        QCustomPlot* customPlot = getCustomPlot(i, true);
+        // 计数率图
+        {
+            QCustomPlot* customPlot = getCustomPlot(i, false);
 
+            if (customPlot)
+            {
+                for (int g = 0; g < customPlot->graphCount(); ++g)
+                {
+                    customPlot->graph(g)->data()->clear();  // 只清数据
+                }
+
+                customPlot->replot();
+            }
+        }
+
+        // 能谱图
+        QCustomPlot* customPlot = getCustomPlot(i, true);
         if (customPlot)
         {
             for (int g = 0; g < customPlot->graphCount(); ++g)
@@ -1196,7 +1220,7 @@ void MainWindow::on_action_startServer_triggered()
 void MainWindow::on_action_stopServer_triggered()
 {
     //先记录下所有联网的探测器
-    foreach (quint8 index, mOnlineDetectors){   
+    foreach (quint8 index, mOnlineDetectors){
         commHelper->manualCloseSwitcherPOEPower(index);
         //将响应在线图标设置为红色
         int row = index;
@@ -1282,7 +1306,7 @@ void MainWindow::on_action_startMeasure_triggered()
     ui->dateTimeEdit_autoTrigger->setEnabled(false);
     ui->cbb_measureMode->setEnabled(false);
     ui->pushButton_startMeasure->setEnabled(false);
-    ui->pushButton_stopMeasure->setEnabled(true);
+    ui->pushButton_stopMeasure->setEnabled(false);
     ui->action_waveformMode->setEnabled(false);
     ui->action_particalMode->setEnabled(false);
 
@@ -1334,6 +1358,7 @@ void MainWindow::on_action_startMeasure_triggered()
 //单通道测量，单独测量某个通道
 void MainWindow::on_pushButton_startMeasure_clicked()
 {
+    //清空图像中的曲线数据
     clearCustomPlotData();
 
     //先检查路径有效性 lineEdit_filePath
@@ -1428,20 +1453,6 @@ void MainWindow::on_pushButton_startMeasure_clicked()
             if (m_selectedChannels.contains(index))
                 continue;
 
-            // 先清空曲线内容
-            {
-                QCustomPlot* spectroMeter_bottom = getCustomPlot(index, true);
-                QCPGraph* graph = getGraph(index, true);
-                graph->data()->clear();
-                spectroMeter_bottom->replot();
-            }
-            {
-                QCustomPlot* spectroMeter_top = getCustomPlot(index, false);
-                QCPGraph* graph = getGraph(index, false);
-                graph->data()->clear();
-                spectroMeter_top->replot();
-            }
-
             // 再发送开始测量指令
             if (mOnlineDetectors.contains(index))
             {
@@ -1486,6 +1497,29 @@ void MainWindow::on_pushButton_startMeasure_clicked()
             // 再发送开始测量指令
             if (mOnlineDetectors.contains(index))
             {
+                // 判断是否连续测量
+                if (ui->checkBox_continueMeasure->isChecked())
+                {
+                    // 初始化测量时长显示为 00:00:00
+                    ui->edit_measureTime->setText("00:00:00");
+                    // 启动连续测量计时器
+                    mContinueMeasureTimer->start();
+                    qInfo().nospace() << QString("开始测量，连续测量模式");
+                }
+                else
+                {
+                    // 读取倒计时时间（秒）
+                    int countdownSeconds = ui->spinBox_measureTime->value();
+                    if (countdownSeconds > 0) {
+                        mRemainingCountdown = countdownSeconds;
+                        mTotalCountdown = countdownSeconds;
+                        mMeasureCountdownTimer->start();
+                        // 初始化测量时长显示为 00:00:00
+                        ui->edit_measureTime->setText("00:00:00");
+                        qInfo().nospace() << QString("开始测量，倒计时：%1 秒").arg(countdownSeconds);
+                    }
+                }
+
                 commHelper->startMeasure(CommandAdapter::WorkMode::wmSpectrum, index);
                 //记录下所选的通道号，保存到成员变量中，停止测量的时候使用并清空
                 m_selectedChannels.append(index);
@@ -1496,8 +1530,10 @@ void MainWindow::on_pushButton_startMeasure_clicked()
     // 测量中禁用参数配置
     mDetSettingWindow->setEnabled(false);
 
-    //ui->action_startMeasure->setEnabled(false);
-    ui->action_stopMeasure->setEnabled(true);
+    ui->pushButton_startMeasure->setEnabled(false);
+    ui->pushButton_stopMeasure->setEnabled(true);
+    ui->action_startMeasure->setEnabled(false);
+    ui->action_stopMeasure->setEnabled(false);
     ui->action_waveformMode->setEnabled(false);
     ui->action_particalMode->setEnabled(false);
 }
@@ -1506,6 +1542,21 @@ void MainWindow::on_pushButton_startMeasure_clicked()
 //（自定义通道）停止测量，停止测量已选中的通道
 void MainWindow::on_pushButton_stopMeasure_clicked()
 {
+    // 停止倒计时定时器
+    if (mMeasureCountdownTimer && mMeasureCountdownTimer->isActive()) {
+        mMeasureCountdownTimer->stop();
+        // 显示最终测量时长
+        int elapsedSeconds = mTotalCountdown - mRemainingCountdown;
+        ui->edit_measureTime->setText(formatTimeString(elapsedSeconds));
+        qInfo() << "手动测量倒计时已停止";
+    } else if (mContinueMeasureTimer && mContinueMeasureTimer->isValid()){
+        mContinueMeasureTimer->invalidate();
+        qInfo() << "自动化测量倒计时已停止";
+    } else {
+        // 如果没有倒计时，清空显示
+        ui->edit_measureTime->setText("00:00:00");
+    }
+
     // 获取所选通道
     // 再发开始测量指令
     auto rows  = ui->tableWidget_detector->selectionModel()->selectedRows();
@@ -1560,12 +1611,13 @@ void MainWindow::on_pushButton_stopMeasure_clicked()
     }
 
     ui->pushButton_startMeasure->setEnabled(true);
+    ui->pushButton_stopMeasure->setEnabled(false);
 
     // 非测量中可用参数配置
     mDetSettingWindow->setEnabled(true);
 
     ui->action_startMeasure->setEnabled(true);
-    ui->action_stopMeasure->setEnabled(true);
+    ui->action_stopMeasure->setEnabled(false);
 }
 
 
@@ -1609,12 +1661,12 @@ void MainWindow::on_action_stopMeasure_triggered()
 void MainWindow::onMeasureCountdownTimeout()
 {
     mRemainingCountdown--;
-    
+
     // 计算已测量时长（总时长 - 剩余倒计时）
     int elapsedSeconds = mTotalCountdown - mRemainingCountdown;
     // 更新测量时长显示
     ui->edit_measureTime->setText(formatTimeString(elapsedSeconds));
-    
+
     if (mRemainingCountdown > 0) {
         // 倒计时进行中，可以在这里更新UI显示剩余时间
         // qInfo().nospace() << QString("测量倒计时剩余：%1 秒").arg(mRemainingCountdown);
@@ -1630,7 +1682,7 @@ void MainWindow::onMeasureCountdownTimeout()
             GlobalSettings settings(CONFIG_FILENAME);
             settings.setValue("mainWindow/ShotNumStr", ui->lineEdit_shotNum->text());
         }
-    
+
         if (mEnableAutoMeasure)
         {
             qInfo() << "测量倒计时结束，正在停止测量并关闭所有通道电源...";
@@ -1660,14 +1712,14 @@ void MainWindow::onMeasureCountdownTimeout()
         mTemperatureTimeoutDetectors.clear();
         //清空探测器正在测量记录
         mDetectorMeasuring.clear();
-        
+
         // ui->action_startServer->setEnabled(true);
         // ui->action_stopServer->setEnabled(false);
 
         if (mEnableAutoMeasure)
         {
-            ui->action_startMeasure->setEnabled(false);
-            ui->action_stopMeasure->setEnabled(false);
+            ui->action_startMeasure->setEnabled(true);
+            // ui->action_stopMeasure->setEnabled(false);
             ui->pushButton_startMeasure->setEnabled(false);
             ui->pushButton_stopMeasure->setEnabled(false);
             ui->dateTime_shotTime->setEnabled(false);
@@ -1945,7 +1997,7 @@ void MainWindow::resetDetectorSpectrum(int detectorId) {
     it->lastSpectrumID = 0;
     // 清空上次测量累积时间的计数率
     it->lastAccumulateCount = 0;
-    
+
     // 清空计数率历史并释放内存
     QVector<double>().swap(it->countRateHistory);
     // 如果是 QList<double>，同样写法：QList<double>().swap(it->countRateHistory);
@@ -2117,7 +2169,7 @@ QString MainWindow::formatTimeString(int totalSeconds)
     int hours = remainingSeconds / 3600;
     int minutes = (remainingSeconds % 3600) / 60;
     int seconds = remainingSeconds % 60;
-    
+
     if (days > 0) {
         // 超过24小时，显示天数
         return QString("%1day %2:%3:%4")
@@ -2288,7 +2340,7 @@ void MainWindow::performSearch(bool forward, bool wrap)
                 newCursor.setPosition(document->characterCount());
             }
             found = document->find(searchText, newCursor, flags);
-            
+
             if (!found.isNull()) {
                 textEdit->setTextCursor(found);
                 textEdit->ensureCursorVisible();
@@ -2322,7 +2374,7 @@ void MainWindow::highlightAllMatches(const QString &searchText)
 
     QTextEdit *textEdit = ui->textEdit_log;
     QTextDocument *document = textEdit->document();
-    
+
     // 清除之前的高亮
     clearHighlights();
 
@@ -2578,7 +2630,7 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
 
     if (mEnScale)
     {
-        
+
         m_spectrumPlotSettings[detectorId-1].xMin = detParameter.spectrumPlotEnMin;
         m_spectrumPlotSettings[detectorId-1].xMax = detParameter.spectrumPlotEnMax;
 

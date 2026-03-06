@@ -764,7 +764,9 @@ void CommHelper::startMeasure(CommandAdapter::WorkMode mode, quint8 index/* = 0*
                         mFileFlushInfo[index] = FileFlushInfo();
                     }
 
-                    qInfo().nospace() << "谱仪[#"<< index << "]创建存储文件：" << filePath;
+                    QFileInfo info(filePath);
+                    QString absolutePath = info.absoluteFilePath();
+                    qInfo().nospace() << "谱仪[#"<< index << "]创建存储文件：" << absolutePath;
                 }
                 
                 detectorDataProcessor->startMeasure(mode);
