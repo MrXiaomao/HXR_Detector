@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-04-20 09:21:28
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-03-04 17:15:27
+ * @LastEditTime: 2026-03-06 09:39:01
  * @Description: 离线数据分析
  */
 #include "neutronyieldstatisticswindow.h"
@@ -212,6 +212,17 @@ void NeutronYieldStatisticsWindow::initUi()
         ui->rightSidewidget->setFixedWidth(30);
     }
 
+    //存储路径设置
+    {
+        QAction *action = ui->lineEdit_savepath->addAction(QIcon(":/open.png"), QLineEdit::TrailingPosition);
+        QToolButton* button = qobject_cast<QToolButton*>(action->associatedWidgets().last());
+        button->setCursor(QCursor(Qt::PointingHandCursor));
+        connect(button, &QToolButton::pressed, this, [=](){
+            QString dir = QFileDialog::getExistingDirectory(this);
+            ui->lineEdit_savepath->setText(dir);
+        });
+    }
+    
     ui->tableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
     ui->tableWidget->setSelectionMode(QAbstractItemView::SingleSelection);
     ui->tableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
@@ -1623,3 +1634,67 @@ bool NeutronYieldStatisticsWindow::setLonLat(int row, double lon, double lat)
     ui->tableWidget->blockSignals(false);
     return true;
 }
+
+void NeutronYieldStatisticsWindow::on_bt_saveResult_clicked()
+{
+    //先检查文件路径是否存在
+    QString filePath = ui->lineEdit_savepath->text().trimmed();
+    if (!QFileInfo::exists(filePath))
+    {
+        QMessageBox::information(this, tr("提示"), tr("文件路径不存在，请重新选择！"));
+        return;
+    }
+
+    //检查文件名，当存在后缀.txt时，直接使用，否则自动添加后缀
+    QString fileName = ui->lineEdit_fileName->text();
+    if (!fileName.endsWith(".txt", Qt::CaseInsensitive))
+    {        fileName += ".txt";
+    }
+
+    //拼接文件全路径
+    QString wholeFileName = QDir(filePath).filePath(fileName);
+
+    //文件存在时，提示用户是否覆盖
+    if (QFileInfo::exists(wholeFileName))
+    {        
+        if (QMessageBox::question(this, tr("提示"), tr("文件已存在，是否覆盖？"), 
+                QMessageBox::Yes, QMessageBox::No) != QMessageBox::Yes)        
+        {
+            return;
+        }
+    }
+
+    //保存文件,将tableWidget数据全部导出
+    QFile file(wholeFileName);
+    if (file.open(QIODevice::WriteOnly | QIODevice::Text))
+    {        
+        QTextStream out(&file);
+        //写入表头
+        out << "DetectorID\tYield\tLongitude\tLatitude\tInitial909Count\tSpecCount\n";
+        //写入数据
+        for (int row = 0; row < ui->tableWidget->rowCount(); row++)
+        {
+            QStringList rowData;
+            //如果最后一列的数据为空，则认为该行没有数据，跳过
+            QTableWidgetItem* lastItem = ui->tableWidget->item(row, ui->tableWidget->columnCount() - 1);
+            if (!lastItem || lastItem->text().isEmpty())
+                continue;
+            for (int col = 0; col < ui->tableWidget->columnCount(); col++)
+            {
+                QTableWidgetItem* item = ui->tableWidget->item(row, col);
+                rowData << (item ? item->text() : ""); //如果单元格没有数据，则写入空字符串
+            }
+            out << rowData.join("\t") << "\n";
+        }
+        //弹出对话框提示保存成功，并打印日志
+        QMessageBox::information(this, tr("提示"), tr("文件保存成功！"));
+        emit reporWriteLog(tr("文件保存成功，路径：%1").arg(wholeFileName));
+    }
+    else
+    {
+        QMessageBox::information(this, tr("提示"), tr("文件保存失败，请检查路径和文件名！"));
+        emit reporWriteLog(tr("文件保存失败，路径：%1").arg(wholeFileName));
+    }
+    file.close();
+}
+
