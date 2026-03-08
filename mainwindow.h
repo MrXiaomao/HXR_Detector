@@ -262,6 +262,7 @@ private:
     QPixmap dblroundPixmap(QSize sz, QColor clrIn, QColor clrOut = Qt::gray);//双圆
 
     bool mEnableAutoMeasure = false; // 开始自动测量模式
+    bool mEnableExtendTrigger = false; // 启用外触发
     void startMeasure();
     void stopMeasure();
 };

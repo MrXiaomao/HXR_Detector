@@ -726,7 +726,7 @@ void CommHelper::setShotInformation(const QString shotDir, const QString shotNum
  * @param mode 波形测量/能谱测量
  * @param index index=0时则认为是全部探测器一起开始测量
  */
-void CommHelper::startMeasure(CommandAdapter::WorkMode mode, quint8 index/* = 0*/)
+void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode measureMode, CommandAdapter::WorkMode workMode, quint8 index/* = 0*/)
 {
     mWaveAllData.clear();
     mMeasureStartTime.clear();
@@ -769,7 +769,11 @@ void CommHelper::startMeasure(CommandAdapter::WorkMode mode, quint8 index/* = 0*
                     qInfo().nospace() << "谱仪[#"<< index << "]创建存储文件：" << absolutePath;
                 }
                 
-                detectorDataProcessor->startMeasure(mode);
+
+                if (measureMode == CommandAdapter::MeasureMode::mmManual)
+                    detectorDataProcessor->startMeasure(workMode);
+                else
+                    detectorDataProcessor->startAutoMeasure(tmStart, workMode);
                 emit measureStart(index);
             }
         }
@@ -793,7 +797,10 @@ void CommHelper::startMeasure(CommandAdapter::WorkMode mode, quint8 index/* = 0*
 
         DataProcessor* detectorDataProcessor = mDetectorDataProcessor[index];
         if (!detectorDataProcessor->isFreeSocket()){
-            detectorDataProcessor->startMeasure(mode);
+            if (measureMode == CommandAdapter::MeasureMode::mmManual)
+                detectorDataProcessor->startMeasure(workMode);
+            else
+                detectorDataProcessor->startAutoMeasure(tmStart, workMode);
             emit measureStart(index);
         }
     }

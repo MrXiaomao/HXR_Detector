@@ -148,7 +148,7 @@ bool DataProcessor::isFreeSocket()
     return mTcpSocket == nullptr;
 }
 
-void DataProcessor::startMeasure(WorkMode workMode)
+void DataProcessor::startMeasure(CommandAdapter::WorkMode workMode)
 {
     /*开始测量之前清空所有数据，防止野数据存在*/
     mCachePool.clear();
@@ -197,7 +197,62 @@ void DataProcessor::startMeasure(WorkMode workMode)
     this->sendWorkMode(false, workMode);
 
     //#15 开始测量=1|0|25|1234000FEA1000000001ABCD
-    this->sendStartMeasure();
+    this->sendStartMeasure(CommandAdapter::MeasureMode::mmManual);
+}
+
+void DataProcessor::startAutoMeasure(QDateTime tmStart, CommandAdapter::WorkMode workMode)
+{
+    /*开始测量之前清空所有数据，防止野数据存在*/
+    mCachePool.clear();
+    mAccumulateSpec.clear();
+    mAccumulateSpec.resize(8192);
+    mCurrentSpec.clear();
+    mCurrentSpec.resize(8192);
+    mFullSpectrums.clear();
+
+    if (m_parseData) {
+        delete m_parseData;
+        m_parseData = nullptr;
+    }
+    // 创建新对象，初始化测量状态
+    m_parseData = new ParseData();
+
+    if (mNetFile)
+    {
+        mNetFile->close();
+        mNetFile->deleteLater();
+        mNetFile = nullptr;
+    }
+
+    QString mMeasureStartTime = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
+    QString filePath = QString("./cache/net/%1_%2_Net.dat").arg(mIndex).arg(mMeasureStartTime);
+    if (mIndex != 0)
+    {
+        // 时钟同步模块不需要录制网络数据
+        mNetFile = new QFile(filePath);
+        if (!mNetFile->open(QIODevice::WriteOnly | QIODevice::Append))
+        {
+            mNetFile->deleteLater();
+            mNetFile = nullptr;
+        }
+    }
+
+    //测量前下发配置
+    //HDF5Settings *settings = HDF5Settings::instance();
+    //QMap<quint8, DetParameter>& detParameters = settings->detParameters();
+    //DetParameter& detParameter = detParameters[mIndex];
+    //this->updateSetting(detParameter); 参数设置在上线时候已经发过了，这里就不用重复发送了
+
+    //#12 波形工作模式=1|0|22|1234000FFF1000000000ABCD
+    //#13 能谱工作模式=1|0|23|1234000FFF1000000001ABCD
+    //#14 粒子工作模式=1|0|24|1234000FFF1000000002ABCD
+    this->sendWorkMode(false, workMode);
+
+    //#15发送测量时间
+    this->sendAutoMeasureTime(tmStart);
+
+    //#16 开始测量=1|0|25|1234000FEA1000000001ABCD
+    this->sendStartMeasure(CommandAdapter::MeasureMode::mmAuto);
 }
 
 /*

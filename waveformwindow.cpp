@@ -73,7 +73,7 @@ void WaveformWindow::on_pushButton_start_clicked()
     }
 
     ui->lineEdit_pkgCount->setText(QString::number(0));
-    commHelper->startMeasure(CommandAdapter::WorkMode::wmWaveform);
+    commHelper->startMeasure(QDateTime::currentDateTime(), CommandAdapter::MeasureMode::mmManual, CommandAdapter::WorkMode::wmWaveform);
 
     ui->pushButton_save->setEnabled(false);
     ui->pushButton_start->setEnabled(false);

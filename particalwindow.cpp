@@ -73,7 +73,7 @@ void ParticalWindow::on_pushButton_start_clicked()
     }
 
     ui->lineEdit_pkgCount->setText(QString::number(0));
-    commHelper->startMeasure(CommandAdapter::WorkMode::wmParticle);
+    commHelper->startMeasure(QDateTime::currentDateTime(), CommandAdapter::MeasureMode::mmManual, CommandAdapter::WorkMode::wmParticle);
 
     ui->pushButton_save->setEnabled(false);
     ui->pushButton_start->setEnabled(false);

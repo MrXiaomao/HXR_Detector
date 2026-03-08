@@ -25,23 +25,41 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     mAutoMeasureDelayTimer->setInterval(1000); // 每秒触发一次
     connect(mAutoMeasureDelayTimer, &QTimer::timeout, this, [=](){
         if (mAutoMeasureDelayActive)
-        {
-            ui->lineEdit_triggerflag->setText("已经触发");
+        {            
             QDateTime now = QDateTime::currentDateTime();
-            QDateTime tmStart = ui->dateTimeEdit_autoTrigger->dateTime().addSecs(-30);// 提前30秒做好准备工作
-            if (now >= tmStart)
-            {
-                mAutoMeasureDelayTimer->stop();
-
-                // 第一步 先启动服务
-                if (!commHelper->isOpen())
+            if (ui->cbb_measureMode->currentIndex() == 0){
+                // 手动测量模式
+                QDateTime tmStart = ui->dateTimeEdit_startTime->dateTime();
+                if (now >= tmStart)
                 {
-                    emit ui->action_startServer->trigger();
-                }
+                    ui->lineEdit_triggerflag->setText("已经触发");
 
-                // 第二步 先连接交换机
-                commHelper->connectSwitcher(false);
+                    mAutoMeasureDelayTimer->stop();
+
+                    // 直接开始测量
+                    this->startMeasure();
+                }
             }
+            else{
+                // 自动化测量模式
+                QDateTime tmStart = ui->dateTimeEdit_startTime->dateTime().addSecs(-30);// 提前30秒做好准备工作
+                if (now >= tmStart)
+                {
+                    ui->lineEdit_triggerflag->setText("已经触发");
+
+                    mAutoMeasureDelayTimer->stop();
+
+                    // 第一步 先启动服务
+                    if (!commHelper->isOpen())
+                    {
+                        emit ui->action_startServer->trigger();
+                    }
+
+                    // 第二步 先连接交换机
+                    commHelper->connectSwitcher(false);
+                }
+            }
+
         }
     });
 
@@ -141,7 +159,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
             mTemperatureTimeoutDetectors.removeOne(index);
             //如果该探测器正在测量，则重新开始测量
             if (mDetectorMeasuring[index]){
-                commHelper->startMeasure(CommandAdapter::WorkMode::wmSpectrum, index);
+                commHelper->startMeasure(QDateTime::currentDateTime(), CommandAdapter::MeasureMode::mmManual, CommandAdapter::WorkMode::wmSpectrum, index);
                 //打印日志
                 qInfo().nospace() << "谱仪[#" << index << "]自动重新开始测量";
             }
@@ -258,7 +276,8 @@ MainWindow::~MainWindow()
 void MainWindow::initUi()
 {
     // 自动测量
-    ui->dateTimeEdit_autoTrigger->setDateTime(QDateTime::currentDateTime().addSecs(180));
+    ui->dateTime_shotTime->setDateTime(QDateTime::currentDateTime());
+    ui->dateTimeEdit_startTime->setDateTime(QDateTime::currentDateTime().addSecs(180));
     emit ui->cbb_measureMode->activated(0);
 
     // 谱仪最大化按钮
@@ -269,6 +288,26 @@ void MainWindow::initUi()
         QWidget* spectroMeterWidget = this->findChild<QWidget*>(QString("spectroMeterWidget%1").arg(index));
         if (spectroMeterWidget->property("isZoomIn").toBool())
         {
+            // 2行显示
+            QGridLayout* layoutLeft = (QGridLayout*)ui->widget_left->layout();
+            QGridLayout* layoutRight = (QGridLayout*)ui->widget_right->layout();
+
+            for (int index=1; index<=24; ++index)
+            {
+                QCheckBox* checkBox = findChild<QCheckBox*>(QLatin1String("CH ")+QString::number(index));
+                if (index<=12)
+                {
+                    layoutLeft->addWidget(checkBox, index<=6 ? 0 : 1, (index-1) % 6);
+                }
+                else
+                {
+                    layoutRight->addWidget(checkBox, index<=18 ? 0 : 1, (index-1) % 6);
+                }
+            }
+
+            layoutLeft->addWidget(ui->toolButton_title_1, 0, 12);
+            layoutRight->addWidget(ui->toolButton_title_2, 0, 12);
+
             this->setProperty("isZoomIn", false);
             spectroMeterWidget->setProperty("isZoomIn", false);
             btn->setIcon(QIcon(":/zoom_in.png"));
@@ -280,6 +319,26 @@ void MainWindow::initUi()
         }
         else
         {
+            // 单行显示
+            QGridLayout* layoutLeft = (QGridLayout*)ui->widget_left->layout();
+            QGridLayout* layoutRight = (QGridLayout*)ui->widget_right->layout();
+
+            for (int index=1; index<=24; ++index)
+            {
+                QCheckBox* checkBox = findChild<QCheckBox*>(QLatin1String("CH ")+QString::number(index));
+                if (index<=12)
+                {
+                    layoutLeft->addWidget(checkBox, 0, (index-1) % 12);
+                }
+                else
+                {
+                    layoutRight->addWidget(checkBox, 0, (index-1) % 12);
+                }
+            }
+
+            layoutLeft->addWidget(ui->toolButton_title_1, 0, 12);
+            layoutRight->addWidget(ui->toolButton_title_2, 0, 12);
+
             this->setProperty("isZoomIn", true);
             this->setProperty("currentMeterIndex", index);
             spectroMeterWidget->setProperty("isZoomIn", true);
@@ -586,7 +645,10 @@ void MainWindow::initUi()
             }
             else {
                 QLabel* cell = new QLabel();
-                cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::gray));
+                if (column == 3)
+                    cell->setText("-℃");
+                else
+                    cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::gray));
                 cell->setAlignment(Qt::AlignCenter);
                 ui->tableWidget_detector->setCellWidget(row, column, cell);
             }
@@ -678,17 +740,17 @@ void MainWindow::initUi()
         return QColor(distR(engine), distG(engine), distB(engine));
     };
     mGraphisColor.push_back(QColor::fromRgb(0,47,167));
+    mGraphisColor.push_back(QColor::fromRgb(255,0,77));
+    mGraphisColor.push_back(QColor::fromRgb(255,204,51));
     mGraphisColor.push_back(QColor::fromRgb(10,186,181));
     mGraphisColor.push_back(QColor::fromRgb(5,75,58));
     mGraphisColor.push_back(QColor::fromRgb(129,216,208));
     mGraphisColor.push_back(QColor::fromRgb(0,140,141));
-    mGraphisColor.push_back(QColor::fromRgb(255,0,77));
     //mGraphisColor.push_back(QColor::fromRgb(0,47,167));
     //mGraphisColor.push_back(QColor::fromRgb(70,40,20));
     mGraphisColor.push_back(QColor::fromRgb(128,0,32));
     mGraphisColor.push_back(QColor::fromRgb(142,76,41));
     mGraphisColor.push_back(QColor::fromRgb(205,0,0));
-    mGraphisColor.push_back(QColor::fromRgb(255,204,51));
     mGraphisColor.push_back(QColor::fromRgb(0,102,128));
     mGraphisColor.push_back(QColor::fromRgb(32,88,39));
     // for (int i=0; i<12; ++i)
@@ -711,7 +773,7 @@ void MainWindow::initUi()
         QGridLayout* layoutLeft = new QGridLayout(ui->widget_left);
         layoutLeft->setSpacing(5);
         layoutLeft->setContentsMargins(9,3,9,3);
-        QGridLayout* layoutRight = new QGridLayout(ui->widget_left);
+        QGridLayout* layoutRight = new QGridLayout(ui->widget_right);
         layoutRight->setSpacing(5);
         layoutRight->setContentsMargins(9,3,9,3);
         ui->widget_left->setLayout(layoutLeft);
@@ -846,13 +908,19 @@ void MainWindow::initUi()
 
     // 接收时间戳属性据
     connect(commHelper, &CommHelper::reportTimestampe, this, [=](quint8 index, QDateTime& tm){
-        if (mEnableAutoMeasure && !mAutoMeasureDelayActive)
+        // 只有启用了外触发才会接收打靶信号的时间戳，并且只在自动测量未激活时更新界面显示
+        if (mEnableExtendTrigger && !mAutoMeasureDelayActive)
         {
             // 只有开启了自动化测量，才接收自动触发的时间戳，并更新界面显示
             ui->dateTime_shotTime->setDateTime(tm);
+            ui->lineEdit_triggerflag->setText("已经触发");
+
+            // 根据冷却时间设置自动测量的触发时间，单位为秒
             qint32 coolTimelength = ui->spinBox_coolTimeLength->value();
-            ui->dateTimeEdit_autoTrigger->setDateTime(tm.addSecs(coolTimelength));
+            ui->dateTimeEdit_startTime->setDateTime(tm.addSecs(coolTimelength));
+
             mAutoMeasureDelayActive = true;
+            qInfo().noquote().nospace() << "收到打靶信号时间戳：" << tm.toString("yyyy-MM-dd HH:mm:ss") << "，自动测量将在" << coolTimelength << "秒后触发";
         }
     });
 
@@ -1263,19 +1331,15 @@ void MainWindow::on_actiontoolBar_triggered()
  */
 void MainWindow::onTriggerModelChanged(int index)
 {
-    switch(index) {
-    case 0: // 软件触发
-        ui->label_7->setVisible(false);
-        ui->lineEdit_triggerflag->setVisible(false);
-        ui->dateTime_shotTime->setEnabled(false);
-        break;
-    case 1: // 外触发
-        ui->label_7->setVisible(true);
-        ui->lineEdit_triggerflag->setVisible(true);
-        ui->dateTime_shotTime->setEnabled(false);
-        break;
-    default:
-        break;
+    if (ui->cbb_measureMode->currentIndex() ==  0)
+    {
+        ui->dateTime_shotTime->setEnabled(index == 0); // 软件触发才允许设置打靶时间
+        ui->spinBox_coolTimeLength->setEnabled(index != 0);// 软件触发不允许设置冷却时间
+    }
+    else
+    {
+        ui->dateTime_shotTime->setEnabled(false);   // 外触发不允许设置打靶时间
+        ui->spinBox_coolTimeLength->setEnabled(index == 0); // 外触发才允许设置冷却时间
     }
 
     // 实时保存触发模式
@@ -1304,7 +1368,7 @@ void MainWindow::on_action_startMeasure_triggered()
     ui->spinBox_measureTime->setEnabled(false);
     ui->checkBox_continueMeasure->setEnabled(false);
     ui->lineEdit_filePath->setEnabled(false);
-    ui->dateTimeEdit_autoTrigger->setEnabled(false);
+    ui->dateTimeEdit_startTime->setEnabled(false);
     ui->cbb_measureMode->setEnabled(false);
     ui->pushButton_startMeasure->setEnabled(false);
     ui->pushButton_stopMeasure->setEnabled(false);
@@ -1315,6 +1379,7 @@ void MainWindow::on_action_startMeasure_triggered()
     updateSpectrumPlotSettings();
 
     mEnableAutoMeasure = ui->cbb_measureMode->currentIndex()==1;
+    mEnableExtendTrigger = ui->com_triggerModel->currentIndex()==1;
 
     if (mEnableAutoMeasure)
     {
@@ -1344,18 +1409,33 @@ void MainWindow::on_action_startMeasure_triggered()
             m_selectedChannels.append(index);
     }
 
+    // 启用外触发模式，界面上显示未触发，等待时间戳信号触发测量
+    if (mEnableExtendTrigger){
+        ui->lineEdit_triggerflag->setText("等待触发");
+
+        ui->dateTimeEdit_startTime->setDateTime(QDateTime::fromString("2026-01-01 00:00:00"));
+        ui->dateTime_shotTime->setDateTime(QDateTime::fromString("2026-01-01 00:00:00"));
+    }
+    else{
+        ui->lineEdit_triggerflag->setText("未触发");
+    }
+
     if (mEnableAutoMeasure)
     {
-        ui->lineEdit_triggerflag->setText("未触发");
-        mAutoMeasureDelayActive = ui->com_triggerModel->currentIndex() == 0;
-
-        mAutoMeasureDelayTimer->start();
     }
     else
     {
-        // 开始测量
-        startMeasure();
+        // 软件触发模式，开始时间=当前时间，外触发模式，开始时间=打靶时间+冷却时间
+        if (!mEnableExtendTrigger)
+        {
+            QDateTime now = QDateTime::currentDateTime();
+            ui->dateTimeEdit_startTime->setDateTime(now);
+            ui->spinBox_coolTimeLength->setValue(ui->dateTime_shotTime->dateTime().secsTo(now));
+        }
     }
+
+    mAutoMeasureDelayActive = ui->com_triggerModel->currentIndex() == 0;
+    mAutoMeasureDelayTimer->start();
 }
 
 //单通道测量，单独测量某个通道
@@ -1463,7 +1543,7 @@ void MainWindow::on_pushButton_startMeasure_clicked()
                 if (!mContinueMeasureTimer->isValid())
                     mContinueMeasureTimer->start();
 
-                commHelper->startMeasure(CommandAdapter::WorkMode::wmWaveform, index);
+                commHelper->startMeasure(QDateTime::currentDateTime(), CommandAdapter::MeasureMode::mmManual, CommandAdapter::WorkMode::wmWaveform, index);
                 //记录下所选的通道号，保存到成员变量中，停止测量的时候使用并清空
                 m_selectedChannels.append(index);
             }
@@ -1519,11 +1599,11 @@ void MainWindow::on_pushButton_startMeasure_clicked()
                         mMeasureCountdownTimer->start();
                         // 初始化测量时长显示为 00:00:00
                         ui->edit_measureTime->setText("00:00:00");
-                        qInfo().nospace() << QString("开始测量，倒计时：%1 秒").arg(countdownSeconds);
+                        qInfo().nospace().nospace() << QString("开始测量，倒计时：%1 秒").arg(countdownSeconds);
                     }
                 }
 
-                commHelper->startMeasure(CommandAdapter::WorkMode::wmSpectrum, index);
+                commHelper->startMeasure(QDateTime::currentDateTime(), CommandAdapter::MeasureMode::mmManual, CommandAdapter::WorkMode::wmSpectrum, index);
                 //记录下所选的通道号，保存到成员变量中，停止测量的时候使用并清空
                 m_selectedChannels.append(index);
             }
@@ -1628,20 +1708,25 @@ void MainWindow::on_action_stopMeasure_triggered()
 {
     ui->action_startMeasure->setEnabled(true);
     ui->action_stopMeasure->setEnabled(false);
-    ui->dateTime_shotTime->setEnabled(false);
     ui->com_triggerModel->setEnabled(true);
     ui->lineEdit_shotNum->setEnabled(true);
     ui->checkBox_autoIncrease->setEnabled(true);
     ui->spinBox_measureTime->setEnabled(true);
     ui->checkBox_continueMeasure->setEnabled(true);
     ui->lineEdit_filePath->setEnabled(true);
-    ui->dateTimeEdit_autoTrigger->setEnabled(true);
+    ui->dateTimeEdit_startTime->setEnabled(false);
     ui->cbb_measureMode->setEnabled(true);
     ui->pushButton_startMeasure->setEnabled(true);
     ui->pushButton_stopMeasure->setEnabled(false);
     ui->action_waveformMode->setEnabled(true);
     ui->action_particalMode->setEnabled(true);
-    ui->spinBox_coolTimeLength->setEnabled(true);
+
+    // 软件触发才允许设置打靶时间
+    ui->dateTime_shotTime->setEnabled(ui->com_triggerModel->currentIndex() == 0);
+    ui->lineEdit_triggerflag->setText("未触发");
+
+    // 外触发才允许设置冷却时间
+    ui->spinBox_coolTimeLength->setEnabled(mEnableExtendTrigger);
 
     if (mEnableAutoMeasure)
     {
@@ -1659,6 +1744,7 @@ void MainWindow::on_action_stopMeasure_triggered()
     m_selectedChannels.clear();
 
     mEnableAutoMeasure = false;
+    mEnableExtendTrigger = false;
 }
 
 void MainWindow::onMeasureCountdownTimeout()
@@ -1732,7 +1818,7 @@ void MainWindow::onMeasureCountdownTimeout()
             ui->spinBox_measureTime->setEnabled(true);
             ui->checkBox_continueMeasure->setEnabled(true);
             ui->lineEdit_filePath->setEnabled(true);
-            ui->dateTimeEdit_autoTrigger->setEnabled(true);
+            ui->dateTimeEdit_startTime->setEnabled(true);
             ui->cbb_measureMode->setEnabled(true);
             ui->action_connectSwitch->setEnabled(false);
         }
@@ -1749,7 +1835,7 @@ void MainWindow::onMeasureCountdownTimeout()
             ui->spinBox_measureTime->setEnabled(true);
             ui->checkBox_continueMeasure->setEnabled(true);
             ui->lineEdit_filePath->setEnabled(true);
-            ui->dateTimeEdit_autoTrigger->setEnabled(true);
+            ui->dateTimeEdit_startTime->setEnabled(true);
             ui->cbb_measureMode->setEnabled(true);
         }
     }
@@ -2497,11 +2583,18 @@ void MainWindow::startMeasure()
         }
     }
 
+    CommandAdapter::MeasureMode measureMode = ui->cbb_measureMode->currentIndex() == 0 ? CommandAdapter::MeasureMode::mmManual : CommandAdapter::MeasureMode::mmAuto;
+    QDateTime tmStart = QDateTime::currentDateTime();
+    if (ui->cbb_measureMode->currentIndex() == 1)
+    {
+        tmStart = ui->dateTimeEdit_startTime->dateTime();
+    }
+
     // 再发开始测量指令
     if (ui->action_waveformMode->isChecked())
-        commHelper->startMeasure(CommandAdapter::WorkMode::wmWaveform);
+        commHelper->startMeasure(tmStart, measureMode, CommandAdapter::WorkMode::wmWaveform);
     else if (ui->action_spectrumMode->isChecked())
-        commHelper->startMeasure(CommandAdapter::WorkMode::wmSpectrum);
+        commHelper->startMeasure(tmStart, measureMode, CommandAdapter::WorkMode::wmSpectrum);
 
     // 测量中禁用参数配置
     mDetSettingWindow->setEnabled(false);
@@ -2568,22 +2661,25 @@ void MainWindow::on_checkBox_continueMeasure_toggled(bool toggled)
 
 void MainWindow::on_cbb_measureMode_activated(int index)
 {
-    if (index == 0)
+    if (ui->cbb_measureMode->currentIndex() ==  0)
     {
-        // 手动测量
-        ui->label_18->hide();
-        ui->dateTimeEdit_autoTrigger->hide();
-        ui->label_11->hide();
-        ui->spinBox_coolTimeLength->hide();
+        ui->dateTime_shotTime->setEnabled(index == 0); // 软件触发才允许设置打靶时间
+
+        ui->com_triggerModel->setEnabled(true);
     }
     else
     {
-        // 自动化测量
-        ui->label_18->show();
-        ui->dateTimeEdit_autoTrigger->show();
-        ui->label_11->show();
-        ui->spinBox_coolTimeLength->show();
+        ui->dateTime_shotTime->setEnabled(false);   // 外触发不允许设置打靶时间
+
+        ui->com_triggerModel->setCurrentIndex(1);
+        ui->com_triggerModel->setEnabled(false);        
     }
+
+    ui->spinBox_coolTimeLength->setEnabled(ui->com_triggerModel->currentIndex() == 1); // 外触发才允许设置冷却时间
+
+    GlobalSettings settings(CONFIG_FILENAME);
+    settings.setValue("mainWindow/TriggerMode", ui->com_triggerModel->currentIndex());
+    settings.setValue("mainWindow/CacheDir", ui->lineEdit_filePath->text());
 }
 
 void MainWindow::on_cbb_energyCalibration_toggled(bool checked)

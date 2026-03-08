@@ -599,7 +599,7 @@
                   <item>
                    <widget class="QWidget" name="widget_left" native="true">
                     <property name="sizePolicy">
-                     <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                     <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
                       <horstretch>0</horstretch>
                       <verstretch>0</verstretch>
                      </sizepolicy>
@@ -607,7 +607,7 @@
                     <property name="minimumSize">
                      <size>
                       <width>0</width>
-                      <height>50</height>
+                      <height>25</height>
                      </size>
                     </property>
                     <property name="maximumSize">
@@ -618,7 +618,8 @@
                     </property>
                     <property name="styleSheet">
                      <string notr="true">.QWidget{
-	background-color: rgb(170, 170, 170);
+	background-color: rgba(170, 170, 170, 100);
+	background-color: none;
 	border-color:rgb(231, 237, 246);
 	border-top-left-radius: 0px;
 	border-top-right-radius: 0px;
@@ -627,8 +628,8 @@
                     <widget class="QToolButton" name="toolButton_title_1">
                      <property name="geometry">
                       <rect>
-                       <x>270</x>
-                       <y>10</y>
+                       <x>180</x>
+                       <y>20</y>
                        <width>16</width>
                        <height>16</height>
                       </rect>
@@ -713,7 +714,8 @@
                     </property>
                     <property name="styleSheet">
                      <string notr="true">.QWidget{
-	background-color: rgb(170, 170, 170);
+	background-color: rgba(170, 170, 170, 100);
+	background-color: none;
 	border-color:rgb(231, 237, 246);
 	border-top-left-radius: 0px;
 	border-top-right-radius: 0px;
@@ -1384,7 +1386,10 @@
                     </widget>
                    </item>
                    <item row="2" column="2" colspan="2">
-                    <widget class="QDateTimeEdit" name="dateTimeEdit_autoTrigger">
+                    <widget class="QDateTimeEdit" name="dateTimeEdit_startTime">
+                     <property name="enabled">
+                      <bool>false</bool>
+                     </property>
                      <property name="toolTip">
                       <string>系统在该时刻之前提前30s做好测试准备工作</string>
                      </property>

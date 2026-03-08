@@ -405,8 +405,6 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                         qInfo() << "数据包尾部错误，后续相似错误将不再打印日志";
                         isFirstError = false;
                         qDebug().nospace().noquote() << "数据包尾部错误[" << chunk.size() << "]：" << chunk.toHex(' ');
-                        QThread::msleep(200);
-                        qDebug().nospace().noquote() << "数据包原始数据[" << cachePool.size() << "]：" << cachePool.toHex(' ');
                     }
 
                     // 包头/包尾不对 重新开始寻找包头
@@ -701,13 +699,38 @@ void CommandAdapter::sendWorkMode(bool isRead, WorkMode workMode){
  控制类指令
 ***********************************************************/
 //开始测量 波形测量/能谱测量共用一个开始
-void CommandAdapter::sendStartMeasure(){
+void CommandAdapter::sendStartMeasure(CommandAdapter::MeasureMode measureMode){
     mValidDataPkgRef = 0;
     mAskStopMeasure = false;
     QByteArray askCurrentCmd = QByteArray::fromHex(QString("12 34 00 0F EA 10 00 00 00 01 AB CD").toUtf8());
-    
+    if (measureMode == mmAuto)
+    {
+        askCurrentCmd = QByteArray::fromHex(QString("12 34 00 0F EA 10 00 00 00 02 AB CD").toUtf8());
+    }
+
     pushCmd({QString("开始测量指令"), askCurrentCmd});
     mIsMeasuring = true;
+
+    //通知发送指令
+    this->notifySendNextCmd();
+}
+
+//发送自动化测量时间
+void CommandAdapter::sendAutoMeasureTime(QDateTime tm)
+{
+    /*强制清空之前的指令*/
+    this->clear();
+
+    QByteArray askCurrentCmd = QByteArray::fromHex(QString("12 34 00 0F F8 10 00 00 00 00 AB CD").toUtf8());
+
+    quint32 tmUnix = tm.toSecsSinceEpoch();
+    quint32 utc = tmUnix + 2208988800;
+    askCurrentCmd[6] = ((utc >> 24) & 0xFF);
+    askCurrentCmd[7] = ((utc >> 16) & 0xFF);
+    askCurrentCmd[8] = ((utc >> 8) & 0xFF);
+    askCurrentCmd[9] = utc & 0xFF;
+
+    pushCmd({QString("自动化测量时间指令"), askCurrentCmd});
 
     //通知发送指令
     this->notifySendNextCmd();

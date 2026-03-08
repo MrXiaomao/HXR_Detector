@@ -107,6 +107,11 @@ public:
     /*********************************************************
      工作模式配置
     ***********************************************************/
+    enum MeasureMode{
+        mmManual = 0x00,//手动
+        mmAuto = 0x01,//自动化
+    };
+
     enum WorkMode{
         wmWaveform = 0x00,//波形
         wmSpectrum = 0x01,//能谱
@@ -126,7 +131,10 @@ public:
      控制类指令
     ***********************************************************/
     //开始测量
-    void sendStartMeasure();
+    void sendStartMeasure(CommandAdapter::MeasureMode measureMode);
+
+    //发送自动化测量时间
+    void sendAutoMeasureTime(QDateTime tm);
 
     //停止测量
     void sendStopMeasure();

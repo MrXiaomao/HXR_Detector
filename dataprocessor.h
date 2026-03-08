@@ -44,7 +44,8 @@ public:
     /*
      * 开始测量
      */
-    void startMeasure(WorkMode workMode);
+    void startMeasure(CommandAdapter::WorkMode workMode);
+    void startAutoMeasure(QDateTime tmStart, CommandAdapter::WorkMode workMode);
 
     /*
      * 停止测量
