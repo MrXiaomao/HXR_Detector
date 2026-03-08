@@ -278,7 +278,6 @@ void MainWindow::initUi()
     // 自动测量
     ui->dateTime_shotTime->setDateTime(QDateTime::currentDateTime());
     ui->dateTimeEdit_startTime->setDateTime(QDateTime::currentDateTime().addSecs(180));
-    emit ui->cbb_measureMode->activated(0);
 
     // 谱仪最大化按钮
     auto titleClicked = ([=](){
@@ -316,6 +315,9 @@ void MainWindow::initUi()
                 spectroMeterWidget = this->findChild<QWidget*>(QString("spectroMeterWidget%1").arg(i));
                 spectroMeterWidget->show();
             }
+
+            ui->widget_left->setFixedHeight(50);
+            ui->widget_right->setFixedHeight(50);
         }
         else
         {
@@ -351,6 +353,9 @@ void MainWindow::initUi()
                 else
                     spectroMeterWidget->hide();
             }
+
+            ui->widget_left->setFixedHeight(27);
+            ui->widget_right->setFixedHeight(27);
         }
     });
     connect(ui->toolButton_title_1, &QToolButton::clicked, this, titleClicked);
@@ -1331,16 +1336,18 @@ void MainWindow::on_actiontoolBar_triggered()
  */
 void MainWindow::onTriggerModelChanged(int index)
 {
-    if (ui->cbb_measureMode->currentIndex() ==  0)
+    //if (ui->cbb_measureMode->currentIndex() ==  0)
     {
+        // 手动测量，软件触发才允许设置打靶时间，外触发才允许设置冷却时间
         ui->dateTime_shotTime->setEnabled(index == 0); // 软件触发才允许设置打靶时间
         ui->spinBox_coolTimeLength->setEnabled(index != 0);// 软件触发不允许设置冷却时间
     }
-    else
-    {
-        ui->dateTime_shotTime->setEnabled(false);   // 外触发不允许设置打靶时间
-        ui->spinBox_coolTimeLength->setEnabled(index == 0); // 外触发才允许设置冷却时间
-    }
+    // else
+    // {
+    //     // 自动化测量
+    //     ui->dateTime_shotTime->setEnabled(false);   // 外触发不允许设置打靶时间
+    //     ui->spinBox_coolTimeLength->setEnabled(index == 0); // 外触发才允许设置冷却时间
+    // }
 
     // 实时保存触发模式
     GlobalSettings settings;
@@ -1420,18 +1427,12 @@ void MainWindow::on_action_startMeasure_triggered()
         ui->lineEdit_triggerflag->setText("未触发");
     }
 
-    if (mEnableAutoMeasure)
+    // 软件触发模式，开始时间=当前时间，外触发模式，开始时间=打靶时间+冷却时间
+    if (!mEnableExtendTrigger)
     {
-    }
-    else
-    {
-        // 软件触发模式，开始时间=当前时间，外触发模式，开始时间=打靶时间+冷却时间
-        if (!mEnableExtendTrigger)
-        {
-            QDateTime now = QDateTime::currentDateTime();
-            ui->dateTimeEdit_startTime->setDateTime(now);
-            ui->spinBox_coolTimeLength->setValue(ui->dateTime_shotTime->dateTime().secsTo(now));
-        }
+        QDateTime now = QDateTime::currentDateTime();
+        ui->dateTimeEdit_startTime->setDateTime(now);
+        ui->spinBox_coolTimeLength->setValue(ui->dateTime_shotTime->dateTime().secsTo(now));
     }
 
     mAutoMeasureDelayActive = ui->com_triggerModel->currentIndex() == 0;
@@ -2237,6 +2238,9 @@ void MainWindow::updateCountRateDisplay(int detectorId, double fpgaTime, double 
         double pad = (y_max - y_min) * 0.1;
         customPlot->yAxis->setRange(y_min - pad, y_max + pad);
     }
+    else if (customPlot->property("enableManualScale").toBool()){
+        customPlot->rescaleAxes(false);
+    }
 
     customPlot->replot(QCustomPlot::rpQueuedReplot);
 }
@@ -2656,30 +2660,6 @@ QCPGraph* MainWindow::getGraph(int detectorId, bool isSpectrum)
 void MainWindow::on_checkBox_continueMeasure_toggled(bool toggled)
 {
     ui->spinBox_measureTime->setEnabled(!toggled);
-}
-
-
-void MainWindow::on_cbb_measureMode_activated(int index)
-{
-    if (ui->cbb_measureMode->currentIndex() ==  0)
-    {
-        ui->dateTime_shotTime->setEnabled(index == 0); // 软件触发才允许设置打靶时间
-
-        ui->com_triggerModel->setEnabled(true);
-    }
-    else
-    {
-        ui->dateTime_shotTime->setEnabled(false);   // 外触发不允许设置打靶时间
-
-        ui->com_triggerModel->setCurrentIndex(1);
-        ui->com_triggerModel->setEnabled(false);        
-    }
-
-    ui->spinBox_coolTimeLength->setEnabled(ui->com_triggerModel->currentIndex() == 1); // 外触发才允许设置冷却时间
-
-    GlobalSettings settings(CONFIG_FILENAME);
-    settings.setValue("mainWindow/TriggerMode", ui->com_triggerModel->currentIndex());
-    settings.setValue("mainWindow/CacheDir", ui->lineEdit_filePath->text());
 }
 
 void MainWindow::on_cbb_energyCalibration_toggled(bool checked)
