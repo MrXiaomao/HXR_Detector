@@ -130,18 +130,21 @@ OTAUpgradeWindow::OTAUpgradeWindow(QWidget *parent)
 
     connect(commHelper, &CommHelper::reportOTAUpgradeData, this, [=](quint8 index, const QByteArray& data){
         m_returnDataSize[index] += data.size();
-        if (m_returnDataSize[index] >= m_currentFileSize[index])
-        {
-            if (index == 0)
-                emit sigWriteLog(tr("[时钟同步模块]升级包更新成功！"));
-            else
-                emit sigWriteLog(tr("谱仪[#%1]升级包更新成功！").arg(index));
+        // if (m_returnDataSize[index] >= m_currentFileSize[index])
+        // {
+        //     if (index == 0)
+        //         emit sigWriteLog(tr("[时钟同步模块]升级包更新成功！"));
+        //     else
+        //         emit sigWriteLog(tr("谱仪[#%1]升级包更新成功！").arg(index));
 
-            m_waitLoop.quit();
-        }
+        //     m_waitLoop.quit();
+        // }
     });
 
-    connect(this, SIGNAL(sigWriteLog(const QString&,QtMsgType)), this, SLOT(slotWriteLog(const QString&,QtMsgType)));
+    connect(this, SIGNAL(sigWriteLog(const QString&,QtMsgType)), this, SLOT(slotWriteLog(const QString&,QtMsgType)), Qt::QueuedConnection);
+    connect(this, SIGNAL(sigSendProgress(int,const QString&,int,int)), this, SLOT(slotSendProgress(int,const QString&,int,int)), Qt::QueuedConnection);
+    connect(this, SIGNAL(sigSendFinished(int,const QString&,bool)), this, SLOT(slotSendFinished(int,const QString&,bool)), Qt::QueuedConnection);
+    connect(this, SIGNAL(sigUpgradeFinished()), this, SLOT(slotUpgradeFinished()), Qt::QueuedConnection);
 }
 
 OTAUpgradeWindow::~OTAUpgradeWindow()
@@ -240,9 +243,6 @@ void OTAUpgradeWindow::on_pushButton_ok_clicked()
     QModelIndexList validIndexes;
     for (const auto &mi : rows) {
         int row = mi.row();
-        if (0 == row)
-            continue;
-
         quint8 index = row;
         if (mOnlineDetectors.contains(index))
             validIndexes.append(mi);
@@ -318,9 +318,6 @@ void OTAUpgradeWindow::on_pushButton_ok_clicked()
     QModelIndexList validIndexes;
     for (const auto &mi : rows) {
         int row = mi.row();
-        if (0 == row)
-            continue;
-
         quint8 index = row;
         if (mOnlineDetectors.contains(index))
             validIndexes.append(mi);
@@ -344,6 +341,7 @@ void OTAUpgradeWindow::on_pushButton_ok_clicked()
 
     for (const auto &mi : validIndexes) {
         int index = mi.row();
+        m_runningTasks++;
         // 将任务加入队列（每个设备对应一个任务）
         m_taskQueue.append(qMakePair(index, selectedPartition));
     }
@@ -361,11 +359,6 @@ void OTAUpgradeWindow::on_pushButton_ok_clicked()
 void OTAUpgradeWindow::startNextTask()
 {
     if (m_currentTaskIndex >= m_taskQueue.size()) {
-        // 所有任务完成
-        sigWriteLog("=== 所有OTA任务执行完毕 ===", QtInfoMsg);
-        ui->pushButton_ok->setEnabled(true);
-        ui->pushButton_switch->setEnabled(true);
-        ui->progressBar->setValue(0);
         return;
     }
 
@@ -507,7 +500,7 @@ void OTAUpgradeWindow::asyncSendOTAData(int index, const QString& filePath, cons
 {
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly)) {
-        emit onSendFinished(index, selectedPartition, false);
+        emit sigSendFinished(index, selectedPartition, false);
         return;
     }
 
@@ -520,7 +513,7 @@ void OTAUpgradeWindow::asyncSendOTAData(int index, const QString& filePath, cons
     commHelper->startOTAUpgrade(index);
     for (int i = 0; i < sendCount && sendSuccess; ++i) {
         // 发送进度信号（主线程更新UI）
-        emit onSendProgress(index, selectedPartition, i + 1, sendCount);
+        emit sigSendProgress(index, selectedPartition, i + 1, sendCount);
 
         QByteArray buf = file.read(256);
         if (buf.size() < 256 && i != sendCount - 1) {
@@ -537,25 +530,48 @@ void OTAUpgradeWindow::asyncSendOTAData(int index, const QString& filePath, cons
     }
 
     file.close();
-    onSendFinished(index, selectedPartition, sendSuccess);
+    emit sigSendFinished(index, selectedPartition, sendSuccess);
 
-    // 等待返回数据完成
-    QTimer::singleShot(30000, [=](){
-        m_waitLoop.exit(-1);
-    });
+    std::thread([=](){
+        emit sigWriteLog(tr("数据校验中，请等待..."));
 
-    if (-1 == m_waitLoop.exec())
-    {
-        if (0 == index)
-            emit sigWriteLog(tr("[时间同步触发模块]返回数据超时！！！"));
+        QElapsedTimer timer;
+        timer.start();
+        bool timeout = true;
+        while (timer.elapsed() < 30000) { // 最长等待30秒
+            if (m_returnDataSize[index] >= m_currentFileSize[index]) {
+                timeout = false;
+                break;
+            }
+
+            QThread::msleep(500); // 每500ms检查一次
+        }
+
+        if (timeout)
+        {
+            if (index == 0)
+                emit sigWriteLog(tr("[时间同步触发模块]数据校验失败！！！"));
+            else
+                emit sigWriteLog(tr("谱仪[#%1]数据校验失败！！！").arg(index));
+        }
         else
-            emit sigWriteLog(tr("谱仪[#1]返回数据超时！！！").arg(index));
-    }
+        {
+            if (index == 0)
+                emit sigWriteLog(tr("[时钟同步模块]升级包更新成功！"));
+            else
+                emit sigWriteLog(tr("谱仪[#%1]升级包更新成功！").arg(index));
+        }
+
+        // 按钮状态
+        if (m_runningTasks == 0) {
+            emit sigUpgradeFinished();
+        }
+    }).join();
 
     commHelper->endOTAUpgrade(index); // 发送结束指令
 }
 
-void OTAUpgradeWindow::onSendProgress(int index, const QString& partition, int current, int total)
+void OTAUpgradeWindow::slotSendProgress(int index, const QString& partition, int current, int total)
 {
     // 更新进度条（主线程安全）
     int progress = (current * 100) / total;
@@ -563,10 +579,10 @@ void OTAUpgradeWindow::onSendProgress(int index, const QString& partition, int c
 
     // 更新日志
     // sigWriteLog(tr("谱仪[#%1][%2]更新进度：%3/%4（%5%）")
-    //                 .arg(index).arg(partition).arg(current).arg(total).arg(progress));
+    //              .arg(index).arg(partition).arg(current).arg(total).arg(progress));
 }
 
-void OTAUpgradeWindow::onSendFinished(int index, const QString& partition, bool success)
+void OTAUpgradeWindow::slotSendFinished(int index, const QString& partition, bool success)
 {
     m_runningTasks--;
 
@@ -576,19 +592,20 @@ void OTAUpgradeWindow::onSendFinished(int index, const QString& partition, bool 
         finishData[7] = (ui->comboBox_partition->currentIndex() == 0) ? 0x00 : 0x08;
 
         if (commHelper->sendOTAUpgradeData(index, finishData)) {
-            sigWriteLog(tr("谱仪[#%1][%2]更新完成！").arg(index).arg(partition));
+            sigWriteLog(tr("谱仪[#%1][%2]数据发送完毕！").arg(index).arg(partition));
         } else {
             sigWriteLog(tr("谱仪[#%1][%2]发送完成指令失败！").arg(index).arg(partition), QtCriticalMsg);
         }
     } else {
         sigWriteLog(tr("谱仪[#%1][%2]更新失败！").arg(index).arg(partition), QtCriticalMsg);
     }
+}
 
-    // 按钮状态
-    if (m_runningTasks == 0) {
-        // 所有任务完成后恢复
-        ui->pushButton_ok->setEnabled(true);
-        ui->pushButton_switch->setEnabled(true);
-        ui->progressBar->setValue(0); // 重置进度条
-    }
+void OTAUpgradeWindow::slotUpgradeFinished()
+{
+    // 所有任务完成
+    sigWriteLog("=== 所有OTA任务执行完毕 ===", QtInfoMsg);
+    ui->pushButton_ok->setEnabled(true);
+    ui->pushButton_switch->setEnabled(true);
+    ui->progressBar->setValue(0);
 }

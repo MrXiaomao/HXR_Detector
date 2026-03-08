@@ -1109,5 +1109,8 @@ void CommHelper::endOTAUpgrade(quint8 index)
 
 bool CommHelper::sendOTAUpgradeData(quint8 index, const QByteArray& data)
 {
-    return mDetectorDataProcessor[index]->sendOTAUpgradeData(data);
+    if (index == 0)
+        return mDetectorDataProcessor[mExtendTimeSynModule.switcherIndex-1]->sendOTAUpgradeData(data);
+    else
+        return mDetectorDataProcessor[index]->sendOTAUpgradeData(data);
 }

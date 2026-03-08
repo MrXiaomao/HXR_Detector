@@ -20,6 +20,17 @@ public:
     Q_SIGNAL void sigWriteLog(const QString &msg, QtMsgType msgType = QtDebugMsg);
     Q_SLOT void slotWriteLog(const QString &msg, QtMsgType msgType = QtDebugMsg);
 
+    // 异步发送进度更新槽函数（主线程执行）
+    Q_SIGNAL void sigSendProgress(int index, const QString& partition, int current, int total);
+    Q_SLOT void slotSendProgress(int index, const QString& partition, int current, int total);
+
+    // 异步发送完成槽函数（主线程执行）
+    Q_SIGNAL void sigSendFinished(int index, const QString& partition, bool success);
+    Q_SLOT void slotSendFinished(int index, const QString& partition, bool success);
+
+    Q_SIGNAL void sigUpgradeFinished();
+    Q_SLOT void slotUpgradeFinished();
+
 private slots:
     void on_pushButton_ok_clicked();
 
@@ -40,7 +51,7 @@ protected:
     QPixmap dblroundPixmap(QSize sz, QColor clrIn, QColor clrOut = Qt::gray);
 
 private:
-    qint64 m_returnDataSize[25] = {0}; // 共享变量：返回数据大小
+    std::atomic<qint64> m_returnDataSize[25] = {0}; // 共享变量：返回数据大小
     qint64 m_currentFileSize[25] = {0}; // 共享变量：返回升级文件大小
     int m_runningTasks = 0; // 异步任务计数器（用于控制按钮状态）
     QList<QFutureWatcher<void>*> m_watchers; // 任务监控器列表（支持取消操作）
@@ -56,10 +67,7 @@ private:
     void startNextTask();
 
 private slots:
-    // 异步发送进度更新槽函数（主线程执行）
-    void onSendProgress(int index, const QString& partition, int current, int total);
-    // 异步发送完成槽函数（主线程执行）
-    void onSendFinished(int index, const QString& partition, bool success);
+
 
 };
 
