@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-04-20 09:21:28
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2025-08-01 16:50:56
+ * @LastEditTime: 2026-03-09 10:01:07
  * @Description: 离线数据分析
  */
 #include "offlinewindow.h"
@@ -106,7 +106,7 @@ void OfflineWindow::initUi()
     QPushButton* detectorStatusButton = nullptr;
     {
         detectorStatusButton = new QPushButton();
-        detectorStatusButton->setText(tr("设备信息-计数率"));
+        detectorStatusButton->setText(tr("统计结果-计数率"));
         detectorStatusButton->setFixedSize(250,29);
         detectorStatusButton->setCheckable(true);
 

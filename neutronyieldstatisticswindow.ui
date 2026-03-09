@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>锆活化工程离线数据分析-中子产额统计</string>
+   <string>溴化镧谱仪离线数据分析-中子产额统计</string>
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QHBoxLayout" name="horizontalLayout_2">

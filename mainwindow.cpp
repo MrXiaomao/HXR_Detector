@@ -89,6 +89,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
 
     connect(this, SIGNAL(sigWriteLog(const QString&,QtMsgType)), this, SLOT(slotWriteLog(const QString&,QtMsgType)));
 
+    ui->groupBox_3->setVisible(false); //隐藏统计结果，暂时没有在线中子产额统计结果
     ui->action_startServer->setEnabled(true);
     ui->action_stopServer->setEnabled(false);
     ui->action_connectSwitch->setEnabled(false);
