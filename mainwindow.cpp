@@ -90,6 +90,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     connect(this, SIGNAL(sigWriteLog(const QString&,QtMsgType)), this, SLOT(slotWriteLog(const QString&,QtMsgType)));
 
     ui->groupBox_3->setVisible(false); //隐藏统计结果，暂时没有在线中子产额统计结果
+    ui->cb_shotTime->setVisible(false); //打靶时间自动获取勾选框，隐藏
     ui->action_startServer->setEnabled(true);
     ui->action_stopServer->setEnabled(false);
     ui->action_connectSwitch->setEnabled(false);
@@ -393,17 +394,17 @@ void MainWindow::initUi()
     // 创建上线客户端页面
     mClientPeersWindow = new ClientPeersWindow();
     // mClientPeersWindow->setAttribute(Qt::WA_TranslucentBackground);
-    mClientPeersWindow->setWindowFlags(Qt::Widget | Qt::WindowStaysOnTopHint);
+    mClientPeersWindow->setWindowFlags(Qt::Widget | Qt::WindowOverridesSystemGestures);
     mClientPeersWindow->hide();
     connect(commHelper, &CommHelper::connectPeerConnection, mClientPeersWindow, &ClientPeersWindow::connectPeerConnection);
     connect(commHelper, &CommHelper::disconnectPeerConnection, mClientPeersWindow, &ClientPeersWindow::disconnectPeerConnection);
 
     mOTAUpgradeWindow = new OTAUpgradeWindow();
-    mOTAUpgradeWindow->setWindowFlags(Qt::Widget | Qt::WindowStaysOnTopHint);
+    mOTAUpgradeWindow->setWindowFlags(Qt::Widget | Qt::WindowOverridesSystemGestures);
     mOTAUpgradeWindow->hide();
 
     mDetSettingWindow = new DetSettingWindow();
-    mDetSettingWindow->setWindowFlags(Qt::Widget | Qt::WindowStaysOnTopHint);
+    mDetSettingWindow->setWindowFlags(Qt::Widget | Qt::WindowOverridesSystemGestures);
     mDetSettingWindow->hide();
     connect(commHelper, &CommHelper::connectPeerConnection, mDetSettingWindow, &DetSettingWindow::connectPeerConnection);
     connect(commHelper, &CommHelper::disconnectPeerConnection, mDetSettingWindow, &DetSettingWindow::disconnectPeerConnection);
@@ -654,7 +655,7 @@ void MainWindow::initUi()
                 if (column == 3)
                     cell->setText("-℃");
                 else
-                    cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::gray));
+                    cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::red));
                 cell->setAlignment(Qt::AlignCenter);
                 ui->tableWidget_detector->setCellWidget(row, column, cell);
             }
@@ -1161,6 +1162,11 @@ void MainWindow::clearCustomPlotData()
 }
 
 void MainWindow::closeEvent(QCloseEvent *event) {
+    //确保子对话框都退出
+    mDetSettingWindow->close();
+    mClientPeersWindow->close();
+    mOTAUpgradeWindow->close();
+
     //确认是否退出
     int ret = QMessageBox::question(this, tr("系统退出提示"), tr("确定要退出软件系统吗？"),
                                             QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
@@ -1300,9 +1306,9 @@ void MainWindow::on_action_stopServer_triggered()
         //将响应在线图标设置为红色
         int row = index;
         QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 1));
-        cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::gray));
+        cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::red));
         cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 2));
-        cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::gray));
+        cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::red));
     }
     //清除联网的探测器ID
     mOnlineDetectors.clear();
