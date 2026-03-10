@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-04-20 09:21:28
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-03-06 09:39:01
+ * @LastEditTime: 2026-03-09 10:00:57
  * @Description: 离线数据分析
  */
 #include "neutronyieldstatisticswindow.h"
@@ -118,7 +118,7 @@ void NeutronYieldStatisticsWindow::initUi()
     QPushButton* detectorStatusButton = nullptr;
     {
         detectorStatusButton = new QPushButton();
-        detectorStatusButton->setText(tr("设备信息"));
+        detectorStatusButton->setText(tr("统计结果"));
         detectorStatusButton->setFixedSize(250,29);
         detectorStatusButton->setCheckable(true);
 
@@ -889,7 +889,7 @@ void NeutronYieldStatisticsWindow::on_action_open_triggered()
 
             //获取经纬度
             H5::Group group = file.openGroup("Config");
-            H5::DataSet dataset = group.openDataSet("Detector");
+            H5::DataSet dataset = group.openDataSet("Configuration");
             H5::CompType cfgType = HDF5Settings::createCfgDataType();
             DetParameter cfg[24];
             dataset.read(&cfg, cfgType);
@@ -1697,4 +1697,3 @@ void NeutronYieldStatisticsWindow::on_bt_saveResult_clicked()
     }
     file.close();
 }
-

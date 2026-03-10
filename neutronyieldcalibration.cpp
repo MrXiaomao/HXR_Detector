@@ -26,6 +26,12 @@ NeutronYieldCalibration::NeutronYieldCalibration(QWidget *parent)
         QTableWidgetItem *item2 = new QTableWidgetItem(mSettings.value(QString("Table/initial909Count%1").arg(row+1), "1.0").toString());
         item2->setTextAlignment(Qt::AlignCenter); // 水平+垂直居中
         ui->tableWidget->setItem(row, 1, item2);
+        
+        // 初始化第三列（灵敏度），设为只读
+        QTableWidgetItem *item3 = new QTableWidgetItem();
+        item3->setTextAlignment(Qt::AlignCenter);
+        item3->setFlags(item3->flags() & ~Qt::ItemIsEditable);
+        ui->tableWidget->setItem(row, 2, item3);
     }
     ui->tableWidget->setItemDelegate(new PositiveNumberDelegate (this));
     ui->tableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
@@ -54,6 +60,18 @@ void NeutronYieldCalibration::on_pushButton_save_clicked()
     for (int row= 0; row<ui->tableWidget->rowCount(); ++row){
         mSettings.setValue(QString("Table/yield%1").arg(row+1), ui->tableWidget->item(row, 0)->text());
         mSettings.setValue(QString("Table/initial909Count%1").arg(row+1), ui->tableWidget->item(row, 1)->text());
+        
+        // 计算灵敏度（第一列 / 第二列），当第二列为0时显示"null"
+        double yield = ui->tableWidget->item(row, 0)->text().toDouble();
+        double initial909Count = ui->tableWidget->item(row, 1)->text().toDouble();
+        QString sensitivityText;
+        if (initial909Count == 0.0) {
+            sensitivityText = "null";
+        } else {
+            double sensitivity = yield / initial909Count;
+            sensitivityText = QString::number(sensitivity);
+        }
+        ui->tableWidget->item(row, 2)->setText(sensitivityText);
     }
 
     // === 保存成功后，恢复所有单元格样式 ===

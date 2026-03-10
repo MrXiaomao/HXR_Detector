@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2026-01-14 09:21:28
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-01-15 16:50:56
+ * @LastEditTime: 2026-03-09 10:02:07
  * @Description: 计数率统计
  */
 #include "countratestatisticswindow.h"
@@ -106,7 +106,7 @@ void CountRateStatisticsWindow::initUi()
     QPushButton* detectorStatusButton = nullptr;
     {
         detectorStatusButton = new QPushButton();
-        detectorStatusButton->setText(tr("设备信息"));
+        detectorStatusButton->setText(tr("统计结果"));
         detectorStatusButton->setFixedSize(250,29);
         detectorStatusButton->setCheckable(true);
 
@@ -241,11 +241,11 @@ void CountRateStatisticsWindow::initUi()
 
     ui->tableWidget->setSpan(0, 0, 2, 1);
     ui->tableWidget->setSpan(0, 1, 1, 2);
-    ui->tableWidget->setItem(0, 1, new QTableWidgetItem("最小值(计数)"));
+    ui->tableWidget->setItem(0, 1, new QTableWidgetItem("最小值(计数率cps)"));
     ui->tableWidget->setSpan(0, 3, 1, 2);
-    ui->tableWidget->setItem(0, 3, new QTableWidgetItem("最大值(计数)"));
+    ui->tableWidget->setItem(0, 3, new QTableWidgetItem("最大值(计数率cps)"));
     ui->tableWidget->setSpan(0, 5, 1, 2);
-    ui->tableWidget->setItem(0, 5, new QTableWidgetItem("均值(计数)"));
+    ui->tableWidget->setItem(0, 5, new QTableWidgetItem("均值(计数率cps)"));
     ui->tableWidget->setSpan(0, 7, 1, 3);
     ui->tableWidget->setItem(0, 7, new QTableWidgetItem("死时间率％"));
 
@@ -757,7 +757,7 @@ void CountRateStatisticsWindow::on_action_startMeasure_triggered()
                 // 9. 能谱统计
                 for (int j=0; j<8192; ++j)
                 {
-                    // 9. 对数据进行累加，计数计数率
+                    // 9. 对数据进行累加，计数率
                     totalTemp += spectrum[j];
                     spectrumTotal[j] += spectrum[j];
                     spectrumTotalAdjust[j] += (double)spectrum[j] * data->measureTime * 10e6 / (data->measureTime*10e6 - data->deathTime*10);

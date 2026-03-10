@@ -167,13 +167,13 @@ void HDF5Settings::sync()
         hsize_t dims[1] = {DET_NUM};
         H5::DataSpace dataspace(1, dims);
         // 4 dataset 存在 → 打开并写
-        if (H5Lexists(cfg.getId(), "Detector", H5P_DEFAULT) > 0) {
-            H5::DataSet ds = cfg.openDataSet("Detector");
+        if (H5Lexists(cfg.getId(), "Configuration", H5P_DEFAULT) > 0) {
+            H5::DataSet ds = cfg.openDataSet("Configuration");
             ds.write(data.data(), mCompDataType);
         }
         else {
             // 5 dataset 不存在 → 创建并写
-            H5::DataSet dataset = cfg.createDataSet("Detector", mCompDataType, dataspace);
+            H5::DataSet dataset = cfg.createDataSet("Configuration", mCompDataType, dataspace);
             dataset.write(data.data(), mCompDataType, dataspace);
             writeDetParStrAttr(dataset);
         }
@@ -267,7 +267,7 @@ void HDF5Settings::createH5Config()
     {
         mfH5Setting = new H5::H5File(DEFAULT_HDF5_FILENAME, H5F_ACC_RDWR);
         H5::Group cfgGroup = mfH5Setting->openGroup("Config");
-        H5::DataSet globalDataset = cfgGroup.openDataSet("Detector");
+        H5::DataSet globalDataset = cfgGroup.openDataSet("Configuration");
         H5::DataSpace file_space = globalDataset.getSpace();
 
         // 获取数据集维度(行)
@@ -310,7 +310,7 @@ void HDF5Settings::createH5Config()
                 hsize_t dims[1] = {DET_NUM};
                 H5::DataSpace dataspace(1, dims);
                 H5::Group cfgGroup = mfH5Setting->createGroup("Config");
-                H5::DataSet dataset = cfgGroup.createDataSet("Detector", mCompDataType, dataspace);
+                H5::DataSet dataset = cfgGroup.createDataSet("Configuration", mCompDataType, dataspace);
                 dataset.write(data.data(), mCompDataType);
 
                 // 写字段属性
@@ -411,7 +411,7 @@ void HDF5Settings::createH5Spectrum(QString filePath)
                 hsize_t dims[1] = {DET_NUM};
                 H5::DataSpace dataspace(1, dims);
                 H5::Group cfgGroup = mfH5Spectrum->createGroup("Config");
-                H5::DataSet dataset = cfgGroup.createDataSet("Detector", mCompDataType, dataspace);
+                H5::DataSet dataset = cfgGroup.createDataSet("Configuration", mCompDataType, dataspace);
                 dataset.write(data.data(), mCompDataType);
 
                 // 写入当前时间到"Config"组中，以字符串的形式写入

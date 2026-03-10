@@ -146,6 +146,11 @@
        <string>初始活度(909keV)</string>
       </property>
      </column>
+     <column>
+      <property name="text">
+       <string>灵敏度</string>
+      </property>
+     </column>
     </widget>
    </item>
    <item>
