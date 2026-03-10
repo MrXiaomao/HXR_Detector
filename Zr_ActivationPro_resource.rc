@@ -1,6 +1,6 @@
 #include <windows.h>
 
-IDI_ICON1	ICON	DISCARDABLE	"D:\\Examples\\Qt\\MicroDetector\\3rdParty\\resource\\logo.ico"
+IDI_ICON1	ICON	DISCARDABLE	"D:\\work\\Qt\\MicroDetector\\3rdParty\\resource\\logo.ico"
 
 VS_VERSION_INFO VERSIONINFO
 	FILEVERSION 0,0,0,0
@@ -23,8 +23,8 @@ VS_VERSION_INFO VERSIONINFO
 				VALUE "FileDescription", "\0"
 				VALUE "FileVersion", "0.0.0.0\0"
 				VALUE "LegalCopyright", "\0"
-				VALUE "OriginalFilename", "Zr_ActivationPrj.exe\0"
-				VALUE "ProductName", "Zr_ActivationPrj\0"
+				VALUE "OriginalFilename", "Zr_ActivationPro.exe\0"
+				VALUE "ProductName", "Zr_ActivationPro\0"
 				VALUE "ProductVersion", "0.0.0.0\0"
 			END
 		END

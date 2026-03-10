@@ -181,6 +181,8 @@ private slots:
 
     void on_action_OTA_triggered();
 
+    void on_actionstatusBar_triggered();
+
 private:
     QString increaseShotNumSuffix(QString shotNumStr);
     QCustomPlot* getCustomPlot(int detectorId, bool isSpectrum = true);

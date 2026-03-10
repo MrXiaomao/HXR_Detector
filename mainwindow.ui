@@ -1867,6 +1867,7 @@
      <string>视图(&amp;V)</string>
     </property>
     <addaction name="actiontoolBar"/>
+    <addaction name="actionstatusBar"/>
    </widget>
    <addaction name="menu_File"/>
    <addaction name="menu_setup"/>
@@ -2335,7 +2336,18 @@
     <bool>true</bool>
    </property>
    <property name="text">
-    <string>toolBar</string>
+    <string>工具栏</string>
+   </property>
+  </action>
+  <action name="actionstatusBar">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="checked">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>任务栏</string>
    </property>
   </action>
  </widget>
