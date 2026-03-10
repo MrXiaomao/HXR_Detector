@@ -634,7 +634,7 @@ void MainWindow::initUi()
                                 commHelper->manualOpenSwitcherPOEPower(row);
                                 cell->setChecked(true);
                                 //打印日志
-                                qInfo().nospace() << "手动打开探测器" << row << "的POE供电";
+                                qInfo().nospace() << "手动打开谱仪[#" << row << "]的POE供电";
                             }
                         }
                         else{
@@ -643,7 +643,7 @@ void MainWindow::initUi()
                                 commHelper->manualCloseSwitcherPOEPower(row);
                                 cell->setChecked(false);
                                 //打印日志
-                                qInfo().nospace() << "手动关闭探测器" << row << "的POE供电";
+                                qInfo().nospace() << "手动关闭谱仪[#" << row << "]的POE供电";
                             }
                         }
                     }
@@ -1329,6 +1329,11 @@ void MainWindow::on_action_stopServer_triggered()
 void MainWindow::on_actiontoolBar_triggered()
 {
     ui->toolBar->setVisible(!ui->toolBar->isVisible());
+}
+
+void MainWindow::on_actionstatusBar_triggered()
+{
+    ui->statusbar->setVisible(!ui->statusbar->isVisible());
 }
 
 /**
@@ -2923,4 +2928,7 @@ void MainWindow::on_action_OTA_triggered()
 {
     mOTAUpgradeWindow->show();
 }
+
+
+
 
