@@ -72,7 +72,7 @@ OTAUpgradeWindow::OTAUpgradeWindow(QWidget *parent)
         item->setTextAlignment(Qt::AlignCenter);
 
         QLabel* cell = new QLabel();
-        cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::gray));
+        cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::red));
         cell->setAlignment(Qt::AlignCenter);
         ui->tableWidget_detector->setCellWidget(row, 1, cell);
     }
@@ -130,7 +130,7 @@ OTAUpgradeWindow::OTAUpgradeWindow(QWidget *parent)
     connect(commHelper, &CommHelper::detectorOffline, this, [=](quint8 index){
         int row = index;
         QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 1));
-        cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::gray));
+        cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::red));
 
         //清除联网的探测器ID
         if (mOnlineDetectors.contains(index)){

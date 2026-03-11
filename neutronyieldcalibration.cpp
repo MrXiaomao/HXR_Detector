@@ -27,10 +27,23 @@ NeutronYieldCalibration::NeutronYieldCalibration(QWidget *parent)
         item2->setTextAlignment(Qt::AlignCenter); // 水平+垂直居中
         ui->tableWidget->setItem(row, 1, item2);
         
-        // 初始化第三列（灵敏度），设为只读
-        QTableWidgetItem *item3 = new QTableWidgetItem(mSettings.value(QString("Table/sensitivity%1").arg(row+1), "null").toString());
+        // 初始化第三列（灵敏度），设为只读，并计算数值
+        QTableWidgetItem *item3 = new QTableWidgetItem();
         item3->setTextAlignment(Qt::AlignCenter);
         item3->setFlags(item3->flags() & ~Qt::ItemIsEditable);
+        
+        // 计算灵敏度（第一列 / 第二列），当第二列为0时显示"null"
+        double yield = item->text().toDouble();
+        double initial909Count = item2->text().toDouble();
+        QString sensitivityText;
+        if (initial909Count == 0.0) {
+            sensitivityText = "null";
+        } else {
+            double sensitivity = yield / initial909Count;
+            sensitivityText = QString::number(sensitivity);
+        }
+        item3->setText(sensitivityText);
+        
         ui->tableWidget->setItem(row, 2, item3);
     }
     ui->tableWidget->setItemDelegate(new PositiveNumberDelegate (this));
