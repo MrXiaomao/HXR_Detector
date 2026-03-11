@@ -138,21 +138,21 @@ void OfflineWindow::initUi()
 
                 detectorStatusButton->setChecked(true);
 
-                GlobalSettings settingsGlobal;
-                settingsGlobal.setValue("Global/DefaultPage", "detectorStatus");
+                GlobalSettings settingsSystem;
+                settingsSystem.setValue("Global/DefaultPage", "detectorStatus");
             } else {
                 if(ui->leftStackedWidget->currentWidget() == ui->detectorStatusWidget) {
                     ui->leftStackedWidget->hide();
                     detectorStatusButton->setChecked(false);
 
-                    GlobalSettings settingsGlobal;
-                    settingsGlobal.setValue("Global/DefaultPage", "");
+                    GlobalSettings settingsSystem;
+                    settingsSystem.setValue("Global/DefaultPage", "");
                 } else {
                     ui->leftStackedWidget->setCurrentWidget(ui->detectorStatusWidget);
                     detectorStatusButton->setChecked(true);
 
-                    GlobalSettings settingsGlobal;
-                    settingsGlobal.setValue("Global/DefaultPage", "detectorStatus");
+                    GlobalSettings settingsSystem;
+                    settingsSystem.setValue("Global/DefaultPage", "detectorStatus");
                 }
             }
         });
@@ -161,8 +161,8 @@ void OfflineWindow::initUi()
             ui->leftStackedWidget->hide();
             detectorStatusButton->setChecked(false);
 
-            GlobalSettings settingsGlobal;
-            settingsGlobal.setValue("Global/DefaultPage", "");
+            GlobalSettings settingsSystem;
+            settingsSystem.setValue("Global/DefaultPage", "");
         });
     }
 
@@ -178,13 +178,13 @@ void OfflineWindow::initUi()
             if(ui->rightVboxWidget->isHidden()) {
                 ui->rightVboxWidget->show();
 
-                GlobalSettings settingsGlobal;
-                settingsGlobal.setValue("Global/ShowRightSide", "true");
+                GlobalSettings settingsSystem;
+                settingsSystem.setValue("Global/ShowRightSide", "true");
             } else {
                 ui->rightVboxWidget->hide();
 
-                GlobalSettings settingsGlobal;
-                settingsGlobal.setValue("Global/ShowRightSide", "false");
+                GlobalSettings settingsSystem;
+                settingsSystem.setValue("Global/ShowRightSide", "false");
             }
         });
 
@@ -264,31 +264,31 @@ void OfflineWindow::initUi()
 
     //恢复页面布局
     {
-        GlobalSettings settingsGlobal;
-        QString defaultPage = settingsGlobal.value("Global/DefaultPage").toString();
+        GlobalSettings settingsSystem;
+        QString defaultPage = settingsSystem.value("Global/DefaultPage").toString();
         if (defaultPage == "detectorStatus")
             detectorStatusButton->clicked();
 
-        if (settingsGlobal.contains("Global/MainWindows-State")){
-            this->restoreState(settingsGlobal.value("Global/MainWindows-State").toByteArray());
+        if (settingsSystem.contains("Global/MainWindows-State")){
+            this->restoreState(settingsSystem.value("Global/MainWindows-State").toByteArray());
         }
 
-        if (settingsGlobal.value("Global/ShowRightSide").toString() == "false")
+        if (settingsSystem.value("Global/ShowRightSide").toString() == "false")
             ui->rightVboxWidget->hide();
 
-        if (settingsGlobal.contains("Global/splitterH1/State")){
+        if (settingsSystem.contains("Global/splitterH1/State")){
             QSplitter *splitterH1 = this->findChild<QSplitter*>("splitterH1");
             if (splitterH1)
             {
-                splitterH1->restoreState(settingsGlobal.value("Global/splitterH1/State").toByteArray());
+                splitterH1->restoreState(settingsSystem.value("Global/splitterH1/State").toByteArray());
             }
         }
 
-        if (settingsGlobal.contains("Global/splitterV2/State")){
+        if (settingsSystem.contains("Global/splitterV2/State")){
             QSplitter *splitterV2 = this->findChild<QSplitter*>("splitterV2");
             if (splitterV2)
             {
-                splitterV2->restoreState(settingsGlobal.value("Global/splitterV2/State").toByteArray());
+                splitterV2->restoreState(settingsSystem.value("Global/splitterV2/State").toByteArray());
             }
         }
     }

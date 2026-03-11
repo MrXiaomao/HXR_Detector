@@ -555,7 +555,7 @@ bool CommHelper::closeSwitcherExtendPOEPower()
 #include <QHostInfo>
 bool CommHelper::startServer()
 {    
-    GlobalSettings settings(CONFIG_FILENAME);
+    GlobalSettings settings(DEVICE_CONFIG_FILE);
     QString ip = settings.value("Local/ServerIp", "0.0.0.0").toString();
 
     // 判断网络参数是否合法
@@ -618,7 +618,7 @@ void CommHelper::connectSwitcher(bool query)
     }
     mHuaWeiSwitcherHelper.clear();
 
-    GlobalSettings settings(CONFIG_FILENAME);
+    GlobalSettings settings(DEVICE_CONFIG_FILE);
     mHuaWeiSwitcherCount =  settings.value("Switcher/Count", 0).toUInt();
     mHuaWeiSwitcherHelper.reserve(mHuaWeiSwitcherCount);
     for (int i=0; i<mHuaWeiSwitcherCount; ++i){
@@ -670,7 +670,7 @@ void CommHelper::disconnectSwitcher()
 */
 void CommHelper::openPower()
 {
-    GlobalSettings settings(CONFIG_FILENAME);
+    GlobalSettings settings(DEVICE_CONFIG_FILE);
     mHuaWeiSwitcherCount =  settings.value("Switcher/Count", 0).toUInt();
     for (int i=0; i<mHuaWeiSwitcherCount; ++i){
         QString ip = settings.value(QString("Switcher/%1/ip").arg(i+1), "").toString();
@@ -692,7 +692,7 @@ void CommHelper::openPower()
 */
 void CommHelper::closePower(bool disconnect)
 {
-    GlobalSettings settings(CONFIG_FILENAME);
+    GlobalSettings settings(DEVICE_CONFIG_FILE);
     mHuaWeiSwitcherCount =  settings.value("Switcher/Count", 0).toUInt();
     for (int i=0; i<mHuaWeiSwitcherCount; ++i){
         QString ip = settings.value(QString("Switcher/%1/ip").arg(i+1), "").toString();

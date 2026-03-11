@@ -74,8 +74,8 @@ int main(int argc, char *argv[])
     QApplication::setApplicationVersion(APP_VERSION);
     QApplication::setStyle(QStyleFactory::create("fusion"));//WindowsVista fusion windows
 
-    GlobalSettings settingsGlobal;
-    if(settingsGlobal.value("Global/Options/enableNativeUI",false).toBool()) {
+    GlobalSettings settingsSystem;
+    if(settingsSystem.value("Global/Options/enableNativeUI",false).toBool()) {
         QApplication::setAttribute(Qt::AA_DontUseNativeDialogs,false);
         QApplication::setAttribute(Qt::AA_DontUseNativeMenuBar,false);
         QApplication::setAttribute(Qt::AA_DontCreateNativeWidgetSiblings,false);
@@ -104,9 +104,9 @@ int main(int argc, char *argv[])
     qApp->setStyle(new DarkStyle());
     qApp->style()->setObjectName("fusion");
 
-    settingsGlobal.beginGroup("Version");
-    settingsGlobal.setValue("Version",GIT_VERSION);
-    settingsGlobal.endGroup();
+    settingsSystem.beginGroup("Version");
+    settingsSystem.setValue("Version",GIT_VERSION);
+    settingsSystem.endGroup();
 
     QSplashScreen splash;
     splash.setPixmap(QPixmap(":/splash.png"));
@@ -167,10 +167,10 @@ int main(int argc, char *argv[])
     system_default_message_handler = qInstallMessageHandler(AppMessageHandler);
 
     QString darkTheme = "true";
-    settingsGlobal.beginGroup("Global/Startup");
-    if(settingsGlobal.contains("darkTheme"))
-        darkTheme = settingsGlobal.value("darkTheme").toString();
-    settingsGlobal.endGroup();
+    settingsSystem.beginGroup("Global/Startup");
+    if(settingsSystem.contains("darkTheme"))
+        darkTheme = settingsSystem.value("darkTheme").toString();
+    settingsSystem.endGroup();
 
     bool isDarkTheme = true;
     if(darkTheme == "true") {

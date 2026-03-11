@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>383</width>
-    <height>441</height>
+    <width>419</width>
+    <height>691</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -163,7 +163,10 @@
    <item>
     <widget class="QLabel" name="label">
      <property name="text">
-      <string>注：支持输入整数、浮点数、科学计数法。</string>
+      <string>注：①支持输入整数、浮点数、科学计数法；②初始活度(909keV)指909keV全能峰计数在打靶零时刻的反推数值。</string>
+     </property>
+     <property name="wordWrap">
+      <bool>true</bool>
      </property>
     </widget>
    </item>
