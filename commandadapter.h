@@ -24,7 +24,7 @@ class CommandAdapter : public QObject
 {
     Q_OBJECT
 public:
-    explicit CommandAdapter(QObject *parent = nullptr);
+    explicit CommandAdapter(quint8 index, QObject *parent = nullptr);
     ~CommandAdapter();
 
     virtual void sendCmdToSocket(CommandItem cmdItem) const{};
@@ -167,6 +167,7 @@ public:
     void clear();
 
 protected:
+    quint8 mIndex = 0;//探测器索引
     bool mIsMeasuring = false;//测量是否正在进行中
     void analyzeCommands(QByteArray &cachePool);
 

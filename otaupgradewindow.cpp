@@ -69,6 +69,7 @@ OTAUpgradeWindow::OTAUpgradeWindow(QWidget *parent)
             item = new QTableWidgetItem(QString("谱仪#%1").arg(row));
         ui->tableWidget_detector->setItem(row, 0, item);
         item->setCheckState(Qt::Unchecked);
+        item->setTextAlignment(Qt::AlignCenter);
 
         QLabel* cell = new QLabel();
         cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::gray));
@@ -120,7 +121,7 @@ OTAUpgradeWindow::OTAUpgradeWindow(QWidget *parent)
     // 探测器
     connect(commHelper, &CommHelper::detectorOnline, this, [=](quint8 index){
         int row = index;
-        QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 0));
+        QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 1));
         cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::green));
         //记录联网的探测器ID
         mOnlineDetectors.append(index);
@@ -128,7 +129,7 @@ OTAUpgradeWindow::OTAUpgradeWindow(QWidget *parent)
 
     connect(commHelper, &CommHelper::detectorOffline, this, [=](quint8 index){
         int row = index;
-        QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 0));
+        QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 1));
         cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::gray));
 
         //清除联网的探测器ID

@@ -154,9 +154,16 @@
     </widget>
    </item>
    <item>
+    <widget class="QLabel" name="label_2">
+     <property name="text">
+      <string>初始活度指909keV全能峰计数在打靶零时刻的反推数值。</string>
+     </property>
+    </widget>
+   </item>
+   <item>
     <widget class="QLabel" name="label">
      <property name="text">
-      <string>注：支持输入整数、浮点数、科学计数法</string>
+      <string>注：支持输入整数、浮点数、科学计数法。</string>
      </property>
     </widget>
    </item>

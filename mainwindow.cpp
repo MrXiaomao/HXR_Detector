@@ -152,6 +152,8 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
         int row = index;
         QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 1));
         cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::green));
+        cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 3));
+        cell->setStyleSheet("color: green;");
         //记录联网的探测器ID
         mOnlineDetectors.append(index);
         qInfo().nospace() << "谱仪[#" << index << "]在线";
@@ -173,6 +175,8 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
         cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::red));
         cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 2));
         cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::red));
+        cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 3));
+        cell->setStyleSheet("color: gray;");
 
         // 探测器离线时，清除测量状态记录
         // mDetectorMeasuring[index] = false;
@@ -634,7 +638,7 @@ void MainWindow::initUi()
                                 commHelper->manualOpenSwitcherPOEPower(row);
                                 cell->setChecked(true);
                                 //打印日志
-                                qInfo().nospace() << "手动打开谱仪[#" << row << "]的POE供电";
+                                qInfo().nospace() << "谱仪[#" << row << "]手动打开POE供电";
                             }
                         }
                         else{
@@ -643,7 +647,7 @@ void MainWindow::initUi()
                                 commHelper->manualCloseSwitcherPOEPower(row);
                                 cell->setChecked(false);
                                 //打印日志
-                                qInfo().nospace() << "手动关闭谱仪[#" << row << "]的POE供电";
+                                qInfo().nospace() << "谱仪[#" << row << "]手动关闭POE供电";
                             }
                         }
                     }
@@ -1606,7 +1610,7 @@ void MainWindow::on_pushButton_startMeasure_clicked()
                         mMeasureCountdownTimer->start();
                         // 初始化测量时长显示为 00:00:00
                         ui->edit_measureTime->setText("00:00:00");
-                        qInfo().nospace().nospace() << QString("开始测量，倒计时：%1 秒").arg(countdownSeconds);
+                        qInfo().noquote().nospace() << QString("开始测量，倒计时：%1 秒").arg(countdownSeconds);
                     }
                 }
 
@@ -2259,6 +2263,10 @@ void MainWindow::on_action_localService_triggered()
     w->setWindowFlags(Qt::WindowCloseButtonHint|Qt::Dialog);
     w->setWindowModality(Qt::ApplicationModal);
     w->showNormal();
+    if (commHelper->isOpen())
+    {
+        w->setEnabled(false);
+    }
 }
 
 QString MainWindow::formatTimeString(int totalSeconds)
@@ -2589,7 +2597,7 @@ void MainWindow::startMeasure()
             mMeasureCountdownTimer->start();
             // 初始化测量时长显示为 00:00:00
             ui->edit_measureTime->setText("00:00:00");
-            qInfo().nospace() << QString("开始测量，倒计时：%1 秒").arg(countdownSeconds);
+            qInfo().noquote().nospace() << QString("开始测量，倒计时：%1 秒").arg(countdownSeconds);
         }
     }
 

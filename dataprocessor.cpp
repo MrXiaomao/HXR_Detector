@@ -3,8 +3,7 @@
 #include <QTimer>
 
 DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
-    : CommandAdapter(parent)
-    , mIndex(index)
+    : CommandAdapter(index, parent)
 {
     m_parseData = nullptr;
     mAccumulateSpec.resize(8192);

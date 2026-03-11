@@ -541,7 +541,6 @@ H5::CompType HDF5Settings::createCfgDataType()
     // 探测器网络设置，用于界面匹配对应通道
     {
         //IP地址,port号
-        char det_Ip_port[16];
         type.insertMember("detIpPort", HOFFSET(DetParameter, det_Ip_port), ipStrType);
     }
 

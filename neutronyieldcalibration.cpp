@@ -28,7 +28,7 @@ NeutronYieldCalibration::NeutronYieldCalibration(QWidget *parent)
         ui->tableWidget->setItem(row, 1, item2);
         
         // 初始化第三列（灵敏度），设为只读
-        QTableWidgetItem *item3 = new QTableWidgetItem();
+        QTableWidgetItem *item3 = new QTableWidgetItem(mSettings.value(QString("Table/sensitivity%1").arg(row+1), "null").toString());
         item3->setTextAlignment(Qt::AlignCenter);
         item3->setFlags(item3->flags() & ~Qt::ItemIsEditable);
         ui->tableWidget->setItem(row, 2, item3);
@@ -72,6 +72,7 @@ void NeutronYieldCalibration::on_pushButton_save_clicked()
             sensitivityText = QString::number(sensitivity);
         }
         ui->tableWidget->item(row, 2)->setText(sensitivityText);
+        mSettings.setValue(QString("Table/sensitivity%1").arg(row+1), ui->tableWidget->item(row, 2)->text());
     }
 
     // === 保存成功后，恢复所有单元格样式 ===

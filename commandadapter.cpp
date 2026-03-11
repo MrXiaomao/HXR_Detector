@@ -22,8 +22,9 @@ const QByteArray CommandAdapter::kspecHead = QByteArray::fromHex("FF FF AA B1");
 const QByteArray CommandAdapter::kspecTail = QByteArray::fromHex("FF FF CC D1");
 
 
-CommandAdapter::CommandAdapter(QObject *parent)
+CommandAdapter::CommandAdapter(quint8 index, QObject *parent)
     : QObject{parent}
+    , mIndex(index)
 {
     mCmdProcessThread = new QLiteThread(this) ;
     //mCmdProcessThread->setObjectName("mCmdProcessThread");
@@ -404,7 +405,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                     if (isFirstError) {
                         qInfo() << "数据包尾部错误，后续相似错误将不再打印日志";
                         isFirstError = false;
-                        qDebug().nospace().noquote() << "数据包尾部错误[" << chunk.size() << "]：" << chunk.toHex(' ');
+                        qDebug().nospace().noquote() << "谱仪[#" << mIndex << "]数据包尾部错误[" << chunk.size() << "]：" << chunk.toHex(' ');
                     }
 
                     // 包头/包尾不对 重新开始寻找包头

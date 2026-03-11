@@ -86,7 +86,6 @@ signals:
     void reportOTAUpgradeData(const QByteArray& data); // 上报OTA升级数据
 
 private:
-    quint8 mIndex;//探测器索引
     QTcpSocket *mTcpSocket = nullptr;
     QFile* mNetFile = nullptr;
 
