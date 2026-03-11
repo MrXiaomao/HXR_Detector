@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-11-13 11:36:00
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2025-12-30 17:14:20
+ * @LastEditTime: 2026-03-11 14:41:44
  * @Description: 配置文件窗口，用来配置硬件参数、网络参数等
  */
 #include "localsettingwindow.h"
@@ -93,7 +93,7 @@ LocalSettingWindow::LocalSettingWindow(QWidget *parent)
     ui->comboBox_ip->addItem("127.0.0.1");
     ui->comboBox_ip->addItem("0.0.0.0");
 
-    GlobalSettings settings(CONFIG_FILENAME);
+    GlobalSettings settings(DEVICE_CONFIG_FILE);
     //心跳检测
     ui->spinBox_pluseCheckTime->setValue(settings.value("Global/PluseTime", 10).toUInt());
 
@@ -261,8 +261,11 @@ bool LocalSettingWindow::eventFilter(QObject *watched, QEvent *event) {
         QRegExp ip_port_regex(R"(^((25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)\.){3}(25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)?$)");
         if (!ip_port_regex.exactMatch(ip_edit->text())) {
             QMessageBox::warning(this, "错误", "请输入合法的 IP 格式！\r\n如 192.168.1.1");
-            // 3. 强制将焦点拉回当前控件（用户必须修正）
-            ip_edit->setFocus();
+            
+            // 延迟恢复焦点（加延时，防止陷入死循环）
+            QTimer::singleShot(0, ip_edit, [ip_edit](){
+                ip_edit->setFocus();
+            });
             return true; // 拦截事件，阻止焦点转移
         }
     }
@@ -301,7 +304,7 @@ void LocalSettingWindow::updateData()
         ui->label_tip->hide();
     }
 
-    GlobalSettings settings(CONFIG_FILENAME);
+    GlobalSettings settings(DEVICE_CONFIG_FILE);
     //心跳检测
     settings.setValue("Global/PluseTime", ui->spinBox_pluseCheckTime->value());
     HDF5Settings::instance()->setPluseTime(ui->spinBox_pluseCheckTime->value());

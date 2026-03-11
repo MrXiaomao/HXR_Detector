@@ -31,7 +31,7 @@ public:
         int switcherIndex;
         void reload()
         {
-            GlobalSettings settings(CONFIG_FILENAME);
+            GlobalSettings settings(DEVICE_CONFIG_FILE);
             this->ip = settings.value("TimeSynModule/ip").toString();
             this->poeIndex = settings.value("TimeSynModule/poeIndex", 24).toInt();
             this->switcherIndex = settings.value("TimeSynModule/switcherIndex", 1).toInt();

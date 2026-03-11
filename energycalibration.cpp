@@ -1,4 +1,4 @@
-﻿/*
+/*
  * @Author: MrPan
  * @Date: 2025-12-29 22:08:10
  * @LastEditors: Maoxiaoqing
@@ -14,6 +14,33 @@
 // #include "interpolation.h"
 // #include <math.h>
 // using namespace alglib;
+#include <QStyledItemDelegate>
+#include <QLineEdit>
+#include <QDoubleValidator>
+
+// 表格浮点数输入委托：限制单元格仅允许输入浮点数
+class DoubleItemDelegate : public QStyledItemDelegate
+{
+public:
+    explicit DoubleItemDelegate(QObject *parent = nullptr)
+        : QStyledItemDelegate(parent)
+    {
+    }
+
+    QWidget *createEditor(QWidget *parent,
+                          const QStyleOptionViewItem &option,
+                          const QModelIndex &index) const override
+    {
+        Q_UNUSED(option);
+        Q_UNUSED(index);
+
+        QLineEdit *editor = new QLineEdit(parent);
+        auto *validator = new QDoubleValidator(editor);
+        validator->setNotation(QDoubleValidator::StandardNotation);
+        editor->setValidator(validator);
+        return editor;
+    }
+};
 
 EnergyCalibration::EnergyCalibration(QWidget *parent) :
     QWidget(parent),
@@ -34,7 +61,7 @@ EnergyCalibration::EnergyCalibration(QWidget *parent) :
 EnergyCalibration::~EnergyCalibration()
 {
     // 保存勾选的通道号
-    GlobalSettings settings(CONFIG_FILENAME);
+    GlobalSettings settings(DEVICE_CONFIG_FILE);
     settings.beginGroup("EnCalibration");
     int detChannel = 0;
     for (int i=0; i<24; ++i){
@@ -205,7 +232,7 @@ void EnergyCalibration::initUI()
     }
 
     // 读取上一次勾选的通道号，并勾选
-    GlobalSettings settings(CONFIG_FILENAME);
+    GlobalSettings settings(DEVICE_CONFIG_FILE);
     settings.beginGroup("EnCalibration");
 
     //读取当前勾选的通道号，并获取刻度数据
@@ -266,6 +293,9 @@ void EnergyCalibration::initUI()
         }
     }
 
+    // 将右侧拟合点表格的单元格输入限制为浮点数
+    ui->tableWidget->setItemDelegate(new DoubleItemDelegate(ui->tableWidget));
+    
 }
 
 void EnergyCalibration::on_pushButton_add_clicked()
@@ -522,7 +552,7 @@ void EnergyCalibration::on_bt_SaveFit_clicked()
     }
     
     saveStatus = true;
-    GlobalSettings settings(CONFIG_FILENAME);
+    GlobalSettings settings(DEVICE_CONFIG_FILE);
 
     // 先清空该通道对应的子组
     settings.beginGroup("EnCalibration");
@@ -589,7 +619,7 @@ void EnergyCalibration::on_detRadioButton_toggled(bool checked)
                 ui->tableWidget_det->selectRow(detChannel - 1);
                 
                 // 加载该通道的拟合数据（如果存在）
-                GlobalSettings settings(CONFIG_FILENAME);
+                GlobalSettings settings(DEVICE_CONFIG_FILE);
                 settings.beginGroup("EnCalibration");
                 
                 if (settings.contains(QString("Detector%1/pointsX").arg(detChannel)))
