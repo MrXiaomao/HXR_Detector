@@ -2,6 +2,7 @@
 #include <QFileInfo>
 #include <QApplication>
 #include <QTextCodec>
+#include <QMessageBox>
 
 H5Spectrum FullSpectoH5Spec(const FullSpectrum& src)
 {
@@ -113,18 +114,17 @@ HDF5Settings::HDF5Settings(QObject *parent) : QObject(parent), mPluseTime(10)
 
     // 创建配置文件
     createH5Config();
-
     //readFullSpectrum("./cache/000_61/2026-01-13_124611_1.H5", "Detector#1", "Spectrum", nullptr);
 }
 
 HDF5Settings::~HDF5Settings()
 {
-    if (mfH5Setting)
-    {
-        mfH5Setting->close();
-        delete mfH5Setting;
-        mfH5Setting = nullptr;
-    }
+    // if (mfH5Setting)
+    // {
+    //     mfH5Setting->close();
+    //     delete mfH5Setting;
+    //     mfH5Setting = nullptr;
+    // }
 
     if (mfH5Spectrum)
     {
@@ -147,6 +147,10 @@ void HDF5Settings::setDetParameter(QMap<quint8, DetParameter>& detParameters)
 void HDF5Settings::sync()
 {
     QMutexLocker locker(&mWrite_mutex);
+    H5::H5File *mfH5Setting = openH5Config();
+    if (mfH5Setting == nullptr)
+        return;
+
     try {
         // 1 打开文件（不清空）
         // H5::H5File fH5Setting(DEFAULT_HDF5_FILENAME, H5F_ACC_RDWR);
@@ -179,14 +183,18 @@ void HDF5Settings::sync()
         }
         // mfH5Setting->close();
     } catch (H5::FileIException& error) {
-        error.printErrorStack();
-        return ;
+        QMessageBox::warning(nullptr, "打开配置文件", "H5配置文件打开失败，文件被占用！");
     } catch (H5::DataSetIException& error) {
-        error.printErrorStack();
-        return ;
+        QMessageBox::warning(nullptr, "打开配置文件", "H5配置文件打开失败，数据集已损坏！");
     } catch (H5::DataSpaceIException& error) {
-        error.printErrorStack();
-        return ;
+        QMessageBox::warning(nullptr, "打开配置文件", "H5配置文件打开失败，数据空间已损坏！");
+    }
+
+    if (mfH5Setting)
+    {
+        mfH5Setting->close();
+        delete mfH5Setting;
+        mfH5Setting = nullptr;
     }
 }
 
@@ -227,62 +235,98 @@ void HDF5Settings::writeStrAttr(H5::DataSet& ds, const std::string& key, const s
     a.write(vstr, &s);
 }
 
-void HDF5Settings::writeBytes(quint8 index, QByteArray& data)
+H5::H5File *HDF5Settings::openH5Config()
 {
-    QMutexLocker locker(&mWrite_mutex);
-    H5::DataSet dataset = mSpectrumDataset[index-1];//cfgGroup.openDataSet("Spectrum");
+    H5::H5File *mfH5Setting = nullptr; // H5配置文件
+    if (QFileInfo::exists(DEFAULT_HDF5_FILENAME))
+    {
+        try {
+            mfH5Setting = new H5::H5File(DEFAULT_HDF5_FILENAME, H5F_ACC_RDWR);
+        } catch (H5::FileIException& error) {
+            QMessageBox::warning(nullptr, "打开配置文件", "H5配置文件打开失败，文件被占用！");
+        } catch (H5::DataSetIException& error) {
+            QMessageBox::warning(nullptr, "打开配置文件", "H5配置文件打开失败，数据集已损坏！");
+        } catch (H5::DataSpaceIException& error) {
+            QMessageBox::warning(nullptr, "打开配置文件", "H5配置文件打开失败，数据空间已损坏！");
+        }
+    }
+    else
+    {
+        // 文件不存在，创建新文件
+        H5::FileAccPropList fapl;
+        fapl.setFcloseDegree(H5F_CLOSE_STRONG);  // 关闭时强制同步所有数据
 
-    // 获取当前维度
-    H5::DataSpace file_space = dataset.getSpace();  // 初始文件空间
-    hsize_t current_dims[2];
-    file_space.getSimpleExtentDims(current_dims, NULL);
+        try {
+            mfH5Setting = new H5::H5File(DEFAULT_HDF5_FILENAME, H5F_ACC_TRUNC, H5::FileCreatPropList::DEFAULT, fapl);
 
-    // 1. 扩展数据集维度
-    current_dims[0] += 1;
-    dataset.extend(current_dims);
+            for (int i=1; i<=DET_NUM; ++i){
+                DetParameter detParameter;
+                detParameter.id = i;
+                mMapDetParameter[i] = detParameter;
+            }
 
-    // 2. 重新获取扩展后的文件空间
-    file_space = dataset.getSpace();  // 关键：更新文件空间
+            // 创建配置信息分组
+            {
+                QVector<DetParameter> data;
+                for (auto &pair : mMapDetParameter.toStdMap())
+                {
+                    data.push_back(pair.second);
+                }
 
-    // 3. 定义内存空间（1行数据）
-    hsize_t mem_dims[2] = {1, (hsize_t)data.size()};
-    H5::DataSpace mem_space(2, mem_dims);
+                hsize_t dims[1] = {DET_NUM};
+                H5::DataSpace dataspace(1, dims);
+                H5::Group cfgGroup = mfH5Setting->createGroup("Config");
+                H5::DataSet dataset = cfgGroup.createDataSet("Configuration", mCompDataType, dataspace);
+                dataset.write(data.data(), mCompDataType);
 
-    // 4. 设置写入偏移（新行位置）
-    hsize_t offset[2] = {current_dims[0] - 1, 0};  // 偏移到最后一行
-    file_space.selectHyperslab(H5S_SELECT_SET, mem_dims, offset);
+                // 写字段属性
+                writeDetParStrAttr(dataset);
 
-    // 5. 写入数据（示例：填充i值）
-    dataset.write(data.constData(), H5::PredType::NATIVE_UCHAR, mem_space, file_space);
+                H5Fflush(mfH5Setting->getId(), H5F_SCOPE_GLOBAL);  // 同步文件元数据
+            }
+            // mfH5Setting->close();
+        } catch (H5::FileIException& error) {
+            QMessageBox::warning(nullptr, "打开配置文件", "H5配置文件打开失败，文件被占用！");
+        } catch (H5::DataSetIException& error) {
+            QMessageBox::warning(nullptr, "打开配置文件", "H5配置文件打开失败，数据集已损坏！");
+        } catch (H5::DataSpaceIException& error) {
+            QMessageBox::warning(nullptr, "打开配置文件", "H5配置文件打开失败，数据空间已损坏！");
+        }
+    }
 
-    // 6. 同步当前数据集，防止发生异常，数据丢失
-    H5Dflush(dataset.getId());
-
-    H5Fflush(mfH5Setting->getId(), H5F_SCOPE_GLOBAL);  // 同步文件元数据
+    return mfH5Setting;
 }
 
 void HDF5Settings::createH5Config()
 {
+    H5::H5File *mfH5Setting = nullptr; // H5配置文件
     if (QFileInfo::exists(DEFAULT_HDF5_FILENAME))
     {
-        mfH5Setting = new H5::H5File(DEFAULT_HDF5_FILENAME, H5F_ACC_RDWR);
-        H5::Group cfgGroup = mfH5Setting->openGroup("Config");
-        H5::DataSet globalDataset = cfgGroup.openDataSet("Configuration");
-        H5::DataSpace file_space = globalDataset.getSpace();
+        try {
+            mfH5Setting = new H5::H5File(DEFAULT_HDF5_FILENAME, H5F_ACC_RDWR);
+            H5::Group cfgGroup = mfH5Setting->openGroup("Config");
+            H5::DataSet globalDataset = cfgGroup.openDataSet("Configuration");
+            H5::DataSpace file_space = globalDataset.getSpace();
 
-        // 获取数据集维度(行)
-        int ndims = file_space.getSimpleExtentNdims();
-        std::vector<hsize_t> dims(ndims);
-        file_space.getSimpleExtentDims(dims.data());
+            // 获取数据集维度(行)
+            int ndims = file_space.getSimpleExtentNdims();
+            std::vector<hsize_t> dims(ndims);
+            file_space.getSimpleExtentDims(dims.data());
 
-        // 读取数据
-        //一次性读取所有数据
-        QVector<DetParameter> read_data(dims[0]);
-        globalDataset.read(read_data.data(), mCompDataType);
-        for (const auto& item : read_data) {
-            mMapDetParameter[item.id] = item;
+            // 读取数据
+            //一次性读取所有数据
+            QVector<DetParameter> read_data(dims[0]);
+            globalDataset.read(read_data.data(), mCompDataType);
+            for (const auto& item : read_data) {
+                mMapDetParameter[item.id] = item;
+            }
+        } catch (H5::FileIException& error) {
+            QMessageBox::warning(nullptr, "打开配置文件", "H5配置文件打开失败，文件被占用！");
+        } catch (H5::DataSetIException& error) {
+            QMessageBox::warning(nullptr, "打开配置文件", "H5配置文件打开失败，数据集已损坏！");
+        } catch (H5::DataSpaceIException& error) {
+            QMessageBox::warning(nullptr, "打开配置文件", "H5配置文件打开失败，数据空间已损坏！");
         }
-        // mfH5Setting->close();
     }
     else
     {
@@ -373,15 +417,19 @@ void HDF5Settings::createH5Config()
                 }
             }
         } catch (H5::FileIException& error) {
-            error.printErrorStack();
-            return ;
+            QMessageBox::warning(nullptr, "打开配置文件", "H5配置文件打开失败，文件被占用！");
         } catch (H5::DataSetIException& error) {
-            error.printErrorStack();
-            return ;
+            QMessageBox::warning(nullptr, "打开配置文件", "H5配置文件打开失败，数据集已损坏！");
         } catch (H5::DataSpaceIException& error) {
-            error.printErrorStack();
-            return ;
+            QMessageBox::warning(nullptr, "打开配置文件", "H5配置文件打开失败，数据空间已损坏！");
         }
+    }
+
+    if (mfH5Setting)
+    {
+        mfH5Setting->close();
+        delete mfH5Setting;
+        mfH5Setting = nullptr;
     }
 }
 
@@ -490,14 +538,11 @@ void HDF5Settings::createH5Spectrum(QString filePath)
             //     H5Fflush(dataset.getId(), H5F_SCOPE_GLOBAL);
             // }
         } catch (H5::FileIException& error) {
-            error.printErrorStack();
-            return ;
+            QMessageBox::warning(nullptr, "打开配置文件", "H5能谱数据文件打开失败，文件被占用！");
         } catch (H5::DataSetIException& error) {
-            error.printErrorStack();
-            return ;
+            QMessageBox::warning(nullptr, "打开配置文件", "H5能谱数据文件打开失败，数据集已损坏！");
         } catch (H5::DataSpaceIException& error) {
-            error.printErrorStack();
-            return ;
+            QMessageBox::warning(nullptr, "打开配置文件", "H5能谱数据文件打开失败，数据空间已损坏！");
         }
     }
 }

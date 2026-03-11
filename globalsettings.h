@@ -828,8 +828,6 @@ public:
     // 给数据集写入探测器参数结构属性说明
     void writeDetParStrAttr(H5::DataSet& dataset);
 
-    void writeBytes(quint8 index, QByteArray& data);
-
     // 同步内存数据到文件
     void sync();
 
@@ -837,6 +835,7 @@ public:
     H5::CompType createH5SpectrumType();
     static H5::CompType createCfgDataType();
 
+    H5::H5File *openH5Config();
     void createH5Config();
     void createH5Spectrum(QString filePath);
     void closeH5Spectrum();
@@ -885,7 +884,7 @@ public:
     Q_SIGNAL void sigSpectrum(const H5Spectrum&);
 
 private:
-    H5::H5File *mfH5Setting = nullptr; // H5配置文件
+    //H5::H5File *mfH5Setting = nullptr; // H5配置文件
     H5::H5File *mfH5Spectrum = nullptr; // H5能谱文件
     quint32 mSpectrumRef = 0;// 能谱计数
     H5::DataSet mSpectrumDataset[DET_NUM];
