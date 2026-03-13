@@ -1844,8 +1844,12 @@ void MainWindow::onMeasureCountdownTimeout()
         ui->spinBox_measureTime->setEnabled(true);
         ui->checkBox_continueMeasure->setEnabled(true);
         ui->lineEdit_filePath->setEnabled(true);
-        ui->dateTimeEdit_startTime->setEnabled(true);
         ui->cbb_measureMode->setEnabled(true);
+        ui->dateTimeEdit_startTime->setEnabled(false);
+
+        if (!mEnableExtendTrigger){
+            ui->dateTime_shotTime->setEnabled(true);
+        }
     }
 }
 
