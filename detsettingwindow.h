@@ -74,6 +74,7 @@ public:
                 validator = new QIntValidator(0, 1000, editor);
             else
                 validator = new QIntValidator(0, 65535, editor);
+            editor->setValidator(validator);
             editor->setInputMethodHints(Qt::ImhFormattedNumbersOnly);
 
             return editor;

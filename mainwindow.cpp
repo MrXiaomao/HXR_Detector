@@ -155,6 +155,8 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
         cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::green));
         cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 3));
         cell->setStyleSheet("color: green;");
+        cell->setEnabled(true);
+
         //记录联网的探测器ID
         mOnlineDetectors.append(index);
         qInfo().nospace() << "谱仪[#" << index << "]在线";
@@ -178,6 +180,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
         cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::red));
         cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 3));
         cell->setStyleSheet("color: gray;");
+        cell->setEnabled(false);
 
         // 探测器离线时，清除测量状态记录
         // mDetectorMeasuring[index] = false;
@@ -854,10 +857,12 @@ void MainWindow::initUi()
         temperatureStream << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss") << "," << QString::number(temperature, 'f', 1) << endl;
         temperatureFile.close();
 
-        if (temperature > 70.0) {
-            cell->setStyleSheet("color: red;");
-        } else {
-            cell->setStyleSheet("color: green;");
+        if (cell->isEnabled()){
+            if (temperature > 70.0) {
+                cell->setStyleSheet("color: red;");
+            } else {
+                cell->setStyleSheet("color: green;");
+            }
         }
     }, Qt::QueuedConnection);
 
