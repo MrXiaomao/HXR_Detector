@@ -112,6 +112,8 @@ private:
 
     QFile *mNetDataFile = nullptr;//网络数据保存文件
     bool mIsUpgrading = false; // 是否正在进行OTA升级
+
+    QMutex mSocketLocker;
 };
 
 #endif // DATAPROCESSOR_H

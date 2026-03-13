@@ -1832,42 +1832,20 @@ void MainWindow::onMeasureCountdownTimeout()
         //清空探测器正在测量记录
         mDetectorMeasuring.clear();
 
-        // ui->action_startServer->setEnabled(true);
-        // ui->action_stopServer->setEnabled(false);
-
-        if (mEnableAutoMeasure)
-        {
-            ui->action_startMeasure->setEnabled(true);
-            // ui->action_stopMeasure->setEnabled(false);
-            ui->pushButton_startMeasure->setEnabled(false);
-            ui->pushButton_stopMeasure->setEnabled(false);
-            ui->dateTime_shotTime->setEnabled(false);
-            ui->com_triggerModel->setEnabled(true);
-            ui->lineEdit_shotNum->setEnabled(true);
-            ui->checkBox_autoIncrease->setEnabled(true);
-            ui->spinBox_measureTime->setEnabled(true);
-            ui->checkBox_continueMeasure->setEnabled(true);
-            ui->lineEdit_filePath->setEnabled(true);
-            ui->dateTimeEdit_startTime->setEnabled(true);
-            ui->cbb_measureMode->setEnabled(true);
-            ui->action_connectSwitch->setEnabled(false);
-        }
-        else
-        {
-            ui->action_startMeasure->setEnabled(true);
-            ui->action_stopMeasure->setEnabled(false);
-            ui->pushButton_startMeasure->setEnabled(true);
-            ui->pushButton_stopMeasure->setEnabled(false);
-            ui->dateTime_shotTime->setEnabled(false);
-            ui->com_triggerModel->setEnabled(true);
-            ui->lineEdit_shotNum->setEnabled(true);
-            ui->checkBox_autoIncrease->setEnabled(true);
-            ui->spinBox_measureTime->setEnabled(true);
-            ui->checkBox_continueMeasure->setEnabled(true);
-            ui->lineEdit_filePath->setEnabled(true);
-            ui->dateTimeEdit_startTime->setEnabled(true);
-            ui->cbb_measureMode->setEnabled(true);
-        }
+        mDetSettingWindow->setEnabled(true);
+        ui->action_startMeasure->setEnabled(true);
+        ui->action_stopMeasure->setEnabled(false);
+        ui->pushButton_startMeasure->setEnabled(true);
+        ui->pushButton_stopMeasure->setEnabled(false);
+        ui->dateTime_shotTime->setEnabled(false);
+        ui->com_triggerModel->setEnabled(true);
+        ui->lineEdit_shotNum->setEnabled(true);
+        ui->checkBox_autoIncrease->setEnabled(true);
+        ui->spinBox_measureTime->setEnabled(true);
+        ui->checkBox_continueMeasure->setEnabled(true);
+        ui->lineEdit_filePath->setEnabled(true);
+        ui->dateTimeEdit_startTime->setEnabled(true);
+        ui->cbb_measureMode->setEnabled(true);
     }
 }
 

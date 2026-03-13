@@ -78,6 +78,7 @@ void DataProcessor::reallocIndex(quint8 index)
 
 void DataProcessor::reallocSocket(QTcpSocket *tcpSocket)
 {
+    QMutexLocker locker(&mSocketLocker);
     if (mTcpSocket){
         disconnect(mTcpSocket, SIGNAL(readyRead()), this, SLOT(readyRead()));
     }
@@ -90,6 +91,7 @@ void DataProcessor::reallocSocket(QTcpSocket *tcpSocket)
 
 void DataProcessor::reallocSocket(QTcpSocket *tcpSocket, DetParameter& detParameter)
 {
+    QMutexLocker locker(&mSocketLocker);
     if (mTcpSocket){
         disconnect(mTcpSocket, SIGNAL(readyRead()), this, SLOT(readyRead()));
     }
