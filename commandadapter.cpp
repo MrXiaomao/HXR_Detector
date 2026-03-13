@@ -231,9 +231,6 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
         //梯形成型使能配置
         {
             if (cachePool.startsWith(kCmdTrapShapeEnableHead)){
-                quint8 rise = (quint8)cachePool.at(7);
-                quint8 peak = (quint8)cachePool.at(8);
-                quint8 fall = (quint8)cachePool.at(9);
                 //qInfo().noquote() << "梯形成型使能状态：" << ((quint8)cachePool.at(9) == 0x00 ? "关闭" : "打开");
 
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));

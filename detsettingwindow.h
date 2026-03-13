@@ -13,7 +13,13 @@
 
 #include <QStyledItemDelegate>
 #include <QLineEdit>
+#include <QComboBox>
+#include <QSpinBox>
+#include <QCheckBox>
 #include <QDoubleValidator>
+#include <QIntValidator>
+#include <QHBoxLayout>
+#include <QEventLoop>
 class QTableWidgetItem;
 
 class LonLatDelegate : public QStyledItemDelegate
@@ -48,10 +54,60 @@ public:
 
             return editor;
         }
+        else if (index.column() == 4){// 增益
+            QComboBox* editor = new QComboBox(parent);
+            editor->addItem(QStringLiteral("0.08"));
+            editor->addItem(QStringLiteral("0.16"));
+            editor->addItem(QStringLiteral("0.32"));
+            editor->addItem(QStringLiteral("0.63"));
+            editor->addItem(QStringLiteral("1.26"));
+            editor->addItem(QStringLiteral("2.52"));
+            editor->addItem(QStringLiteral("5.01"));
+            editor->addItem(QStringLiteral("10.0"));
+            return editor;
+        }
+        else if (index.column() == 5 || index.column() == 6 || index.column() == 7){// 阈值/死时间/高压
+            QLineEdit* editor = new QLineEdit(parent);
+
+            QIntValidator* validator = nullptr;
+            if (index.column() == 7)
+                validator = new QIntValidator(0, 1000, editor);
+            else
+                validator = new QIntValidator(0, 65535, editor);
+            editor->setInputMethodHints(Qt::ImhFormattedNumbersOnly);
+
+            return editor;
+        }
 
         // 其他列默认行为
         return QStyledItemDelegate::createEditor(parent, {}, index);
     }
+
+    // 设置编辑器数据
+    void setEditorData(QWidget *editor, const QModelIndex &index) const override
+    {
+        // 将参数editor转换为对应创建的控件，再进行数据初始设置就行
+        if (index.column() == 2 || index.column() == 3 || index.column() == 5 || index.column() == 6 || index.column() == 7 ){
+            return QStyledItemDelegate::setEditorData(editor, index);
+        }
+        else if (index.column() == 4){
+            QComboBox *comboBox = static_cast<QComboBox *>(editor);
+            comboBox->setCurrentText(index.data(Qt::EditRole).toString());
+        }
+    }
+
+    // 设置模型数据
+    void setModelData(QWidget *editor, QAbstractItemModel *model, const QModelIndex &index) const override
+    {
+        if (index.column() == 2 || index.column() == 3 || index.column() == 5 || index.column() == 6 || index.column() == 7 ){
+            return QStyledItemDelegate::setModelData(editor, model, index);
+        }
+        else if (index.column() == 4){
+            QComboBox *comboBox = static_cast<QComboBox *>(editor);
+            model->setData(index, comboBox->currentText(), Qt::EditRole);
+        }
+    }
+
 };
 
 namespace Ui {
@@ -99,6 +155,9 @@ private:
     Ui::DetSettingWindow *ui;
     CommHelper* mCommhelper = nullptr;
     bool mUpdatingSelectAll = true;
+
+    QString queryMsg;
+    QEventLoop queryWaitEvent;
 };
 
 #endif // DETSETTINGWINDOW_H
