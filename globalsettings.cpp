@@ -8,6 +8,8 @@ H5Spectrum FullSpectoH5Spec(const FullSpectrum& src)
 {
     H5Spectrum h5Spec{};
     h5Spec.sequence    = src.sequence;
+    h5Spec.timeUTCs   = src.timeUTCs;
+    h5Spec.timeUTCms   = src.timeUTCms;
     h5Spec.measureTime = src.measureTime;
     h5Spec.deathTime   = src.deathTime;
 
@@ -367,20 +369,9 @@ void HDF5Settings::createH5Config()
             // 创建表格数组
             if (0)
             {
-                hsize_t init_dims[2] = {0, 1060};       // 初始维度
-                hsize_t max_dims[2] = {H5S_UNLIMITED, 1060};  // 最大维度
-                H5::DataSpace dataspace(2, init_dims, max_dims);
-
-                // 设置分块存储
-                H5::DSetCreatPropList prop_list;
-                hsize_t chunk_dims[2] = {1, 1060};  // 分块大小
-                prop_list.setChunk(2, chunk_dims);
-
                 for (int i=1; i<=DET_NUM; ++i){
                     // 创建数据集
-                    H5::Group cfgGroup = mfH5Setting->createGroup(QString("Detector#%1").arg(i).toStdString());
-                    H5::DataSet dataset = cfgGroup.createDataSet("Spectrum", mSpectrumDataType/*H5::PredType::NATIVE_UCHAR*/, dataspace, prop_list);
-                    mSpectrumDataset[i-1] = dataset;
+                    mSpectrumDataset[i-1] = createDataSet(mfH5Setting, i);
                 }
 
                 for (int i=1; i<=DET_NUM; ++i){
@@ -431,6 +422,31 @@ void HDF5Settings::createH5Config()
         delete mfH5Setting;
         mfH5Setting = nullptr;
     }
+}
+
+H5::DataSet HDF5Settings::createDataSet(H5::H5File* H5File, quint8 index)
+{
+    hsize_t columns = 8197;
+    hsize_t init_dims[2] = {0, columns};       // 初始维度
+    hsize_t max_dims[2] = {H5S_UNLIMITED, columns};  // 最大维度
+    H5::DataSpace dataspace(2, init_dims, max_dims);
+
+    // 设置分块存储
+    H5::DSetCreatPropList prop_list;
+    hsize_t chunk_dims[2] = {1, columns};  // 分块大小
+    prop_list.setChunk(2, chunk_dims);
+
+    // 创建数据集
+    H5::Group cfgGroup = H5File->createGroup(QString("Detector#%1").arg(index).toStdString());
+    H5::DataSet dataset = cfgGroup.createDataSet("Spectrum", H5::PredType::NATIVE_UINT, dataspace, prop_list);
+
+    writeStrAttr(dataset, "0", "能谱序号");
+    writeStrAttr(dataset, "1", "utc整数秒");
+    writeStrAttr(dataset, "2", "utc小数秒");
+    writeStrAttr(dataset, "3", "能量测量时间间隔,单位ms");
+    writeStrAttr(dataset, "4", "死时间,单位*10ns");
+
+    return dataset;
 }
 
 void HDF5Settings::createH5Spectrum(QString filePath)
@@ -488,22 +504,22 @@ void HDF5Settings::createH5Spectrum(QString filePath)
                 //H5Fflush(mfH5Spectrum->getId(), H5F_SCOPE_GLOBAL);  // 同步文件元数据
             }
 
-            hsize_t columns = 8195;
-            hsize_t init_dims[2] = {0, columns};       // 初始维度
-            hsize_t max_dims[2] = {H5S_UNLIMITED, columns};  // 最大维度
-            H5::DataSpace dataspace(2, init_dims, max_dims);
+            // hsize_t columns = 8195;
+            // hsize_t init_dims[2] = {0, columns};       // 初始维度
+            // hsize_t max_dims[2] = {H5S_UNLIMITED, columns};  // 最大维度
+            // H5::DataSpace dataspace(2, init_dims, max_dims);
 
-            // 设置分块存储
-            H5::DSetCreatPropList prop_list;
-            hsize_t chunk_dims[2] = {1, columns};  // 分块大小
-            prop_list.setChunk(2, chunk_dims);
+            // // 设置分块存储
+            // H5::DSetCreatPropList prop_list;
+            // hsize_t chunk_dims[2] = {1, columns};  // 分块大小
+            // prop_list.setChunk(2, chunk_dims);
 
-            for (int i=1; i<=DET_NUM; ++i){
-                // 创建数据集
-                H5::Group cfgGroup = mfH5Spectrum->createGroup(QString("Detector#%1").arg(i).toStdString());
-                H5::DataSet dataset = cfgGroup.createDataSet("Spectrum", H5::PredType::NATIVE_UINT, dataspace, prop_list);
-                mSpectrumDataset[i-1] = dataset;
-            }
+            // for (int i=1; i<=DET_NUM; ++i){
+            //     // 创建数据集
+            //     H5::Group cfgGroup = mfH5Spectrum->createGroup(QString("Detector#%1").arg(i).toStdString());
+            //     H5::DataSet dataset = cfgGroup.createDataSet("Spectrum", H5::PredType::NATIVE_UINT, dataspace, prop_list);
+            //     mSpectrumDataset[i-1] = dataset;
+            // }
 
             // for (int i=1; i<=DET_NUM; ++i){
             //     // 创建数据集
@@ -551,8 +567,9 @@ void HDF5Settings::closeH5Spectrum()
 {
     if (mfH5Spectrum)
     {
-        for (int i=0;i<DET_NUM; ++i)
+        for (int i=0;i<DET_NUM; ++i){
             mSpectrumDataset[i].close();
+        }
         H5Fflush(mfH5Spectrum->getId(), H5F_SCOPE_GLOBAL);  // 同步文件元数据
         mfH5Spectrum->close();
         delete mfH5Spectrum;
@@ -646,6 +663,8 @@ H5::CompType HDF5Settings::createH5SpectrumType()
 
     // 逐个成员映射（注意内存对齐，需与结构体一致）
     type.insertMember("sequence", offsetof(H5Spectrum, sequence), H5::PredType::NATIVE_UINT32);
+    type.insertMember("utcSecond", offsetof(H5Spectrum, timeUTCs), H5::PredType::NATIVE_UINT32);
+    type.insertMember("utcMsecond", offsetof(H5Spectrum, timeUTCms), H5::PredType::NATIVE_UINT32);
     type.insertMember("measureTime", offsetof(H5Spectrum, measureTime), H5::PredType::NATIVE_UINT32);
     type.insertMember("deathTime", offsetof(H5Spectrum, deathTime), H5::PredType::NATIVE_UINT32);
 
@@ -671,6 +690,10 @@ void HDF5Settings::writeH5Spectrum(quint8 index, const H5Spectrum& data)
     try {
         // hsize_t columns = 8195;
         hsize_t columns = sizeof(H5Spectrum) / sizeof(quint32);
+
+        // 检查数据集是否存在，如果不存在，则创建
+        if (mSpectrumDataset[index-1].getId() == -1)
+            mSpectrumDataset[index-1] = createDataSet(mfH5Spectrum, index);
 
         // 获取当前维度
         H5::DataSet dataset = mSpectrumDataset[index-1];

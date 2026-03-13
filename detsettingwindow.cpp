@@ -655,11 +655,11 @@ void DetSettingWindow::on_pushButton_read_clicked()
     queryMsg.clear();
     mCommhelper->readParamters(detId);
     if (queryWaitEvent.exec() == -1){
-        QMessageBox::information(this, "提示", "读取参数超时！");
+        QMessageBox::information(this, "查询参数", "查询参数超时！");
     } else if (queryMsg.isEmpty()){
-        QMessageBox::information(this, "提示", "远程参数与本地参数信息一致！");
+        QMessageBox::information(this, "查询参数", "远程参数与本地配置信息一致！");
     } else {
-        QMessageBox::information(this, "提示", queryMsg);
+        QMessageBox::information(this, "查询参数", queryMsg);
     }
 }
 

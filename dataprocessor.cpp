@@ -390,6 +390,8 @@ void DataProcessor::inputSpectrumData(quint8 no, QByteArray& data){
 
             // 5. 提取元数据（测量时间、死时间）- 从当前子包提取（确保数据完整性）
             const int kMetaDateMinLen = 18; // 测量时间(10-13) + 死时间(14-17)，需至少18字节
+            fullSpectrum->timeUTCs = subSpecPackket.timeUTCs;
+            fullSpectrum->timeUTCms = subSpecPackket.timeUTCms;
             fullSpectrum->measureTime = subSpecPackket.measureTime;
             fullSpectrum->deathTime = subSpecPackket.deathTime;
 

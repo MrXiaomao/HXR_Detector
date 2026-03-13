@@ -15,7 +15,7 @@
   </property>
   <layout class="QVBoxLayout" name="verticalLayout_2">
    <item>
-    <widget class="QWidget" name="" native="true">
+    <widget class="QWidget" name="widget" native="true">
      <layout class="QHBoxLayout" name="horizontalLayout">
       <property name="leftMargin">
        <number>0</number>
@@ -30,7 +30,7 @@
        <number>0</number>
       </property>
       <item>
-       <widget class="QWidget" name="" native="true">
+       <widget class="QWidget" name="widget" native="true">
         <layout class="QVBoxLayout" name="verticalLayout">
          <property name="leftMargin">
           <number>0</number>
@@ -522,7 +522,7 @@
       <item>
        <widget class="QPushButton" name="pushButton_read">
         <property name="text">
-         <string>读取参数</string>
+         <string>查询参数</string>
         </property>
        </widget>
       </item>

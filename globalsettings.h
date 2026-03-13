@@ -71,6 +71,8 @@ struct Sensor {
 // 用于写入到HDF5文件的能谱数据
 struct H5Spectrum{
     quint32 sequence;      // 能谱序号
+    quint32 timeUTCs;      // utc整数秒
+    quint32 timeUTCms;     // utc小数秒
     quint32 measureTime;   // 能量测量时间间隔,单位ms
     quint32 deathTime;      // 死时间,单位*10ns
     quint32 spectrum[8192]; // 8192道完整数据
@@ -80,6 +82,8 @@ struct H5Spectrum{
 #pragma pack(push, 1)  // 确保字节对齐
 struct FullSpectrum {
     quint32 sequence;      // 能谱序号
+    quint32 timeUTCs;      // utc整数秒
+    quint32 timeUTCms;     // utc小数秒
     quint32 measureTime;   // 能量测量时间间隔,单位ms
     quint32 deathTime;      // 死时间,单位*10ns
     quint32 spectrum[8192]; // 8192道完整数据
@@ -839,6 +843,8 @@ public:
     void createH5Config();
     void createH5Spectrum(QString filePath);
     void closeH5Spectrum();
+
+    H5::DataSet createDataSet(H5::H5File* H5File, quint8 index);
 
     /**
      * @brief 写入单个FullSpectrum结构体到HDF5文件
