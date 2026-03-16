@@ -133,8 +133,8 @@ void DataProcessor::updateSetting(DetParameter& detParameter, bool isRead/* = fa
         this->sendTrapShapeEnable(isRead, (TrapShapeEnable)detParameter.trapShapeEnable);
         
         //#10 高压输出电平=1|0|21|1234000FF91100000000ABCD,暂时不再使用，后续直接FPGA程序内部写死，不再界面可调。
-        // if (detParameter.highVoltageEnable || isRead)
-        //     this->sendHighVolgateOutLevel(isRead, detParameter.highVoltageOutLevel);
+        if (detParameter.highVoltageEnable || isRead)
+            this->sendHighVolgateOutLevel(isRead, detParameter.highVoltageOutLevel);
 
         //#11 高压电平使能=1|0|19|1234000FF91000000000ABCD
         this->sendHighVolgateOutLevelEnable(isRead, (HighVolgateOutLevelEnable)detParameter.highVoltageEnable);

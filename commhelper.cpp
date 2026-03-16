@@ -443,7 +443,7 @@ qint8 CommHelper::allocDataProcessor(QTcpSocket *socket)
 
     if (socket->property("detectorIndex").isValid())
     {
-        qint8 index = socket->property("detectorIndex").isValid();
+        qint8 index = socket->property("detectorIndex").toInt();
         if (index >= 1 && index <= DET_NUM){
             HDF5Settings *settings = HDF5Settings::instance();
             QMap<quint8, DetParameter>& detParameters = settings->detParameters();
