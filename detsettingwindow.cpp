@@ -680,12 +680,12 @@ void DetSettingWindow::on_tableWidget_itemChanged(QTableWidgetItem *item)
         for (int i = 0; i < ui->tableWidget->rowCount(); ++i){
             QString peerAddress2 = ui->tableWidget->item(i, 1)->text();
             if (peerAddress == peerAddress2 && i != row){
-                if (i < row){
-                    ui->tableWidget->item(row, 1)->setText("0.0.0.0");
-                }
-                else {
+                // if (i < row){
+                //     ui->tableWidget->item(row, 1)->setText("0.0.0.0");
+                // }
+                // else {
                     ui->tableWidget->item(i, 1)->setText("0.0.0.0");
-                }
+//                }
             }
         }
     }

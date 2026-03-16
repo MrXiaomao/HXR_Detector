@@ -13,12 +13,37 @@ CommHelper::CommHelper(QObject *parent)
     initSocket();
     initDataProcessor();
 
-    connect(this, &CommHelper::settingfinished, this, [=](){
+    connect(this, &CommHelper::settingfinished, this, [=](){        
         //更改了设置，这里需要重新对数据处理器进行关联
+        HDF5Settings *settings = HDF5Settings::instance();
+        QMap<quint8, DetParameter>& detParameters = settings->detParameters();
+
         auto it = this->mConnectionPeers.begin();
         while (it != this->mConnectionPeers.end()) {
             QTcpSocket* connection = *it;
-            allocDataProcessor(connection);
+            // ip修改可能导致关联的探测器索引也发生改变，这里改为重新分配
+            if (connection->property("detectorIndex").isValid())
+            {
+                qint8 index = connection->property("detectorIndex").toInt();
+                DetParameter& detParameter = detParameters[index];
+                QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
+                QString peerAddress = connection->peerAddress().toString();
+                if (peerAddress != detectorAddress){
+                    DetParameter& detParameter = detParameters[index];
+                    QMetaObject::invokeMethod(this, "detectorOffline",
+                                              Qt::QueuedConnection,
+                                              Q_ARG(quint8, index));
+
+                    // 3. 取消数据处理器关联
+                    freeDataProcessor(connection);
+
+                    //qInfo().nospace() << "谱仪[#" << index << "]下线，已执行断开连接处理";
+                    connection->setProperty("detectorIndex", QVariant());
+                    allocDataProcessor(connection);
+                    index = connection->property("detectorIndex").toInt();
+                    QMetaObject::invokeMethod(this, "detectorOnline", Qt::QueuedConnection, Q_ARG(quint8, index));
+                }
+            }
 
             ++it;
         }
@@ -449,6 +474,7 @@ qint8 CommHelper::allocDataProcessor(QTcpSocket *socket)
             QMap<quint8, DetParameter>& detParameters = settings->detParameters();
             DetParameter& detParameter = detParameters[index];
             mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
+            socket->setProperty("detectorIndex", index);
             return index;
         }
     }
@@ -464,6 +490,7 @@ qint8 CommHelper::allocDataProcessor(QTcpSocket *socket)
             if (detectorAddress == QString("%1:%2").arg(peerAddress).arg(peerPort) &&
                 mDetectorDataProcessor[index]->isFreeSocket()){
                 mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
+                socket->setProperty("detectorIndex", index);
                 return index;
             }
         }
@@ -476,6 +503,7 @@ qint8 CommHelper::allocDataProcessor(QTcpSocket *socket)
             QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
             if (detectorAddress == peerAddress && mDetectorDataProcessor[index]->isFreeSocket()){
                 mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
+                socket->setProperty("detectorIndex", index);
                 return index;
             }
         }
@@ -488,6 +516,7 @@ qint8 CommHelper::allocDataProcessor(QTcpSocket *socket)
             qstrcpy(detParameter.det_Ip_port, peerAddress.toStdString().c_str());
             settings->sync();
             mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
+            socket->setProperty("detectorIndex", index);
             return index;
         }
     }
@@ -592,15 +621,26 @@ bool CommHelper::startServer()
 */
 void CommHelper::stopServer()
 {
-    for (auto connection : mConnectionPeers){
-        connection->close();
-        connection->deleteLater();
-        connection = nullptr;
+    this->mTcpServer->close();
+    for (auto it = mConnectionPeers.rbegin(); it != mConnectionPeers.rend(); ++it) {
+        QTcpSocket* connection = *it;
+        emit connection->disconnected();
     }
-    mConnectionPeers.clear();
+
+
+    // for (auto connection : mConnectionPeers){
+    //     emit connection->disconnected();
+
+    //     // quint8 index = connection->property("detectorIndex").toInt();
+    //     // handleDetectorDisconnection(index);
+    //     //connection->close();
+    //     //connection->deleteLater();
+    //     //connection = nullptr;
+    // }
+    //mConnectionPeers.clear();
 
     //QThread::msleep(1000);//睡眠等待进入析构睡眠
-    this->mTcpServer->close();
+    //this->mTcpServer->close();
 }
 
 bool CommHelper::isOpen()

@@ -812,17 +812,17 @@ void MainWindow::initUi()
                 int index = checkBox->property("index").toInt();
 
                 // 能谱
-                QCPGraph *graph = getGraph(index % 12);
+                QCPGraph *graph = getGraph(index);
                 if (graph){
                     graph->setVisible(Qt::CheckState::Checked == state ? true : false);
-                    getCustomPlot(index % 12)->replot();
+                    getCustomPlot(index)->replot();
                 }
 
                 // 计数率
-                graph = getGraph(index % 12, false);
+                graph = getGraph(index, false);
                 if (graph){
                     graph->setVisible(Qt::CheckState::Checked == state ? true : false);
-                    getCustomPlot(index % 12, false)->replot();
+                    getCustomPlot(index, false)->replot();
                 }
             });
 
@@ -1280,8 +1280,10 @@ void MainWindow::slotWriteLog(const QString &msg, QtMsgType msgType)
 
 
 void MainWindow::on_action_cfgParam_triggered()
-{
+{    
     mDetSettingWindow->show();
+    mDetSettingWindow->raise();
+    mDetSettingWindow->activateWindow();
 }
 
 
@@ -2936,6 +2938,8 @@ void MainWindow::on_lineEdit_filePath_editingFinished()
 void MainWindow::on_action_OTA_triggered()
 {
     mOTAUpgradeWindow->show();
+    mOTAUpgradeWindow->raise();
+    mOTAUpgradeWindow->activateWindow();
 }
 
 

@@ -89,6 +89,7 @@ void DataProcessor::reallocSocket(QTcpSocket *tcpSocket)
     }
 }
 
+#include <QHostAddress>
 void DataProcessor::reallocSocket(QTcpSocket *tcpSocket, DetParameter& detParameter)
 {
     QMutexLocker locker(&mSocketLocker);
@@ -100,6 +101,11 @@ void DataProcessor::reallocSocket(QTcpSocket *tcpSocket, DetParameter& detParame
     if (mTcpSocket){
         connect(mTcpSocket, SIGNAL(readyRead()), this, SLOT(readyRead()));
 
+        // 关联端口，自动修改配置地址信息，方便打开探测器设计页面，就知道关联的是哪个ip地址
+        QString peerAddress = tcpSocket->peerAddress().toString();
+        memset(detParameter.det_Ip_port, 0, IP_LENGTH);
+        strcpy(detParameter.det_Ip_port, peerAddress.toStdString().c_str());
+        HDF5Settings::instance()->sync();
         updateSetting(detParameter);
     }
 }
