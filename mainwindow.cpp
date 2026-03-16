@@ -1033,7 +1033,6 @@ void MainWindow::initCustomPlot(int index, QCustomPlot* customPlot, QString axis
         QString str_title, int graphCount/* = 1*/)
 {
     QCustomPlotHelper* customPlotHelper = new QCustomPlotHelper(customPlot, this);
-    //customPlot->installEventFilter(this);
     customPlot->setProperty("index", index);
 
     // 创建标题文本元素
@@ -2193,10 +2192,13 @@ void MainWindow::updateSpectrumDisplay(int detectorId, const quint32 spectrum[])
     // 更新图表
     getGraph(detectorId, true)->setData(x, y);
 
-    customPlot->yAxis->rescale(false);
-    if (!qFuzzyCompare(y_max, yMaxOld)){
-        y_max = y_min + (y_max - y_min) * 1.1;
-        customPlot->yAxis->setRange(y_min - 1, y_max);
+    if (customPlot->property("enableAutoScale").toBool())
+        customPlot->rescaleAxes(true);
+    else if (customPlot->property("enableFixedScale").toBool()){
+        if (!qFuzzyCompare(y_max, yMaxOld) && (y_max > yMaxOld)){
+            y_max = y_min + (y_max - y_min) * 1.1;
+            customPlot->yAxis->setRange(y_min - 1, y_max);
+        }
     }
 
     customPlot->replot(QCustomPlot::rpQueuedReplot);
@@ -2259,9 +2261,6 @@ void MainWindow::updateCountRateDisplay(int detectorId, double fpgaTime, double 
         // 稍微留点头部空间
         double pad = (y_max - y_min) * 0.1;
         customPlot->yAxis->setRange(y_min - pad, y_max + pad);
-    }
-    else if (customPlot->property("enableManualScale").toBool()){
-        customPlot->rescaleAxes(false);
     }
 
     customPlot->replot(QCustomPlot::rpQueuedReplot);
