@@ -76,7 +76,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     connect(mConnectButtonDisableTimer, &QTimer::timeout, this, [=](){
         // 定时器超时后，根据连接状态决定是否启用按钮
         if (!mSwitcherConnected) {
-            qInfo().nospace() << tr("交换机连接失败");
+            qInfo().noquote().nospace() << tr("交换机连接失败");
             ui->action_connectSwitch->setEnabled(true);
         }
     });
@@ -2131,6 +2131,9 @@ void MainWindow::updateSpectrumDisplay(int detectorId, const quint32 spectrum[])
         return;
 
     QVector<double> x, y;
+    double y_min = customPlot->yAxis->range().lower;
+    double y_max = customPlot->yAxis->range().upper;
+    double yMaxOld = y_max;
 
     // 转换数据格式
     if(mEnScale)
@@ -2158,6 +2161,9 @@ void MainWindow::updateSpectrumDisplay(int detectorId, const quint32 spectrum[])
             }
             x << tempX;
             y << mergeCount;
+
+            y_min = qMin(y_min, mergeCount);
+            y_max = qMax(y_max, mergeCount);
         }
     }
     else
@@ -2178,6 +2184,9 @@ void MainWindow::updateSpectrumDisplay(int detectorId, const quint32 spectrum[])
             int newCh = (i+1)/mergebin;
             x << newCh;
             y << mergeCount;
+
+            y_min = qMin(y_min, mergeCount);
+            y_max = qMax(y_max, mergeCount);
         }
     }
 
@@ -2185,10 +2194,10 @@ void MainWindow::updateSpectrumDisplay(int detectorId, const quint32 spectrum[])
     getGraph(detectorId, true)->setData(x, y);
 
     customPlot->yAxis->rescale(false);
-    double y_min = customPlot->yAxis->range().lower;
-    double y_max = customPlot->yAxis->range().upper;
-    y_max = y_min + (y_max - y_min) * 1.1;
-    customPlot->yAxis->setRange(y_min - 1, y_max);
+    if (!qFuzzyCompare(y_max, yMaxOld)){
+        y_max = y_min + (y_max - y_min) * 1.1;
+        customPlot->yAxis->setRange(y_min - 1, y_max);
+    }
 
     customPlot->replot(QCustomPlot::rpQueuedReplot);
 }
