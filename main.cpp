@@ -68,7 +68,7 @@ int main(int argc, char *argv[])
     QApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
 
     QApplication a(argc, argv);
-    QApplication::setApplicationName("溴化镧谱仪");
+    QApplication::setApplicationName("溴化镧配套软件");
     QApplication::setOrganizationName("Copyright (c) 2025");
     QApplication::setOrganizationDomain("");
     QApplication::setApplicationVersion(APP_VERSION);
@@ -188,11 +188,11 @@ int main(int argc, char *argv[])
     QTextCodec::setCodecForLocale(QTextCodec::codecForMib(106));/* Utf8 */
     QGoodWindowHelper w;
     if (args.contains("-m") && args.contains("countRateStatistics")){
-        QApplication::setApplicationName("溴化镧谱仪离线数据分析-计数率统计");
+        QApplication::setApplicationName("溴化镧配套软件离线数据分析-计数率统计");
         mMainWindow = new CountRateStatisticsWindow(isDarkTheme, &w);
     }
     else if (args.contains("-m") && args.contains("neutronYieldStatistics")){
-        QApplication::setApplicationName("溴化镧谱仪离线数据分析-中子产额统计");
+        QApplication::setApplicationName("溴化镧配套软件离线数据分析-中子产额统计");
         mMainWindow = new NeutronYieldStatisticsWindow(isDarkTheme, &w);
     }
     else

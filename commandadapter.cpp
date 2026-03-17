@@ -106,8 +106,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
 
         //温度监测（心跳检测）
         if (cachePool.startsWith(kCmdTempHead)){
-            QByteArray data = cachePool.mid(6, 4);
-            qint32 t = qFromBigEndian<qint32>(data.constData());
+            qint32 t = qFromBigEndian<qint32>(cachePool.constData()+6); // 从第7个字节位置读取32位大端数据
             float temperature = t * 0.0001;// 换算系数
             // qDebug().noquote() << "temp：" << temperature;
 
@@ -121,7 +120,40 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
         //增益指令
         {
             if (cachePool.startsWith(kCmdGainHead)){
-                //qInfo().noquote() << "增益：" << cachePool.at(9);
+                quint16 gainData = qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(cachePool.constData() + 8));
+                QString gainStr;
+                switch (gainData)
+                {
+                case 0x01:
+                    gainStr = "0.08";
+                    break;
+                case 0x02:
+                    gainStr = "0.16";
+                    break;
+                case 0x03:
+                    gainStr = "0.32";
+                    break;
+                case 0x04:
+                    gainStr = "0.63";
+                    break;
+                case 0x05:
+                    gainStr = "1.26";
+                    break;
+                case 0x06:
+                    gainStr = "2.52";
+                    break;
+                case 0x07:
+                    gainStr = "5.01";
+                    break;
+                case 0x08:
+                    gainStr = "10.0";
+                    break;
+                default:
+                    gainStr = "未知值";
+                    break;
+                }
+
+                qInfo().noquote() << "增益：" << gainStr;
 
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
 
@@ -133,7 +165,10 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
         //死时间配置(ns)
         {
             if (cachePool.startsWith(kCmdDeadHead)){
-                qInfo().noquote() << "死时间/ns：" << cachePool.mid(8, 2).toShort();
+                // 从第9个字节位置读取16位大端数据
+                quint16 deadTime = qFromBigEndian<quint16>(
+                    reinterpret_cast<const uchar*>(cachePool.constData() + 8));
+                qInfo().noquote() << "参数查询，死时间/ns：" << deadTime * 10;
 
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
 
@@ -145,7 +180,10 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
         //触发阈值
         {
             if (cachePool.startsWith(kCmdThresHead)){
-                //qInfo().noquote() << "触发阈值：" << cachePool.mid(8, 2).toShort();
+                // 从第9个字节位置读取16位大端数据
+                quint16 triggerThold = qFromBigEndian<quint16>(
+                    reinterpret_cast<const uchar*>(cachePool.constData() + 8));
+                qInfo().noquote() << "参数查询，触发阈值：" << triggerThold;
 
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
 
@@ -159,19 +197,20 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
         ***********************************************************/
         {
             if (cachePool.startsWith(kCmdWaveformLengthHead)){
-                //qInfo().noquote() << "触发模式：" << (cachePool.mid(7, 1).toShort() == tmTimer ? "定时触发" : "正常触发模式");
-                WaveformLength waveformLength = (WaveformLength)cachePool.mid(9, 1).toShort();
+                quint8 triggerMode = cachePool.at(7);
+                qInfo().noquote() << "参数查询，触发模式：" << (triggerMode == tmTimer ? "定时触发" : "正常触发模式");
+                quint8 lenType = cachePool.at(8);
+                WaveformLength waveformLength = (WaveformLength)lenType;
                 if (waveformLength == wl64)
-                    qInfo().noquote() << "波形长度：64";
+                    qInfo().noquote() << "参数查询，波形长度：64";
                 else if (waveformLength == wl128)
-                    qInfo().noquote() << "波形长度：128";
+                    qInfo().noquote() << "参数查询，波形长度：128";
                 else if (waveformLength == wl256)
-                    qInfo().noquote() << "波形长度：256";
+                    qInfo().noquote() << "参数查询，波形长度：256";
                 else if (waveformLength == wl512)
-                    qInfo().noquote() << "波形长度：512";
+                    qInfo().noquote() << "参数查询，波形长度：512";
                 else
-                    qInfo().noquote() << "波形长度：未知值";
-
+                    qInfo().noquote() << "参数查询，波形长度：未知值";
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
 
                 findNaul = true;
@@ -185,7 +224,9 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
         //能谱刷新时间/ms
         {
             if (cachePool.startsWith(kCmdSpectrumRefreshTimeHead)){
-                //qInfo().noquote() << "能谱刷新时间/ms：" << cachePool.mid(6, 4).toUInt();
+                quint32 spectrumRefreshTime = qFromBigEndian<quint32>(
+                    reinterpret_cast<const uchar*>(cachePool.constData() + 6));
+                qInfo().noquote() << "参数查询，能谱刷新时间/ms：" << spectrumRefreshTime;
 
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
 
@@ -200,11 +241,12 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
         //梯形成型时间常数配置
         {
             if (cachePool.startsWith(kCmdTrapezoidTimeConstantHead)){
-                quint16 d1 = cachePool.mid(6, 2).toShort();
-                quint16 d2 = cachePool.mid(8, 9).toShort();
+
+                quint16 d1 = qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(cachePool.constData() + 6));
+                quint16 d2 = qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(cachePool.constData() + 8));
                 float f1 = (float)d1 / 65536;
                 float f2 = (float)d2 / 65536;
-                //qInfo().noquote() << "梯形成型时间常数，d1=" << f1 << "，d2="<<f2;
+                qInfo().noquote() << "参数查询，梯形成型时间常数，d1=" << f1 << "，d2="<<f2;
 
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
 
@@ -219,7 +261,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                 quint8 rise = (quint8)cachePool.at(7);
                 quint8 peak = (quint8)cachePool.at(8);
                 quint8 fall = (quint8)cachePool.at(9);
-                //qInfo().noquote() << "上升沿=" << rise << "，平顶="<<peak<< "，下降沿="<<fall;
+                qInfo().noquote() << "参数查询，上升沿=" << rise << "，平顶="<<peak<< "，下降沿="<<fall;
 
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
 
@@ -231,7 +273,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
         //梯形成型使能配置
         {
             if (cachePool.startsWith(kCmdTrapShapeEnableHead)){
-                //qInfo().noquote() << "梯形成型使能状态：" << ((quint8)cachePool.at(9) == 0x00 ? "关闭" : "打开");
+                qInfo().noquote() << "参数查询，梯形成型使能状态：" << ((quint8)cachePool.at(9) == 0x00 ? "关闭" : "打开");
 
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
 
@@ -246,14 +288,23 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
         {
             if (cachePool.startsWith(kCmdWorkModeHead)){
                 WorkMode workMode = (WorkMode)cachePool.at(9);
-                if (workMode == wmWaveform)
-                    qInfo().noquote() << "工作模式：波形模式";
-                else if (workMode == wmSpectrum)
-                    qInfo().noquote() << "工作模式：能谱模式";
-                else if (workMode == wmParticle)
-                    qInfo().noquote() << "工作模式：粒子模式";
-                else
-                    qInfo().noquote() << "工作模式：未知";
+                QString modeStr;
+                switch(workMode)
+                {
+                case wmWaveform:
+                    modeStr = "波形模式";
+                    break;
+                case wmSpectrum:
+                    modeStr = "能谱模式";
+                    break;
+                case wmParticle:
+                    modeStr = "粒子模式";
+                    break;
+                default:
+                    modeStr = "未知模式";
+                    break;
+                }
+                qInfo().noquote() << "参数查询，工作模式：" << modeStr;
 
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
 
@@ -269,7 +320,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
         {
             if (cachePool.startsWith(kCmdHVEnableHead)){
                 HighVolgateOutLevelEnable highVoltageEnable = (HighVolgateOutLevelEnable)cachePool.at(9);
-                //qInfo().noquote() << "高压使能状态：" << (highVoltageEnable ? "关闭" : "打开");
+                qInfo().noquote() << "参数查询，高压使能状态：" << (highVoltageEnable ? "关闭" : "打开");
 
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
 
@@ -278,11 +329,12 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
             }
         }
 
-        //DAC输出电平配置
+        //DAC模拟电平配置，用来控制高压电源输出电压值
         {
             if (cachePool.startsWith(kCmdHVOutputHead)){
-                quint16 level = cachePool.mid(8, 2).toShort();
-                //qInfo().noquote() << "DAC输出电平值：" << level;
+                quint16 level = qFromBigEndian<quint16>(cachePool.constData() + 8);
+                double HV = level * 2.5 * 441 / 65536;
+                qInfo().noquote() << "参数查询，高压输出电平值（V）：" << HV;
 
                 QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
 
@@ -468,9 +520,9 @@ void CommandAdapter::sendGain(bool isRead, double gain){
     askCurrentCmd[9] = (gainHex & 0xFF);
     
     if (isRead)
-        pushCmd({QString("读：增益配置：%1").arg(QString::number(gain)), askCurrentCmd});
+        pushCmd({"读：增益", askCurrentCmd});
     else
-        pushCmd({QString("写：增益配置：%1").arg(QString::number(gain)), askCurrentCmd});
+        pushCmd({QString("写：增益%1").arg(QString::number(gain)), askCurrentCmd});
 }
 
 //死时间配置(*10ns)
@@ -480,11 +532,12 @@ void CommandAdapter::sendDeathTime(bool isRead, quint8 deathTime){
         askCurrentCmd[3] = 0x0A;
     else
         askCurrentCmd[3] = 0x0F;
+    deathTime = deathTime /10; //因为死时间单位是10ns，所以需要除以10
     askCurrentCmd[9] = (deathTime & 0xFF);
     if (isRead)
-        pushCmd({QString("读：死时间值(*10ns)").arg(deathTime*10), askCurrentCmd});
+        pushCmd({"读：死时间", askCurrentCmd});
     else
-        pushCmd({QString("写：死时间值：%1ns").arg(deathTime*10), askCurrentCmd});
+        pushCmd({QString("写：死时间%1ns").arg(deathTime * 10), askCurrentCmd});
 }
 
 //触发阈值
@@ -497,9 +550,9 @@ void CommandAdapter::sendTriggerThold(bool isRead, quint16 triggerThold){
     askCurrentCmd[8] = ((triggerThold >> 8) & 0xFF); // 高字节
     askCurrentCmd[9] = (triggerThold & 0xFF);        // 低字节
     if (isRead)
-        pushCmd({QString("读：触发阈值").arg(triggerThold), askCurrentCmd});
+        pushCmd({"读:触发阈值", askCurrentCmd});
     else
-        pushCmd({QString("写：触发阈值：%1").arg(triggerThold), askCurrentCmd});
+        pushCmd({QString("写：触发阈值%1").arg(triggerThold), askCurrentCmd});
 }
 
 /*********************************************************
@@ -540,8 +593,7 @@ void CommandAdapter::sendWaveformMode(bool isRead, TriggerMode triggerMode, quin
     QString mode = (triggerMode == tmTimer) ? "定时触发模式" : "正常触发模式";
     if (isRead)
     {
-        QString msg = QString("读：波形基本配置，触发模式和波形长度值").arg(mode).arg(lengStr);
-        pushCmd({msg, askCurrentCmd});
+        pushCmd({"读：波形基本配置，触发模式和波形长度值", askCurrentCmd});
     }
     else{
         QString msg = QString("写：波形基本配置，触发模式：%1，波形长度：%2").arg(mode).arg(lengStr);
@@ -566,9 +618,9 @@ void CommandAdapter::sendSprectnumRefreshTimelength(bool isRead, quint32 spectru
     }
 
     if (isRead)
-        pushCmd({QString("读：能谱刷新时间(ms)").arg(spectrumRefreshTime), askCurrentCmd});
+        pushCmd({"读：能谱刷新时间", askCurrentCmd});
     else
-        pushCmd({QString("写：能谱刷新时间:%1ms").arg(spectrumRefreshTime), askCurrentCmd});
+        pushCmd({QString("写：能谱刷新时间%1ms").arg(spectrumRefreshTime), askCurrentCmd});
 }
 
 /*********************************************************
@@ -592,7 +644,7 @@ void CommandAdapter::sendTrapTimeConst(bool isRead, quint16 c1, quint16 c2){
     }
 
     if (isRead)
-        pushCmd({QString("读：梯形成型时间常数").arg(c1).arg(c2), askCurrentCmd});
+        pushCmd({"读：梯形成型时间常数", askCurrentCmd});
     else
         pushCmd({QString("写：梯形成型时间常数:d1=%1，d2=%2").arg(c1).arg(c2), askCurrentCmd});
 }
