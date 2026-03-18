@@ -532,12 +532,12 @@ void CommandAdapter::sendDeathTime(bool isRead, quint8 deathTime){
         askCurrentCmd[3] = 0x0A;
     else
         askCurrentCmd[3] = 0x0F;
-    deathTime = deathTime /10; //因为死时间单位是10ns，所以需要除以10
+    deathTime = deathTime; //死时间单位是10ns，所以这里就不需要除以10
     askCurrentCmd[9] = (deathTime & 0xFF);
     if (isRead)
         pushCmd({"读：死时间", askCurrentCmd});
     else
-        pushCmd({QString("写：死时间%1ns").arg(deathTime * 10), askCurrentCmd});
+        pushCmd({QString("写：死时间%1ns").arg(deathTime*10), askCurrentCmd});
 }
 
 //触发阈值

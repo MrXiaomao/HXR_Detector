@@ -891,11 +891,11 @@ void NeutronYieldStatisticsWindow::on_action_open_triggered()
             H5::Group group = file.openGroup("Config");
             H5::DataSet dataset = group.openDataSet("Configuration");
             H5::CompType cfgType = HDF5Settings::createCfgDataType();
-            DetParameter cfg[24];
+            DetParameter cfg[DET_NUM];
             dataset.read(&cfg, cfgType);
 
             // 解析给出当前有能谱数据的通道编号集合
-            for(int i=0; i<24; i++)
+            for(int i=0; i<DET_NUM; i++)
             {
                 double longitude = cfg[i].longitude;
                 double latitude = cfg[i].latitude;
@@ -1099,7 +1099,7 @@ void NeutronYieldStatisticsWindow::on_tableWidget_selectionChanged()
     int detID = row + 1; // 探测器ID从1开始
 
     // 检查数据是否已经解析完成
-    if (detID > 0 && detID <= 24)
+    if (detID > 0 && detID <= DET_NUM)
     {
         if(!mDealSucess[detID]){
             QMessageBox::information(this, tr("提示"), tr("谱仪%1不存在解析成功的数据！").arg(detID));

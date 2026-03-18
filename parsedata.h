@@ -111,7 +111,7 @@ public:
     /**
      * @brief 解析H5文件，读取指定探测器的所有能谱数据，目前不支持对正在测量的实验数据的分析（没做文件锁保护）。
      * @param filePath 文件名
-     * @param detectorId 探测器ID：1-24
+     * @param detectorId 探测器ID：1-DET_NUM
      * @return 解析到的能谱个数
      */
     int parseH5File(const QString& filePath, const quint32 detectorId);

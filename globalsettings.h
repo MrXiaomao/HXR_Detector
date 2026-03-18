@@ -670,7 +670,7 @@ private:
     QColor mThemeColor = QColor(255,255,255);
 };
 
-#define DET_NUM 24
+#define DET_NUM 32
 #define IP_LENGTH 17
 #define MAC_LENGTH 18
 #define DEFAULT_HDF5_FILENAME "./Config/Settings.H5"

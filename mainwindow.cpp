@@ -90,7 +90,6 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     connect(this, SIGNAL(sigWriteLog(const QString&,QtMsgType)), this, SLOT(slotWriteLog(const QString&,QtMsgType)));
 
     ui->groupBox_3->setVisible(false); //隐藏统计结果，暂时没有在线中子产额统计结果
-    ui->cb_shotTime->setVisible(false); //打靶时间自动获取勾选框，隐藏
     ui->action_startServer->setEnabled(true);
     ui->action_stopServer->setEnabled(false);
     ui->action_connectSwitch->setEnabled(false);
@@ -300,21 +299,21 @@ void MainWindow::initUi()
             QGridLayout* layoutLeft = (QGridLayout*)ui->widget_left->layout();
             QGridLayout* layoutRight = (QGridLayout*)ui->widget_right->layout();
 
-            for (int index=1; index<=24; ++index)
+            for (int index=1; index<=DET_NUM; ++index)
             {
                 QCheckBox* checkBox = findChild<QCheckBox*>(QLatin1String("CH ")+QString::number(index));
-                if (index<=12)
+                if (index<=(DET_NUM/2))
                 {
-                    layoutLeft->addWidget(checkBox, index<=6 ? 0 : 1, (index-1) % 6);
+                    layoutLeft->addWidget(checkBox, index<=(DET_NUM/4) ? 0 : 1, (index-1) % (DET_NUM/4));
                 }
                 else
                 {
-                    layoutRight->addWidget(checkBox, index<=18 ? 0 : 1, (index-1) % 6);
+                    layoutRight->addWidget(checkBox, index<=(DET_NUM*3/4) ? 0 : 1, (index-1) % (DET_NUM/4));
                 }
             }
 
-            layoutLeft->addWidget(ui->toolButton_title_1, 0, 12);
-            layoutRight->addWidget(ui->toolButton_title_2, 0, 12);
+            layoutLeft->addWidget(ui->toolButton_title_1, 0, DET_NUM/2);
+            layoutRight->addWidget(ui->toolButton_title_2, 0, DET_NUM/2);
 
             this->setProperty("isZoomIn", false);
             spectroMeterWidget->setProperty("isZoomIn", false);
@@ -334,21 +333,21 @@ void MainWindow::initUi()
             QGridLayout* layoutLeft = (QGridLayout*)ui->widget_left->layout();
             QGridLayout* layoutRight = (QGridLayout*)ui->widget_right->layout();
 
-            for (int index=1; index<=24; ++index)
+            for (int index=1; index<=DET_NUM; ++index)
             {
                 QCheckBox* checkBox = findChild<QCheckBox*>(QLatin1String("CH ")+QString::number(index));
-                if (index<=12)
+                if (index<=DET_NUM/2)
                 {
-                    layoutLeft->addWidget(checkBox, 0, (index-1) % 12);
+                    layoutLeft->addWidget(checkBox, 0, (index-1) % (DET_NUM/2));
                 }
                 else
                 {
-                    layoutRight->addWidget(checkBox, 0, (index-1) % 12);
+                    layoutRight->addWidget(checkBox, 0, (index-1) % (DET_NUM/2));
                 }
             }
 
-            layoutLeft->addWidget(ui->toolButton_title_1, 0, 12);
-            layoutRight->addWidget(ui->toolButton_title_2, 0, 12);
+            layoutLeft->addWidget(ui->toolButton_title_1, 0, DET_NUM/2);
+            layoutRight->addWidget(ui->toolButton_title_2, 0, DET_NUM/2);
 
             this->setProperty("isZoomIn", true);
             this->setProperty("currentMeterIndex", index);
@@ -616,11 +615,15 @@ void MainWindow::initUi()
     ui->tableWidget_detector->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed); // 固定高度
     ui->tableWidget_detector->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     ui->tableWidget_detector->horizontalHeader()->setFixedHeight(25);
-    // for (int i=0; i<25; ++i)
-    //      ui->tableWidget_detector->setRowHeight(i, 25);
+    ui->tableWidget_detector->setRowCount(DET_NUM+1);
+    for (int row = 0; row <= DET_NUM; ++row){
+        QTableWidgetItem *__qtablewidgetitem = new QTableWidgetItem(QStringLiteral("谱仪#%1").arg(row));
+        ui->tableWidget_detector->setVerticalHeaderItem(row, __qtablewidgetitem);
+        ui->tableWidget_detector->setRowHeight(row, 25);
+    }
     ui->tableWidget_detector->setRowHeight(0, 50);
-    ui->tableWidget_detector->setFixedHeight(677);
     ui->tableWidget_detector->verticalHeaderItem(0)->setText("时间同步\n触发模块");
+    ui->tableWidget_detector->setMinimumHeight(DET_NUM*25+2);
 
     for (int row=0; row<ui->tableWidget_detector->rowCount(); ++row){
         for (int column=0; column<=3; ++column){
@@ -767,15 +770,15 @@ void MainWindow::initUi()
     mGraphisColor.push_back(QColor::fromRgb(5,75,58));
     mGraphisColor.push_back(QColor::fromRgb(129,216,208));
     mGraphisColor.push_back(QColor::fromRgb(0,140,141));
-    //mGraphisColor.push_back(QColor::fromRgb(0,47,167));
-    //mGraphisColor.push_back(QColor::fromRgb(70,40,20));
     mGraphisColor.push_back(QColor::fromRgb(128,0,32));
     mGraphisColor.push_back(QColor::fromRgb(142,76,41));
     mGraphisColor.push_back(QColor::fromRgb(205,0,0));
     mGraphisColor.push_back(QColor::fromRgb(0,102,128));
     mGraphisColor.push_back(QColor::fromRgb(32,88,39));
-    // for (int i=0; i<12; ++i)
-    //     mGraphisColor.push_back(getRandomColor());
+    mGraphisColor.push_back(QColor::fromRgb(132,88,39));
+    mGraphisColor.push_back(QColor::fromRgb(32,188,39));
+    mGraphisColor.push_back(QColor::fromRgb(32,88,139));
+    mGraphisColor.push_back(QColor::fromRgb(32,188,139));
 
     for (int i=1; i<=2; ++i){
         QCustomPlot *spectroMeter_top = this->findChild<QCustomPlot*>(QString("spectroMeter%1_top").arg(i));
@@ -800,12 +803,12 @@ void MainWindow::initUi()
         ui->widget_left->setLayout(layoutLeft);
         ui->widget_right->setLayout(layoutRight);
 
-        for (int index=1; index<=24; ++index)
+        for (int index=1; index<=DET_NUM; ++index)
         {
             QCheckBox* checkBox = new QCheckBox(index==1 ? ui->widget_left : ui->widget_right);
             checkBox->setText(QLatin1String("")+QString::number(index));
             checkBox->setObjectName(QLatin1String("CH ")+QString::number(index));
-            checkBox->setIcon(QIcon(roundPixmap(QSize(16, 16), mGraphisColor.at((index-1) % 12))));
+            checkBox->setIcon(QIcon(roundPixmap(QSize(16, 16), mGraphisColor.at((index-1) % (DET_NUM/2)))));
             checkBox->setProperty("index", index);
             checkBox->setChecked(true);
             connect(checkBox, &QCheckBox::stateChanged, this, [=](int state){
@@ -826,18 +829,18 @@ void MainWindow::initUi()
                 }
             });
 
-            if (index<=12)
+            if (index<=(DET_NUM/2))
             {
-                layoutLeft->addWidget(checkBox, index<=6 ? 0 : 1, (index-1) % 6);
+                layoutLeft->addWidget(checkBox, index<=(DET_NUM/4) ? 0 : 1, (index-1) % (DET_NUM/4));
             }
             else
             {
-                layoutRight->addWidget(checkBox, index<=18 ? 0 : 1, (index-1) % 6);
+                layoutRight->addWidget(checkBox, index<=(DET_NUM*3/4) ? 0 : 1, (index-1) % (DET_NUM/4));
             }
         }
 
-        layoutLeft->addWidget(ui->toolButton_title_1, 0, 7);
-        layoutRight->addWidget(ui->toolButton_title_2, 0, 7);
+        layoutLeft->addWidget(ui->toolButton_title_1, 0, (DET_NUM/2)+1);
+        layoutRight->addWidget(ui->toolButton_title_2, 0, (DET_NUM/2)+1);
     }
 
     //更新温度状态
@@ -874,7 +877,7 @@ void MainWindow::initUi()
 
     // 接收完整的能谱数据
     connect(commHelper, &CommHelper::reportFullSpectrum, this, [=](quint8 index, const FullSpectrum& fullSpectrum){
-        if (index < 1 || index > 24) {
+        if (index < 1 || index > DET_NUM) {
             qWarning() << "Invalid detector ID:" << index;
             return;
         }
@@ -1145,7 +1148,7 @@ void MainWindow::initCustomPlot(int index, QCustomPlot* customPlot, QString axis
 //清除全部图像数据（计数曲线、能谱曲线）
 void MainWindow::clearCustomPlotData()
 {
-    for (int i = 0; i < 24; ++i)
+    for (int i = 0; i < DET_NUM; ++i)
     {
         // 计数率图
         {
@@ -1555,7 +1558,6 @@ void MainWindow::on_pushButton_startMeasure_clicked()
 
     if (ui->action_waveformMode->isChecked())
     {
-        qInfo()<<"自定义通道测量，波形测量模式";
         QString str = QString("开始测量，通道号：");
         for (const auto &mi : validIndexes) {
             int row = mi.row();
@@ -1574,6 +1576,7 @@ void MainWindow::on_pushButton_startMeasure_clicked()
                 if (!mContinueMeasureTimer->isValid())
                     mContinueMeasureTimer->start();
 
+                qInfo().noquote().nospace() << QStringLiteral("谱仪[#%1]开始测量，波形测量模式").arg(index);
                 commHelper->startMeasure(QDateTime::currentDateTime(), CommandAdapter::MeasureMode::mmManual, CommandAdapter::WorkMode::wmWaveform, index);
                 //记录下所选的通道号，保存到成员变量中，停止测量的时候使用并清空
                 m_selectedChannels.append(index);
@@ -1582,7 +1585,6 @@ void MainWindow::on_pushButton_startMeasure_clicked()
     }
     else if (ui->action_spectrumMode->isChecked())
     {
-        qInfo()<<"自定义通道测量，能谱测量模式";
         QString str = QString("开始测量，通道号：");
         for (const auto &mi : validIndexes) {
             int row = mi.row();
@@ -1618,7 +1620,7 @@ void MainWindow::on_pushButton_startMeasure_clicked()
                     ui->edit_measureTime->setText("00:00:00");
                     // 启动连续测量计时器
                     mContinueMeasureTimer->start();
-                    qInfo().nospace() << QString("开始测量，连续测量模式");
+                    qInfo().noquote().nospace() << QString("谱仪[#%1]开始测量，连续测量模式").arg(index);
                 }
                 else
                 {
@@ -1630,7 +1632,7 @@ void MainWindow::on_pushButton_startMeasure_clicked()
                         mMeasureCountdownTimer->start();
                         // 初始化测量时长显示为 00:00:00
                         ui->edit_measureTime->setText("00:00:00");
-                        qInfo().noquote().nospace() << QString("开始测量，倒计时：%1 秒").arg(countdownSeconds);
+                        qInfo().noquote().nospace() << QString("谱仪[#%1]开始测量，倒计时：%2 秒").arg(index).arg(countdownSeconds);
                     }
                 }
 
@@ -1643,8 +1645,6 @@ void MainWindow::on_pushButton_startMeasure_clicked()
 
     // 测量中禁用参数配置
     mDetSettingWindow->setEnabled(false);
-
-    ui->pushButton_startMeasure->setEnabled(false);
     ui->pushButton_stopMeasure->setEnabled(true);
     ui->action_startMeasure->setEnabled(false);
     ui->action_stopMeasure->setEnabled(false);
@@ -1700,7 +1700,6 @@ void MainWindow::on_pushButton_stopMeasure_clicked()
     }
 
     //打印日志
-    qInfo()<<"点击(自定义通道)停止测量";
 
     for (const auto &mi : validIndexes) {
         int row = mi.row();
@@ -1708,6 +1707,7 @@ void MainWindow::on_pushButton_stopMeasure_clicked()
             continue;
 
         quint8 index = row;
+        qInfo().noquote().nospace() << QString("谱仪[#%1]点击停止测量").arg(index);
         commHelper->stopMeasure(index);
         m_selectedChannels.removeOne(index);
     }

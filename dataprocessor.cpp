@@ -419,9 +419,9 @@ void DataProcessor::inputSpectrumData(quint8 no, QByteArray& data){
             HDF5Settings::instance()->writeH5Spectrum(mIndex, h5Spectrum);
 
             //if(spectrumSeq%1000 == 0){
-                qDebug().nospace() << "谱仪[#" << mIndex << "]" << "Get a full spectrum, SpectrumID:" << spectrumSeq
-                     << ", specMeasureTime(ms):" << fullSpectrum->measureTime
-                     << ", deathTime(*10ns):" << fullSpectrum->deathTime;
+                // qDebug().nospace() << "谱仪[#" << mIndex << "]" << "Get a full spectrum, SpectrumID:" << spectrumSeq
+                //      << ", specMeasureTime(ms):" << fullSpectrum->measureTime
+                //      << ", deathTime(*10ns):" << fullSpectrum->deathTime;
             //}
             // m_parseData->mergeSpecTime_online(*fullSpectrum);
 

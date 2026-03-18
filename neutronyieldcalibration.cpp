@@ -7,6 +7,7 @@
  */
 #include "neutronyieldcalibration.h"
 #include "ui_neutronyieldcalibration.h"
+#include "globalsettings.h"
 #include <QSettings>
 
 NeutronYieldCalibration::NeutronYieldCalibration(QWidget *parent)
@@ -118,7 +119,7 @@ QVector<QPair<double, double>> NeutronYieldCalibration::neutronYield()
 {
     QVector<QPair<double, double>> result;
     QSettings mSettings("./config/NeutronYield.ini", QSettings::IniFormat);
-    for (int row= 0; row<24; ++row){
+    for (int row= 0; row<DET_NUM; ++row){
         double yield = mSettings.value(QString("Table/yield%1").arg(row+1), "0.0").toDouble();
         double initial909Count = mSettings.value(QString("Table/initial909Count%1").arg(row+1), "0.0").toDouble();
         result.push_back(qMakePair(yield, initial909Count));

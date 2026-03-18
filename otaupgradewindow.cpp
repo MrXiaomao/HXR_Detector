@@ -424,7 +424,7 @@ void OTAUpgradeWindow::startNextTask()
 
 void OTAUpgradeWindow::on_pushButton_exit_clicked()
 {
-    for (int index = 0; index <=24; ++index)
+    for (int index = 0; index <=DET_NUM; ++index)
         commHelper->endOTAUpgrade(index);
 
     ui->pushButton_ok->setEnabled(true);

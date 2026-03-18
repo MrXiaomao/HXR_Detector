@@ -144,10 +144,10 @@ private:
     unsigned int startTimeUI = 0;
     unsigned int endTimeUI = 0;
 
-    QMap<int, quint32> mDetectorSpecCount; //存放各个通道中能谱的数据,探测器编号：1~24
-    QMap<int, bool> mDealSucess; //存放各个通道中子产额解析是否成功的标志,探测器编号：1~24
-    QMap<int, Sensor> myield; //存放各个通道中子产额。通道编号：1-24，通道经纬度，通道的中子产额
-    ParseData* dealFile[24];
+    QMap<int, quint32> mDetectorSpecCount; //存放各个通道中能谱的数据,探测器编号：1~DET_NUM
+    QMap<int, bool> mDealSucess; //存放各个通道中子产额解析是否成功的标志,探测器编号：1~DET_NUM
+    QMap<int, Sensor> myield; //存放各个通道中子产额。通道编号：1-DET_NUM，通道经纬度，通道的中子产额
+    ParseData* dealFile[DET_NUM];
     QString mfilePath; //待解析的文件名
 };
 

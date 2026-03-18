@@ -26,6 +26,7 @@ CommHelper::CommHelper(QObject *parent)
             {
                 qint8 index = connection->property("detectorIndex").toInt();
                 DetParameter& detParameter = detParameters[index];
+
                 QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
                 QString peerAddress = connection->peerAddress().toString();
                 if (peerAddress != detectorAddress){
@@ -42,6 +43,10 @@ CommHelper::CommHelper(QObject *parent)
                     allocDataProcessor(connection);
                     index = connection->property("detectorIndex").toInt();
                     QMetaObject::invokeMethod(this, "detectorOnline", Qt::QueuedConnection, Q_ARG(quint8, index));
+                }
+                else{
+                    // ip没做更改，只需要更新参数即可
+                    mDetectorDataProcessor[index]->updateSetting(detParameter);
                 }
             }
 

@@ -64,7 +64,7 @@ EnergyCalibration::~EnergyCalibration()
     GlobalSettings settings(DEVICE_CONFIG_FILE);
     settings.beginGroup("EnCalibration");
     int detChannel = 0;
-    for (int i=0; i<24; ++i){
+    for (int i=0; i<DET_NUM; ++i){
         if (detRadioButtons[i]->isChecked())
             detChannel = i+1;
     }
@@ -208,14 +208,14 @@ void EnergyCalibration::initUI()
     // 设置列宽自适应
     ui->tableWidget_det->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     
-    // 确保表格有24行（UI文件中已定义，但为了安全起见检查一下）
-    if (ui->tableWidget_det->rowCount() < 24)
+    // 确保表格有DET_NUM行（UI文件中已定义，但为了安全起见检查一下）
+    if (ui->tableWidget_det->rowCount() < DET_NUM)
     {
-        ui->tableWidget_det->setRowCount(24);
+        ui->tableWidget_det->setRowCount(DET_NUM);
     }
 
-    // 初始化tableWidget_det表格，24行，每行设置一个单选按钮，用于选择是否使用该探测器进行能量刻度
-    for (int i=0; i<24; ++i){
+    // 初始化tableWidget_det表格，DET_NUM行，每行设置一个单选按钮，用于选择是否使用该探测器进行能量刻度
+    for (int i=0; i<DET_NUM; ++i){
         //单选按钮
         QRadioButton *radioButton = new QRadioButton(ui->tableWidget_det);
         radioButton->setChecked(false);

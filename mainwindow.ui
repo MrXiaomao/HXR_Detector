@@ -1424,13 +1424,6 @@
                      </property>
                     </widget>
                    </item>
-                   <item row="5" column="3">
-                    <widget class="QCheckBox" name="cb_shotTime">
-                     <property name="text">
-                      <string>自动获取</string>
-                     </property>
-                    </widget>
-                   </item>
                    <item row="3" column="0">
                     <widget class="QLabel" name="label_2">
                      <property name="text">
@@ -1480,36 +1473,6 @@
                      </property>
                     </widget>
                    </item>
-                   <item row="5" column="2">
-                    <widget class="QDateTimeEdit" name="dateTime_shotTime">
-                     <property name="enabled">
-                      <bool>false</bool>
-                     </property>
-                     <property name="sizePolicy">
-                      <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
-                       <horstretch>0</horstretch>
-                       <verstretch>0</verstretch>
-                      </sizepolicy>
-                     </property>
-                     <property name="date">
-                      <date>
-                       <year>2025</year>
-                       <month>11</month>
-                       <day>21</day>
-                      </date>
-                     </property>
-                     <property name="time">
-                      <time>
-                       <hour>18</hour>
-                       <minute>0</minute>
-                       <second>0</second>
-                      </time>
-                     </property>
-                     <property name="displayFormat">
-                      <string>yyyy/M/d H:mm:ss</string>
-                     </property>
-                    </widget>
-                   </item>
                    <item row="3" column="2" colspan="2">
                     <widget class="QComboBox" name="com_triggerModel">
                      <item>
@@ -1551,6 +1514,36 @@
                     <widget class="QSpinBox" name="spinBox_coolTimeLength">
                      <property name="maximum">
                       <number>99999999</number>
+                     </property>
+                    </widget>
+                   </item>
+                   <item row="5" column="2" colspan="2">
+                    <widget class="QDateTimeEdit" name="dateTime_shotTime">
+                     <property name="enabled">
+                      <bool>false</bool>
+                     </property>
+                     <property name="sizePolicy">
+                      <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                       <horstretch>0</horstretch>
+                       <verstretch>0</verstretch>
+                      </sizepolicy>
+                     </property>
+                     <property name="date">
+                      <date>
+                       <year>2025</year>
+                       <month>11</month>
+                       <day>21</day>
+                      </date>
+                     </property>
+                     <property name="time">
+                      <time>
+                       <hour>18</hour>
+                       <minute>0</minute>
+                       <second>0</second>
+                      </time>
+                     </property>
+                     <property name="displayFormat">
+                      <string>yyyy/M/d H:mm:ss</string>
                      </property>
                     </widget>
                    </item>
@@ -1809,7 +1802,7 @@
      <x>0</x>
      <y>0</y>
      <width>1431</width>
-     <height>21</height>
+     <height>18</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">

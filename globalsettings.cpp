@@ -678,7 +678,7 @@ H5::CompType HDF5Settings::createH5SpectrumType()
 
 /**
  * @brief 写入单个FullSpectrum结构体到HDF5文件
- * @param index 探测器索引（1~24)
+ * @param index 探测器索引（1~DET_NUM)
  * @param data 要写入的结构体数据
  */
 void HDF5Settings::writeH5Spectrum(quint8 index, const H5Spectrum& data)

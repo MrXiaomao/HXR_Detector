@@ -81,7 +81,7 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
         updateSelectAllState();
     });
 
-    for (int i = 1; i <= 24; ++i){
+    for (int i = 1; i <= DET_NUM; ++i){
         int row = ui->tableWidget->rowCount();
         ui->tableWidget->insertRow(row);
         ui->tableWidget->setItem(row, 0, new QTableWidgetItem(QString("谱仪#%1").arg(i)));
@@ -183,7 +183,7 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
         {
             if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FA 11"))){
                 quint8 deathTime = cachePool.mid(8, 2).toHex().toUShort(&ok, 16);
-                qInfo().noquote() << "死时间/ns：" << deathTime;
+                qInfo().noquote() << "死时间/*10ns：" << deathTime;
                 //ui->spinBox_deathTime->setValue(deathTime);
                 model->setData(model->index(row, 6), QString::number(deathTime));
 
@@ -407,6 +407,13 @@ void DetSettingWindow::updateSelectAllState()
 
 void DetSettingWindow::on_pushButton_save_clicked()
 {
+    double d1 = ui->doubleSpinBox_trapShapeTimeConstD1->value();
+    double d2 = ui->doubleSpinBox_trapShapeTimeConstD2->value();
+    if (ui->trapShapeEnable->isChecked() && d1 >= d2){
+        QMessageBox::warning(this, tr("保存参数设置"), tr("梯形成型常量错误，d1必须小于d2"));
+        return;
+    }
+
     QString savedDetectors;
     //对选中的部分保存参数
     for (int row = 0; row < ui->tableWidget->rowCount(); ++row) {

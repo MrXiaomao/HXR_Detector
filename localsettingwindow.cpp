@@ -92,6 +92,7 @@ LocalSettingWindow::LocalSettingWindow(QWidget *parent)
 
     ui->comboBox_ip->addItem("127.0.0.1");
     ui->comboBox_ip->addItem("0.0.0.0");
+    ui->spinBox->setMaximum(DET_NUM);
 
     GlobalSettings settings(DEVICE_CONFIG_FILE);
     //心跳检测
@@ -102,8 +103,13 @@ LocalSettingWindow::LocalSettingWindow(QWidget *parent)
 
     ui->tableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
     ui->tableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Fixed);
-    for (int column = 0; column < 24; ++column)
+    ui->tableWidget->setColumnCount(DET_NUM);
+
+    for (int column = 0; column < DET_NUM; ++column)
     {
+        QTableWidgetItem *__qtablewidgetitem = new QTableWidgetItem(QString::number(column+1));
+        ui->tableWidget->setHorizontalHeaderItem(column, __qtablewidgetitem);
+
         // 使用委托
         ui->tableWidget->setItemDelegateForColumn(column, new CheckBoxDelegate()); // 为第0列设置
         ui->tableWidget->setColumnWidth(column, 25);
@@ -135,7 +141,7 @@ LocalSettingWindow::LocalSettingWindow(QWidget *parent)
         for (auto& det : det1S)
         {
             int column = det.toInt();
-            if (column >= 1 && column <= 24)
+            if (column >= 1 && column <= DET_NUM)
             {
                 auto *item = ui->tableWidget->item(row, column - 1);
                 if (item)
@@ -326,7 +332,7 @@ void LocalSettingWindow::updateData()
         }
 
         QString dets;
-        for (int column = 0; column < 24; ++column)
+        for (int column = 0; column < DET_NUM; ++column)
         {
             auto *item = ui->tableWidget->item(index-1, column);
             if (item)
