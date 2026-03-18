@@ -1504,6 +1504,11 @@ void MainWindow::on_pushButton_startMeasure_clicked()
     if (!dir.exists()) {
         dir.mkpath(".");
     }
+    // 保存网络数据
+    dir.setPath(QDir::currentPath() + "/cache/net");
+    if (!dir.exists()) {
+        dir.mkpath(".");
+    }
 
     {
         GlobalSettings settings(QString("%1/Settings.ini").arg(savePath));
