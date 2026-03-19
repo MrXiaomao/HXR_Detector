@@ -997,6 +997,11 @@ void CommHelper::stopMeasure(quint8 index/* = 0*/)
                 file->deleteLater();
                 mNetRawFileProcessor.remove(index);
             }
+
+            //关闭能谱文件
+            if (mNetRawFileProcessor.isEmpty()){
+                HDF5Settings::instance()->closeH5Spectrum();
+            }
         }
     }
 }

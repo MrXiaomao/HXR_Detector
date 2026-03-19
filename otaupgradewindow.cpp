@@ -59,6 +59,7 @@ OTAUpgradeWindow::OTAUpgradeWindow(QWidget *parent)
     ui->tableWidget_detector->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed); // 固定高度
     ui->tableWidget_detector->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     ui->tableWidget_detector->horizontalHeader()->setFixedHeight(25);
+    ui->tableWidget_detector->setRowCount(DET_NUM+1);
     ui->tableWidget_detector->setRowHeight(0, 50);
     ui->tableWidget_detector->verticalHeaderItem(0)->setText("时间同步\n触发模块");
     for (int row=0; row<ui->tableWidget_detector->rowCount(); ++row){

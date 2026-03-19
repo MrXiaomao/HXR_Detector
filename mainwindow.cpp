@@ -2652,8 +2652,8 @@ void MainWindow::stopMeasure()
         ui->edit_measureTime->setText("00:00:00");
     }
 
+    // 自动更新发次号
     if (ui->checkBox_autoIncrease->isChecked()){
-        // lineEdit_shotNum尾缀加1
         ui->lineEdit_shotNum->setText(increaseShotNumSuffix(ui->lineEdit_shotNum->text().trimmed()));
         GlobalSettings settings(DEVICE_CONFIG_FILE);
         settings.setValue("mainWindow/ShotNumStr", ui->lineEdit_shotNum->text());

@@ -100,7 +100,8 @@ struct FullSpectrum {
     // 拷贝构造函数
     FullSpectrum(const FullSpectrum& other) 
         : sequence(other.sequence), measureTime(other.measureTime), deathTime(other.deathTime),
-          receivedMask(other.receivedMask), completeTime(other.completeTime), isComplete(other.isComplete) {
+          receivedMask(other.receivedMask), completeTime(other.completeTime), isComplete(other.isComplete),
+          timeUTCs(other.timeUTCs), timeUTCms(other.timeUTCms) {
         memcpy(spectrum, other.spectrum, sizeof(spectrum));
     }
     
@@ -108,6 +109,8 @@ struct FullSpectrum {
     FullSpectrum& operator=(const FullSpectrum& other) {
         if (this != &other) {
             sequence = other.sequence;
+            timeUTCs = other.timeUTCs;
+            timeUTCms = other.timeUTCms;
             measureTime = other.measureTime;
             deathTime = other.deathTime;
             receivedMask = other.receivedMask;
@@ -122,6 +125,8 @@ struct FullSpectrum {
     // 字节序问题：x86 是小端序，网络数据通常是大端序
     void convertNetworkToHost() {
         sequence = qFromBigEndian<quint32>(sequence);
+        timeUTCs = qFromBigEndian<quint32>(timeUTCs );
+        timeUTCms = qFromBigEndian<quint32>(timeUTCms);
         measureTime = qFromBigEndian<quint32>(measureTime);
         deathTime = qFromBigEndian<quint32>(deathTime);
 
