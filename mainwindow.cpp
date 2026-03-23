@@ -112,7 +112,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     connect(commHelper, &CommHelper::switcherConnected, this, [=](QString ip){
         mSwitcherConnected = true;
         qInfo().nospace().noquote() << tr("交换机[%1]已连通").arg(ip);
-    });
+    }, Qt::QueuedConnection);
 
     connect(commHelper, &CommHelper::switcherLogged, this, [=](QString ip){
         // QLabel* label_Connected = this->findChild<QLabel*>("label_Connected");
@@ -138,14 +138,15 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
                 startMeasure();
             });
         }
-    });
+    }, Qt::QueuedConnection);
+
     connect(commHelper, &CommHelper::switcherDisconnected, this, [=](QString ip){
         mSwitcherConnected = false;
         updateConnectButtonState(false);
         ui->action_powerOn->setEnabled(false);
         ui->action_powerOff->setEnabled(false);
         qCritical().nospace().noquote() << tr("交换机[%1]连接已断开").arg(ip);
-    });
+    }, Qt::QueuedConnection);
 
     // 探测器
     connect(commHelper, &CommHelper::detectorOnline, this, [=](quint8 index){
@@ -158,7 +159,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
 
         //记录联网的探测器ID
         mOnlineDetectors.append(index);
-        qInfo().nospace() << "谱仪[#" << index << "]在线";
+        qInfo().nospace() << "谱仪[#" << index << "]上线";
         //如果该探测器在温度超时报警列表中，则删除
         if (mTemperatureTimeoutDetectors.contains(index)){
             mTemperatureTimeoutDetectors.removeOne(index);
@@ -169,7 +170,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
                 qInfo().nospace() << "谱仪[#" << index << "]自动重新开始测量";
             }
         }
-    });
+    }, Qt::QueuedConnection);
 
     connect(commHelper, &CommHelper::detectorOffline, this, [=](quint8 index){
         int row = index;
@@ -189,7 +190,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
             mOnlineDetectors.removeOne(index);
             qInfo().nospace() << "谱仪[#" << index << "]离线";
         }
-    });
+    }, Qt::QueuedConnection);
 
     //测量开始
     connect(commHelper, &CommHelper::measureStart, this, [=](quint8 index){
@@ -204,7 +205,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
         mDetectorMeasuring[index] = true;
 
         qInfo().nospace() << "谱仪[#" << index << "]测量已启动，准备接收数据";//开始实验，准备接收数据
-    });
+    }, Qt::QueuedConnection);
 
     //测量结束
     connect(commHelper, &CommHelper::measureStop, this, [=](quint8 index){
@@ -213,7 +214,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
         cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::red));
 
         qInfo().nospace() << "谱仪[#" << index << "]测量已停止";
-    });
+    }, Qt::QueuedConnection);
 
     //POE电源状态
     connect(commHelper, &CommHelper::reportPoePowerStatus, this, [=](quint8 index, bool on){
@@ -230,10 +231,10 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
             if (row == 0)
                 qInfo().nospace() << "时间同步触发模块已关机，POE电源状态: 关";
             else
-                qInfo().nospace() << "谱仪[#" << index << "]谱仪已关机，POE电源状态: 关";
+                qInfo().nospace() << "谱仪[#" << index << "]已关机，POE电源状态: 关";
         }
         cell->setChecked(on);
-    });
+    }, Qt::QueuedConnection);
 
     connect(ui->statusbar,&QStatusBar::messageChanged,this,[&](const QString &message){
         if(message.isEmpty()) {
@@ -242,6 +243,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
             ui->statusbar->showMessage(message);
         }
     });
+
     QTimer::singleShot(0, this, [&](){
         qGoodStateHolder->setCurrentThemeDark(mIsDarkTheme);
         QGoodWindow::setAppCustomTheme(mIsDarkTheme,this->mThemeColor); // Must be >96
@@ -782,9 +784,9 @@ void MainWindow::initUi()
 
     for (int i=1; i<=2; ++i){
         QCustomPlot *spectroMeter_top = this->findChild<QCustomPlot*>(QString("spectroMeter%1_top").arg(i));
-        initCustomPlot(i, spectroMeter_top, tr(""), tr("时间/s 计数率/cps"), tr("计数曲线"), 12);
+        initCustomPlot(i, spectroMeter_top, tr(""), tr("时间/s 计数率/cps"), tr("计数曲线"), DET_NUM/2);
         QCustomPlot *spectroMeter_bottom = this->findChild<QCustomPlot*>(QString("spectroMeter%1_bottom").arg(i));
-        initCustomPlot(i, spectroMeter_bottom, tr(""), tr("道址 计数"), tr("累积能谱"), 12);
+        initCustomPlot(i, spectroMeter_bottom, tr(""), tr("道址 计数"), tr("累积能谱"), DET_NUM/2);
     }
 
     QCustomPlot *spectroMeter_left = this->findChild<QCustomPlot*>(QString("spectroMeter_left"));
@@ -1107,7 +1109,7 @@ void MainWindow::initCustomPlot(int index, QCustomPlot* customPlot, QString axis
         QCPGraph * graph = customPlot->addGraph(customPlot->xAxis, customPlot->yAxis);
         //graph->setName("");
         graph->setAntialiased(false);
-        graph->setPen(mGraphisColor.at(i % 12));
+        graph->setPen(mGraphisColor.at(i % (DET_NUM/2)));
         //graph->selectionDecorator()->setPen(QPen(getRandomColor()));
         graph->setLineStyle(QCPGraph::lsLine);
         graph->setSelectable(QCP::SelectionType::stNone);
@@ -1349,6 +1351,7 @@ void MainWindow::on_action_stopServer_triggered()
     QLabel* label_LocalServer = this->findChild<QLabel*>("label_LocalServer");
     label_LocalServer->setStyleSheet("color:#ff0000;");
     label_LocalServer->setText(tr("本地网络服务：断开"));
+    mMeasureCountdownTimer->stop();
 }
 
 //视图
@@ -2097,8 +2100,9 @@ void MainWindow::resetDetectorSpectrum(int detectorId) {
         return;
 
     // 清空能谱
-    for (int i = 0; i < 8192; ++i)
-        it->spectrum[i] = 0;
+    memset(it->spectrum, 0, sizeof(it->spectrum));
+    // for (int i = 0; i < 8192; ++i)
+    //     it->spectrum[i] = 0;
 
     // 清空上次测量累积时间的能谱序号
     it->lastSpectrumID = 0;
@@ -2109,7 +2113,7 @@ void MainWindow::resetDetectorSpectrum(int detectorId) {
     QVector<double>().swap(it->countRateHistory);
     // 如果是 QList<double>，同样写法：QList<double>().swap(it->countRateHistory);
 
-    qInfo() << "Detector" << detectorId << "spectrum and countRateHistory reset";
+    qDebug().noquote().nospace() << "Detector" << detectorId << "spectrum and countRateHistory reset";
 }
 
 // 获取探测器数据
@@ -2238,13 +2242,35 @@ void MainWindow::updateCountRateDisplay(int detectorId, double fpgaTime, double 
         const int WINDOW = customPlot->property("xAxisFixedRange").toUInt();
 
         // 统计总曲线X轴最大值范围
-        double x_max = getGraph((detectorId-1)/12*12+1, false)->data()->at(0)->key;
-        for (int detectorIndex = (detectorId-1)/12*12+1; detectorIndex <= (detectorId-1)/12*12+12; ++detectorIndex){
-            QCPGraph* tempGraph = getGraph(detectorIndex, false);
-            if (tempGraph->dataCount() <= 0)
-                continue;
+        // double x_max = getGraph((detectorId-1)/(DET_NUM/2)*(DET_NUM/2)+1, false)->data()->at(0)->key;
+        // for (int detectorIndex = (detectorId-1)/(DET_NUM/2)*(DET_NUM/2)+1; detectorIndex <= (detectorId-1)/(DET_NUM/2)*(DET_NUM/2)+(DET_NUM/2); ++detectorIndex){
+        //     QCPGraph* tempGraph = getGraph(detectorIndex, false);
+        //     if (tempGraph->dataCount() <= 0)
+        //         continue;
 
-            x_max =  qMax(x_max, tempGraph->data()->at(tempGraph->dataCount() - 1)->key);
+        //     x_max =  qMax(x_max, tempGraph->data()->at(tempGraph->dataCount() - 1)->key);
+        // }
+        const int halfDetNum = DET_NUM / 2; // 提取常量，避免重复计算DET_NUM/2
+        // 1. 计算组起始索引（原代码中重复3次的部分）
+        int groupStart = ((detectorId - 1) / halfDetNum) * halfDetNum + 1;
+        // 2. 计算组结束索引（原代码中groupStart + halfDetNum，无需+1，因为循环是<=）
+        int groupEnd = groupStart + halfDetNum - 1;
+
+        // 3. 初始化x_max：取组内第一个探测器的第一个数据点的key
+        QCPGraph* firstGraph = getGraph(groupStart, false);
+        double x_max = (firstGraph && firstGraph->dataCount() > 0)
+                           ? firstGraph->data()->at(0)->key
+                           : 0.0; // 处理空数据的默认值
+
+        // 4. 遍历组内所有探测器，更新x_max
+        for (int detectorIndex = groupStart; detectorIndex <= groupEnd; ++detectorIndex) {
+            QCPGraph* tempGraph = getGraph(detectorIndex, false);
+            if (!tempGraph || tempGraph->dataCount() <= 0) {
+                continue; // 提前判断空指针或无数据，避免后续错误
+            }
+            // 获取该探测器的最后一个数据点的key
+            double lastKey = tempGraph->data()->at(tempGraph->dataCount() - 1)->key;
+            x_max = qMax(x_max, lastKey);
         }
         x_max = qMax(x_max, (double)WINDOW);
         double x_min = qMax(0.0, x_max - WINDOW);
@@ -2256,7 +2282,7 @@ void MainWindow::updateCountRateDisplay(int detectorId, double fpgaTime, double 
         double y_min = range.first;
         double y_max = range.second;
         // 统计总曲线Y轴最大、最小值范围
-        for (int detectorIndex = (detectorId-1)/12*12+1; detectorIndex <= (detectorId-1)/12*12+12; ++detectorIndex){
+        for (int detectorIndex = groupStart; detectorIndex <= groupEnd; ++detectorIndex) {
             DetectorData &data = m_detectorData[detectorIndex];
             auto range = calcRecentYRange(data.countRateHistory, WINDOW);
             y_min = qMin(y_min, range.first);
@@ -2674,9 +2700,9 @@ void MainWindow::stopMeasure()
 QCustomPlot* MainWindow::getCustomPlot(int detectorId, bool isSpectrum)
 {
     if (isSpectrum)
-        return this->findChild<QCustomPlot*>(QString("spectroMeter%1_bottom").arg(detectorId <= 12 ? 1 : 2));
+        return this->findChild<QCustomPlot*>(QString("spectroMeter%1_bottom").arg(detectorId <= (DET_NUM/2) ? 1 : 2));
     else
-        return this->findChild<QCustomPlot*>(QString("spectroMeter%1_top").arg(detectorId <= 12 ? 1 : 2));
+        return this->findChild<QCustomPlot*>(QString("spectroMeter%1_top").arg(detectorId <= (DET_NUM/2) ? 1 : 2));
 }
 
 QCPGraph* MainWindow::getGraph(int detectorId, bool isSpectrum)
@@ -2684,7 +2710,7 @@ QCPGraph* MainWindow::getGraph(int detectorId, bool isSpectrum)
     QCustomPlot *customPlot = getCustomPlot(detectorId, isSpectrum);
     if (!customPlot) nullptr;
 
-    return  customPlot->graph((detectorId-1) % 12);
+    return  customPlot->graph((detectorId-1) % (DET_NUM/2));
 }
 
 void MainWindow::on_checkBox_continueMeasure_toggled(bool toggled)

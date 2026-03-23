@@ -9,6 +9,9 @@
 CommHelper::CommHelper(QObject *parent)
     : QObject{parent}
 {
+    //屏蔽libhv日志输出
+    hlog_disable();
+
     /*初始化网络*/
     initSocket();
     initDataProcessor();
@@ -20,7 +23,38 @@ CommHelper::CommHelper(QObject *parent)
 
         auto it = this->mConnectionPeers.begin();
         while (it != this->mConnectionPeers.end()) {
+#if ENABLE_LIBHV
+            hv::SocketChannelPtr connection = *it;
+            // ip修改可能导致关联的探测器索引也发生改变，这里改为重新分配
+            qint8 index =  (qint8)(intptr_t)(connection->context());
+            if (index >= 1 && index <= DET_NUM){
+                DetParameter& detParameter = detParameters[index];
+
+                QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
+                QString peerAddress = QString::fromStdString(connection->peerip());
+                if (peerAddress != detectorAddress){
+                    DetParameter& detParameter = detParameters[index];
+                    QMetaObject::invokeMethod(this, "detectorOffline",
+                                              Qt::QueuedConnection,
+                                              Q_ARG(quint8, index));
+
+                    // 3. 取消数据处理器关联
+                    freeDataProcessor(connection);
+
+                    //qInfo().nospace() << "谱仪[#" << index << "]下线，已执行断开连接处理";
+                    connection->setContext((void*)(intptr_t)index);
+                    allocDataProcessor(connection);
+                    index =  (qint8)(intptr_t)(connection->context());
+                    QMetaObject::invokeMethod(this, "detectorOnline", Qt::QueuedConnection, Q_ARG(quint8, index));
+                }
+                else{
+                    // ip没做更改，只需要更新参数即可
+                    mDetectorDataProcessor[index]->updateSetting(detParameter);
+                }
+            }
+#else
             QTcpSocket* connection = *it;
+
             // ip修改可能导致关联的探测器索引也发生改变，这里改为重新分配
             if (connection->property("detectorIndex").isValid())
             {
@@ -49,6 +83,7 @@ CommHelper::CommHelper(QObject *parent)
                     mDetectorDataProcessor[index]->updateSetting(detParameter);
                 }
             }
+#endif //ENABLE_LIBHV
 
             ++it;
         }
@@ -71,6 +106,74 @@ CommHelper::~CommHelper()
 #include <mstcpip.h>    // 包含 TCP_KEEPALIVE 结构体定义
 void CommHelper::initSocket()
 {
+#if ENABLE_LIBHV
+    mTcpServer = new hv::TcpServer();
+    mTcpServer->setThreadNum(8);
+    mTcpServer->onConnection = [&](const hv::SocketChannelPtr& channel)
+    {
+        if (channel->isConnected()){// isOpened()){// ->status == hv::SocketChannel::CONNECTED){
+            QString peerAddress = QString::fromStdString(channel->peerip());
+            quint16 peerPort = channel->peerport();
+            qDebug().nospace() << "新客户端连接，地址：" << peerAddress << ", 端口：" << peerPort;
+            QMetaObject::invokeMethod(this, "connectPeerConnection",
+                                      Qt::QueuedConnection,
+                                      Q_ARG(QString, peerAddress),
+                                      Q_ARG(quint16, peerPort));
+
+            {
+                QMutexLocker locker(&mPeersMutex);
+                this->mConnectionPeers.push_back(channel);
+            }
+
+            //给新上线客户端分配数据处理器
+            qint8 index = allocDataProcessor(channel);
+            if (index < 0)
+            {
+                //connection->close();
+                //delete connection;
+                return;
+            }
+
+            channel->setContext((void*)(intptr_t)index);
+            QMetaObject::invokeMethod(this, "detectorOnline", Qt::QueuedConnection, Q_ARG(quint8, index));
+        }
+        else if (channel->isClosed()){//status == hv::SocketChannel::CLOSED){
+            QString peerAddress = QString::fromStdString(channel->peerip());
+            quint16 peerPort = channel->peerport();
+            qDebug().nospace() << "客户端断开连接，地址：" << peerAddress << ", 端口：" << peerPort;
+
+            //根据配置解析是哪一路探测器下线了
+            qint8 index = indexOfAddress(channel->id());// peerAddress, peerPort);
+            if (index >= 0)
+            {
+                handleDetectorDisconnection(index);
+            }
+            //移除连接列表
+            {
+                QMutexLocker locker(&mPeersMutex);
+                mConnectionPeers.removeOne(channel);
+            }
+
+            // 1. 触发 disconnectPeerConnection 信号
+            QMetaObject::invokeMethod(this, "disconnectPeerConnection",
+                                      Qt::QueuedConnection,
+                                      Q_ARG(QString, peerAddress),
+                                      Q_ARG(quint16, peerPort));
+        }
+        else {
+            return;
+        }
+    };
+
+    mTcpServer->onMessage = [&](const hv::SocketChannelPtr& channel, hv::Buffer* buf)
+    {
+        qint8 index =  (qint8)(intptr_t)(channel->context());
+        QByteArray binaryData = QByteArray::fromRawData((const char*)buf->data(), buf->size());
+
+        // 上报原始网络数据
+        mDetectorDataProcessor[index]->inputData(binaryData);
+    };
+#else
     this->mTcpServer = new TcpAgentServer();
     connect(this->mTcpServer, &TcpAgentServer::newConnection, this, [=](qintptr socketDescriptor){
         QTcpSocket* connection = new QTcpSocket(this);
@@ -154,6 +257,7 @@ void CommHelper::initSocket()
         connection->setProperty("detectorIndex", index);
         QMetaObject::invokeMethod(this, "detectorOnline", Qt::QueuedConnection, Q_ARG(quint8, index));
     });
+#endif //ENABLE_LIBHV
 }
 
 void CommHelper::initDataProcessor()
@@ -203,25 +307,25 @@ void CommHelper::initDataProcessor()
         connect(detectorDataProcessor, &DataProcessor::reportSpectrumData, this, [=](QByteArray& data){
             DataProcessor* processor = qobject_cast<DataProcessor*>(sender());
             {
-                if (!mDetectorFileProcessor.contains(processor->index())){
-                    QString filePath = QString("%1/%2/%3_%4_能谱.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(processor->index());
-                    mDetectorFileProcessor[processor->index()] = new QFile(filePath);
-                    mDetectorFileProcessor[processor->index()]->open(QIODevice::WriteOnly);
-                    mDataFileList.push_back(filePath);
+                // if (!mDetectorFileProcessor.contains(processor->index())){
+                //     QString filePath = QString("%1/%2/%3_%4_能谱.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(processor->index());
+                //     mDetectorFileProcessor[processor->index()] = new QFile(filePath);
+                //     mDetectorFileProcessor[processor->index()]->open(QIODevice::WriteOnly);
+                //     mDataFileList.push_back(filePath);
 
-                    // 初始化flush信息
-                    {
-                        QMutexLocker flushLocker(&mMutexFileFlush);
-                        mFileFlushInfo[processor->index()] = FileFlushInfo();
-                    }
+                //     // 初始化flush信息
+                //     {
+                //         QMutexLocker flushLocker(&mMutexFileFlush);
+                //         mFileFlushInfo[processor->index()] = FileFlushInfo();
+                //     }
 
-                    QFileInfo info(filePath);
-                    QString absolutePath = info.absoluteFilePath();
-                    qInfo().nospace() << "谱仪[#"<< processor->index() << "]创建存储文件：" << absolutePath;
+                //     QFileInfo info(filePath);
+                //     QString absolutePath = info.absoluteFilePath();
+                //     qInfo().nospace() << "谱仪[#"<< processor->index() << "]创建存储文件：" << absolutePath;
 
-                    filePath = QString("%1/%2/%3.H5").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime);
-                    HDF5Settings::instance()->createH5Spectrum(filePath);
-                }
+                //     filePath = QString("%1/%2/%3.H5").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime);
+                //     HDF5Settings::instance()->createH5Spectrum(filePath);
+                // }
 
                 if (mDetectorFileProcessor[processor->index()]->isOpen()){
                     qint64 bytesWritten = mDetectorFileProcessor[processor->index()]->write((const char *)data.constData(), data.size());
@@ -274,22 +378,22 @@ void CommHelper::initDataProcessor()
                 //     mTriggerTime = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
                 // }
 
-                if (!mDetectorFileProcessor.contains(processor->index())){
-                    QString filePath = QString("%1/%2/%3_%4_波形.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(processor->index());
-                    mDetectorFileProcessor[processor->index()] = new QFile(filePath);
-                    mDetectorFileProcessor[processor->index()]->open(QIODevice::WriteOnly | QIODevice::Append); //覆盖式写入
-                    mDataFileList.push_back(filePath);
+                // if (!mDetectorFileProcessor.contains(processor->index())){
+                //     QString filePath = QString("%1/%2/%3_%4_波形.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(processor->index());
+                //     mDetectorFileProcessor[processor->index()] = new QFile(filePath);
+                //     mDetectorFileProcessor[processor->index()]->open(QIODevice::WriteOnly | QIODevice::Append); //覆盖式写入
+                //     mDataFileList.push_back(filePath);
 
-                    // 初始化flush信息
-                    {
-                        QMutexLocker flushLocker(&mMutexFileFlush);
-                        mFileFlushInfo[processor->index()] = FileFlushInfo();
-                    }
+                //     // 初始化flush信息
+                //     {
+                //         QMutexLocker flushLocker(&mMutexFileFlush);
+                //         mFileFlushInfo[processor->index()] = FileFlushInfo();
+                //     }
 
-                    QFileInfo info(filePath);
-                    QString absolutePath = info.absoluteFilePath();
-                    qInfo().nospace() << "谱仪[#"<< processor->index() << "]创建存储文件：" << absolutePath;
-                }
+                //     QFileInfo info(filePath);
+                //     QString absolutePath = info.absoluteFilePath();
+                //     qInfo().nospace() << "谱仪[#"<< processor->index() << "]创建存储文件：" << absolutePath;
+                // }
 
                 if (mDetectorFileProcessor[processor->index()]->isOpen()){
                     qint64 bytesWritten = mDetectorFileProcessor[processor->index()]->write((const char *)data.constData(), data.size());
@@ -336,26 +440,26 @@ void CommHelper::initDataProcessor()
                 //     mTriggerTime = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
                 // }
 
-                if (!mDetectorFileProcessor.contains(processor->index())){
-                    QString filePath = QString("%1/%2/%3_%4_粒子.txt").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(processor->index());
-                    mDetectorFileProcessor[processor->index()] = new QFile(filePath);
-                    mDetectorFileProcessor[processor->index()]->open(QIODevice::WriteOnly | QIODevice::Append); //覆盖式写入
-                    mDataFileList.push_back(filePath);
-                    // 写入表头
-                    QString line = QString("测量时长(s),时间,ADC采样幅度,粒子类型\n");
-                    qint64 bytesWritten = mDetectorFileProcessor[processor->index()]->write((const char *)line.toUtf8());
-                    // 检查是否需要flush（每10秒或每1MB）
+                // if (!mDetectorFileProcessor.contains(processor->index())){
+                //     QString filePath = QString("%1/%2/%3_%4_粒子.txt").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(processor->index());
+                //     mDetectorFileProcessor[processor->index()] = new QFile(filePath);
+                //     mDetectorFileProcessor[processor->index()]->open(QIODevice::WriteOnly | QIODevice::Append); //覆盖式写入
+                //     mDataFileList.push_back(filePath);
+                //     // 写入表头
+                //     QString line = QString("测量时长(s),时间,ADC采样幅度,粒子类型\n");
+                //     qint64 bytesWritten = mDetectorFileProcessor[processor->index()]->write((const char *)line.toUtf8());
+                //     // 检查是否需要flush（每10秒或每1MB）
 
-                    // 初始化flush信息
-                    {
-                        QMutexLocker flushLocker(&mMutexFileFlush);
-                        mFileFlushInfo[processor->index()] = FileFlushInfo();
-                    }
+                //     // 初始化flush信息
+                //     {
+                //         QMutexLocker flushLocker(&mMutexFileFlush);
+                //         mFileFlushInfo[processor->index()] = FileFlushInfo();
+                //     }
 
-                    QFileInfo info(filePath);
-                    QString absolutePath = info.absoluteFilePath();
-                    qInfo().nospace() << "谱仪[#"<< processor->index() << "]创建存储文件：" << absolutePath;
-                }
+                //     QFileInfo info(filePath);
+                //     QString absolutePath = info.absoluteFilePath();
+                //     qInfo().nospace() << "谱仪[#"<< processor->index() << "]创建存储文件：" << absolutePath;
+                // }
             }
 
             data.remove(0, 6);//移除包头
@@ -459,6 +563,100 @@ quint8 CommHelper::indexOfPort(int index)
     return 0x00;
 }
 
+#if ENABLE_LIBHV
+qint8 CommHelper::allocDataProcessor(const hv::SocketChannelPtr& socket)
+{
+    mExtendTimeSynModule.reload();
+    QString peerAddress = QString::fromStdString(socket->peerip());
+    quint32 peerPort = socket->peerport();
+    if (peerAddress == mExtendTimeSynModule.ip){
+        //时钟同步模块不分配数据处理器
+        mDetectorDataProcessor[0]->reallocSocket(socket);
+        return 0;
+    }
+
+    if (socket->context() != nullptr)
+    {
+        qint8 index =  (qint8)(intptr_t)(socket->context());// channel->property("detectorIndex").isValid();
+        if (index >= 1 && index <= DET_NUM){
+            HDF5Settings *settings = HDF5Settings::instance();
+            QMap<quint8, DetParameter>& detParameters = settings->detParameters();
+            DetParameter& detParameter = detParameters[index];
+            mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
+            socket->setContext((void*)(intptr_t)index);
+            return index;
+        }
+    }
+
+    HDF5Settings *settings = HDF5Settings::instance();
+    QMap<quint8, DetParameter>& detParameters = settings->detParameters();
+
+    // IP+PORT匹配
+    {
+        for (int index = 1; index <= DET_NUM; ++index){
+            DetParameter& detParameter = detParameters[index];
+            QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
+            if (detectorAddress == QString("%1:%2").arg(peerAddress).arg(peerPort)){
+                mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
+                socket->setContext((void*)(intptr_t)index);
+                return index;
+            }
+        }
+    }
+
+    // IP匹配
+    {
+        for (int index = 1; index <= DET_NUM; ++index){
+            DetParameter& detParameter = detParameters[index];
+            QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
+            if (detectorAddress == peerAddress){
+                mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
+                socket->setContext((void*)(intptr_t)index);
+                return index;
+            }
+        }
+    }
+
+    //重新分配空闲的数据处理器
+    for (int index = 1; index <= DET_NUM; ++index){
+        if (mDetectorDataProcessor[index]->isFreeSocket()){
+            DetParameter& detParameter = detParameters[index];
+            qstrcpy(detParameter.det_Ip_port, peerAddress.toStdString().c_str());
+            settings->sync();
+            mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
+            socket->setContext((void*)(intptr_t)index);
+            return index;
+        }
+    }
+
+    return -1;
+}
+
+void CommHelper::freeDataProcessor(const hv::SocketChannelPtr& socket)
+{
+    quint8 index = indexOfAddress(socket->id());
+    if (index <= 0)
+        return;
+
+    HDF5Settings *settings = HDF5Settings::instance();
+    QMap<quint8, DetParameter>& detParameters = settings->detParameters();
+    DetParameter& detParameter = detParameters[index];
+    mDetectorDataProcessor[index]->reallocSocket(nullptr, detParameter);
+}
+
+qint8 CommHelper::indexOfAddress(const uint32_t socketDescriptor/*QString peerAddress, quint16 peerPort*/)
+{
+    for (const auto& iter : this->mConnectionPeers)
+    {
+        if (iter->id() != socketDescriptor)
+            continue;
+
+        return (qint8)(intptr_t)(iter->context());
+    }
+
+    return -1;
+}
+#else
 qint8 CommHelper::allocDataProcessor(QTcpSocket *socket)
 {
     mExtendTimeSynModule.reload();
@@ -540,6 +738,21 @@ void CommHelper::freeDataProcessor(QTcpSocket *socket)
     DetParameter& detParameter = detParameters[index];
     mDetectorDataProcessor[index]->reallocSocket(nullptr, detParameter);
 }
+
+qint8 CommHelper::indexOfAddress(qintptr socketDescriptor/*QString peerAddress, quint16 peerPort*/)
+{
+    for (const auto& iter : this->mConnectionPeers)
+    {
+        if (iter->socketDescriptor() != socketDescriptor)
+            continue;
+
+        return iter->property("detectorIndex").toInt();
+    }
+
+    return -1;
+}
+#endif //ENABLE_LIBHV
+
 /*
  打开交换机POE口输出电源
 */
@@ -619,38 +832,46 @@ bool CommHelper::startServer()
             return false;
     }
 
+#if ENABLE_LIBHV
+    initSocket();
+    int ret = this->mTcpServer->createsocket(settings.value("Local/ServerPort", 6000).toUInt(), settings.value("Local/ServerIp", "0.0.0.0").toString().toStdString().c_str());
+    if (ret >= 0 ){
+        this->mTcpServer->start();
+        return true;
+    }
+    else{
+        stopServer();
+        return false;
+    }
+#else
     return this->mTcpServer->listen(QHostAddress(settings.value("Local/ServerIp", "0.0.0.0").toString()), settings.value("Local/ServerPort", 6000).toUInt());
+#endif //ENABLE_LIBHV
 }
 /*
  断开网络
 */
 void CommHelper::stopServer()
 {
+#if ENABLE_LIBHV
+    this->mTcpServer->stop();
+    delete mTcpServer;
+    mTcpServer = nullptr;
+#else
     this->mTcpServer->close();
     for (auto it = mConnectionPeers.rbegin(); it != mConnectionPeers.rend(); ++it) {
         QTcpSocket* connection = *it;
         emit connection->disconnected();
     }
-
-
-    // for (auto connection : mConnectionPeers){
-    //     emit connection->disconnected();
-
-    //     // quint8 index = connection->property("detectorIndex").toInt();
-    //     // handleDetectorDisconnection(index);
-    //     //connection->close();
-    //     //connection->deleteLater();
-    //     //connection = nullptr;
-    // }
-    //mConnectionPeers.clear();
-
-    //QThread::msleep(1000);//睡眠等待进入析构睡眠
-    //this->mTcpServer->close();
+#endif //ENABLE_LIBHV
 }
 
 bool CommHelper::isOpen()
 {
+#if ENABLE_LIBHV
+    return this->mTcpServer->listenfd >= 0;
+#else
     return this->mTcpServer->isListening();
+#endif //ENABLE_LIBHV
 }
 
 void CommHelper::connectSwitcher(bool query)
@@ -773,13 +994,14 @@ void CommHelper::setShotInformation(const QString shotDir, const QString shotNum
  */
 void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode measureMode, CommandAdapter::WorkMode workMode, quint8 index/* = 0*/)
 {
-    mWaveAllData.clear();
-    mMeasureStartTime.clear();
-    mDataFileList.clear();
-
     mMeasureStartTime = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
 
     if (index == 0){
+        mDataFileList.clear();
+        QString filePath = QString("%1/%2/%3.H5").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime);
+        HDF5Settings::instance()->closeH5Spectrum();
+        HDF5Settings::instance()->createH5Spectrum(filePath);
+
         for (index = 1; index <= DET_NUM; ++index){
             if (mDetectorFileProcessor.contains(index)){
                 if (mDetectorFileProcessor[index]->isOpen()){
@@ -796,12 +1018,35 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
 
             DataProcessor* detectorDataProcessor = mDetectorDataProcessor[index];
             if (!detectorDataProcessor->isFreeSocket()){
-                //初始化网络数据文件存储
-                if (!mNetRawFileProcessor.contains(index)){
-                    QString filePath = QString("%1/%2/%3_%4_Net.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(index);
-                    mNetRawFileProcessor[index] = new QFile(filePath);
-                    mNetRawFileProcessor[index]->open(QIODevice::WriteOnly | QIODevice::Append); //覆盖式写入
-                    mDataFileList.push_back(filePath);
+                //创建网口数据文件存储
+                // if (!mNetRawFileProcessor.contains(index)){
+                //     QString filePath = QString("%1/%2/%3_%4_Net.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(index);
+                //     mNetRawFileProcessor[index] = new QFile(filePath);
+                //     mNetRawFileProcessor[index]->open(QIODevice::WriteOnly | QIODevice::Append); //覆盖式写入
+                //     mDataFileList.push_back(filePath);
+
+                //     // 初始化flush信息
+                //     {
+                //         QMutexLocker flushLocker(&mMutexFileFlush);
+                //         mFileFlushInfo[index] = FileFlushInfo();
+                //     }
+
+                //     QFileInfo info(filePath);
+                //     QString absolutePath = info.absoluteFilePath();
+                //     qDebug().nospace() << "谱仪[#"<< index << "]创建存储文件：" << absolutePath;
+                // }
+                
+                //创建有效网络数据文件存储
+                if (!mDetectorFileProcessor.contains(index)){
+                    QString filePath = QString("%1/%2/%3_%4_能谱.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(index);
+                    if (CommandAdapter::WorkMode::wmWaveform == workMode)
+                        filePath = QString("%1/%2/%3_%4_波形.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(index);
+                    else if (CommandAdapter::WorkMode::wmParticle == workMode)
+                        filePath = QString("%1/%2/%3_%4_粒子.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(index);
+
+                    mDetectorFileProcessor[index] = new QFile(filePath);
+                    if (mDetectorFileProcessor[index]->open(QIODevice::WriteOnly))
+                        mDataFileList.push_back(filePath);
 
                     // 初始化flush信息
                     {
@@ -813,7 +1058,6 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
                     QString absolutePath = info.absoluteFilePath();
                     qInfo().nospace() << "谱仪[#"<< index << "]创建存储文件：" << absolutePath;
                 }
-                
 
                 if (measureMode == CommandAdapter::MeasureMode::mmManual)
                     detectorDataProcessor->startMeasure(workMode);
@@ -822,8 +1066,6 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
                 emit measureStart(index);
             }
         }
-
-        HDF5Settings::instance()->closeH5Spectrum();
     }
     else if (index >= 1 && index <= DET_NUM){
         if (mDetectorFileProcessor.contains(index)){
@@ -842,6 +1084,47 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
 
         DataProcessor* detectorDataProcessor = mDetectorDataProcessor[index];
         if (!detectorDataProcessor->isFreeSocket()){
+            //创建网口数据文件存储
+            // if (!mNetRawFileProcessor.contains(index)){
+            //     QString filePath = QString("%1/%2/%3_%4_Net.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(index);
+            //     mNetRawFileProcessor[index] = new QFile(filePath);
+            //     mNetRawFileProcessor[index]->open(QIODevice::WriteOnly | QIODevice::Append); //覆盖式写入
+            //     mDataFileList.push_back(filePath);
+
+            //     // 初始化flush信息
+            //     {
+            //         QMutexLocker flushLocker(&mMutexFileFlush);
+            //         mFileFlushInfo[index] = FileFlushInfo();
+            //     }
+
+            //     QFileInfo info(filePath);
+            //     QString absolutePath = info.absoluteFilePath();
+            //     qDebug().nospace() << "谱仪[#"<< index << "]创建存储文件：" << absolutePath;
+            // }
+
+            //创建有效网络数据文件存储
+            if (!mDetectorFileProcessor.contains(index)){
+                QString filePath = QString("%1/%2/%3_%4_能谱.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(index);
+                if (CommandAdapter::WorkMode::wmWaveform == workMode)
+                    filePath = QString("%1/%2/%3_%4_波形.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(index);
+                else if (CommandAdapter::WorkMode::wmParticle == workMode)
+                    filePath = QString("%1/%2/%3_%4_粒子.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(index);
+
+                mDetectorFileProcessor[index] = new QFile(filePath);
+                if (mDetectorFileProcessor[index]->open(QIODevice::WriteOnly))
+                    mDataFileList.push_back(filePath);
+
+                // 初始化flush信息
+                {
+                    QMutexLocker flushLocker(&mMutexFileFlush);
+                    mFileFlushInfo[index] = FileFlushInfo();
+                }
+
+                QFileInfo info(filePath);
+                QString absolutePath = info.absoluteFilePath();
+                qInfo().nospace() << "谱仪[#"<< index << "]创建存储文件：" << absolutePath;
+            }
+
             if (measureMode == CommandAdapter::MeasureMode::mmManual)
                 detectorDataProcessor->startMeasure(workMode);
             else
@@ -914,8 +1197,7 @@ void CommHelper::stopMeasure(quint8 index/* = 0*/)
                 emit measureStop(index);
             }
 
-            if (mDetectorFileProcessor.contains(index)){
-                
+            if (mDetectorFileProcessor.contains(index)){                
                 //延迟关闭文件，确保尾包数据能够正常存储
                 if (mDetectorFileProcessor.contains(index)){
                     QFile* file = mDetectorFileProcessor[index];
@@ -1012,8 +1294,6 @@ bool CommHelper::openHistoryWaveFile(const QString &filePath)
 {
     QFile file(filePath);
     if (file.open(QIODevice::ReadWrite)){
-        mWaveAllData.clear();
-
         QVector<quint16> rawWaveData;
         QMap<quint8, QVector<quint16>> realCurve;// 4路通道实测曲线数据
         if (filePath.endsWith(".dat")){                        
@@ -1087,19 +1367,6 @@ bool CommHelper::exportFile(QString dstPath)
     return true;
 }
 
-qint8 CommHelper::indexOfAddress(qintptr socketDescriptor/*QString peerAddress, quint16 peerPort*/)
-{
-    for (const auto& iter : this->mConnectionPeers)
-    {
-        if (iter->socketDescriptor() != socketDescriptor)
-            continue;
-
-        return iter->property("detectorIndex").toInt();
-    }
-
-    return -1;
-}
-
 
 void CommHelper::handleDetectorDisconnection(quint8 index)
 {
@@ -1108,8 +1375,13 @@ void CommHelper::handleDetectorDisconnection(quint8 index)
     // 在 mConnectionPeers 中查找对应的连接
     auto it = mConnectionPeers.begin();
     while (it != mConnectionPeers.end()) {
+#if ENABLE_LIBHV
+        hv::SocketChannelPtr connection = *it;
+        quint8 detectorIndex = (quint8)(intptr_t)connection->context();
+#else
         QTcpSocket* connection = *it;
         quint8 detectorIndex = connection->property("detectorIndex").toUInt();
+#endif //ENABLE_LIBHV
         if (index != detectorIndex) {
             ++it;
             continue;

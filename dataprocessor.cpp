@@ -38,8 +38,11 @@ DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
         mDataProcessThread->wait(500);
     });
 
+#if ENABLE_LIBHV
+#else
     if (mTcpSocket)
         connect(mTcpSocket, SIGNAL(readyRead()), this, SLOT(readyRead()));
+#endif //ENABLE_LIBHV
 
     mTempTimeoutTimer.setSingleShot(true);
     connect(&mTempTimeoutTimer, &QTimer::timeout, this, [this](){
@@ -76,6 +79,25 @@ void DataProcessor::reallocIndex(quint8 index)
     mIndex = index;
 }
 
+#if ENABLE_LIBHV
+void DataProcessor::reallocSocket(const hv::SocketChannelPtr& tcpSocket)
+{
+    mTcpSocket = tcpSocket;
+}
+
+void DataProcessor::reallocSocket(const hv::SocketChannelPtr& tcpSocket, DetParameter& detParameter)
+{
+    mTcpSocket = tcpSocket;
+    if (mTcpSocket){
+        // 关联端口，自动修改配置地址信息，方便打开探测器设计页面，就知道关联的是哪个ip地址
+        QString peerAddress = QString::fromStdString(tcpSocket->peerip());
+        memset(detParameter.det_Ip_port, 0, IP_LENGTH);
+        strcpy(detParameter.det_Ip_port, peerAddress.toStdString().c_str());
+        HDF5Settings::instance()->sync();
+        updateSetting(detParameter);
+    }
+}
+#else
 void DataProcessor::reallocSocket(QTcpSocket *tcpSocket)
 {
     QMutexLocker locker(&mSocketLocker);
@@ -109,6 +131,7 @@ void DataProcessor::reallocSocket(QTcpSocket *tcpSocket, DetParameter& detParame
         updateSetting(detParameter);
     }
 }
+#endif //ENABLE_LIBHV
 
 void DataProcessor::updateSetting(DetParameter& detParameter, bool isRead/* = false*/)
 {
@@ -164,6 +187,7 @@ void DataProcessor::startMeasure(CommandAdapter::WorkMode workMode)
     mCurrentSpec.clear();
     mCurrentSpec.resize(8192);
     mFullSpectrums.clear();
+    mLastSpectrumSeq = 0;
 
     if (m_parseData) {
         delete m_parseData;
@@ -216,6 +240,7 @@ void DataProcessor::startAutoMeasure(QDateTime tmStart, CommandAdapter::WorkMode
     mCurrentSpec.clear();
     mCurrentSpec.resize(8192);
     mFullSpectrums.clear();
+    mLastSpectrumSeq = 0;
 
     if (m_parseData) {
         delete m_parseData;
@@ -280,6 +305,17 @@ void DataProcessor::stopMeasure()
 
 void DataProcessor::sendCmdToSocket(CommandItem cmdItem) const
 {
+#if ENABLE_LIBHV
+    if (mTcpSocket->isOpened()){
+        mTcpSocket->write(cmdItem.data.constData(), cmdItem.data.size());
+        ::QThread::msleep(5);// 每条指令发送完成暂停5毫秒
+
+        qDebug().noquote()<< QString("[%1]Send HEX: %2 [%3]")
+                                  .arg(mIndex)
+                                  .arg(QString(cmdItem.data.toHex(' ')))
+                                  .arg(cmdItem.name);
+    }
+#else
     if (mTcpSocket && mTcpSocket->isOpen()){
         mTcpSocket->write(cmdItem.data);
         mTcpSocket->waitForBytesWritten();
@@ -290,6 +326,7 @@ void DataProcessor::sendCmdToSocket(CommandItem cmdItem) const
                                   .arg(QString(cmdItem.data.toHex(' ')))
                                   .arg(cmdItem.name);
     }
+#endif //ENABLE_LIBHV
 }
 
 void DataProcessor::readyRead()
@@ -317,7 +354,7 @@ void DataProcessor::readyRead()
 void DataProcessor::inputData(const QByteArray& data)
 {
     {
-        QMutexLocker locker(&mDataLocker);
+         QMutexLocker locker(&mDataLocker);
         if (!mIsMeasuring)  // 进入正式测量之前，每秒钟会有一个温度数据上传过来，不打印
         {
             // qDebug().noquote()<< "[" << mIndex << "] "<< "Recv HEX[" << data.size() << "]: " << data.toHex(' ');
@@ -361,15 +398,21 @@ void DataProcessor::inputSpectrumData(quint8 no, QByteArray& data){
         QMutexLocker locker(&mDataLocker); // 保护 mFullSpectrums 共享资源
 
         // 使用 find 方法检查是否存在，避免重复插入
-        // 使用 find 方法检查是否存在，避免重复插入
         auto it = mFullSpectrums.find(spectrumSeq);
         if (it == mFullSpectrums.end()) {
             // 不存在，创建新能谱并插入
             FullSpectrum newSpectrum = {}; // 初始化所有成员为默认值（0/false/空）
             newSpectrum.sequence = spectrumSeq;
             newSpectrum.isComplete = false;
-            // receivedPackets 默认为空集合，无需额外初始化
 
+            // 5. 提取元数据（测量时间、死时间）- 从当前子包提取（确保数据完整性）
+            const int kMetaDateMinLen = 18; // 测量时间(10-13) + 死时间(14-17)，需至少18字节
+            newSpectrum.timeUTCs = subSpecPackket.timeUTCs;
+            newSpectrum.timeUTCms = subSpecPackket.timeUTCms;
+            newSpectrum.measureTime = subSpecPackket.measureTime;
+            newSpectrum.deathTime = subSpecPackket.deathTime;
+
+            // receivedPackets 默认为空集合，无需额外初始化
             it = mFullSpectrums.insert(spectrumSeq, newSpectrum);
         }
         fullSpectrum = &(it.value());
@@ -397,11 +440,6 @@ void DataProcessor::inputSpectrumData(quint8 no, QByteArray& data){
             fullSpectrum->completeTime = QDateTime::currentDateTime();
 
             // 5. 提取元数据（测量时间、死时间）- 从当前子包提取（确保数据完整性）
-            const int kMetaDateMinLen = 18; // 测量时间(10-13) + 死时间(14-17)，需至少18字节
-            fullSpectrum->timeUTCs = subSpecPackket.timeUTCs;
-            fullSpectrum->timeUTCms = subSpecPackket.timeUTCms;
-            fullSpectrum->measureTime = subSpecPackket.measureTime;
-            fullSpectrum->deathTime = subSpecPackket.deathTime;
 
             // 6. 发送完整能谱信号（使用 QueuedConnection 避免线程阻塞）
             // 注意：QVector 拷贝完整数据，避免多线程访问冲突
@@ -427,6 +465,43 @@ void DataProcessor::inputSpectrumData(quint8 no, QByteArray& data){
 
             // 7. 清理已完成的能谱数据（释放内存，可选：若需保留历史数据可注释）
             mFullSpectrums.remove(spectrumSeq);
+            mLastSpectrumSeq = spectrumSeq;
+        }
+        else {
+            // 当前包序号跟上一次的包序号不一致
+            // if (mLastSpectrumSeq!=0 && spectrumSeq != mLastSpectrumSeq){
+            //     // 数据包不完整，存在丢包问题
+            //     FullSpectrum lastSpectrum = mFullSpectrums.take(mLastSpectrumSeq);
+            //     lastSpectrum.isComplete = true;
+            //     lastSpectrum.completeTime = QDateTime::currentDateTime();
+
+            //     // 5. 提取元数据（测量时间、死时间）- 从当前子包提取（确保数据完整性）
+
+            //     // 6. 发送完整能谱信号（使用 QueuedConnection 避免线程阻塞）
+            //     // 注意：QVector 拷贝完整数据，避免多线程访问冲突
+            //     for (int i = 0; i < 8192; ++i) {
+            //         mAccumulateSpec[i] += lastSpectrum.spectrum[i];
+            //     }
+            //     memcpy(mCurrentSpec.data(), lastSpectrum.spectrum, 8192*4);
+
+            //     // 发送完整的 FullSpectrum 数据到 MainWindow
+            //     FullSpectrum fullSpectrumCopy = lastSpectrum; // 拷贝数据，避免在锁外访问
+            //     emit reportFullSpectrum(mIndex, fullSpectrumCopy);
+
+            //     // H5能谱文件写入
+            //     H5Spectrum h5Spectrum = FullSpectoH5Spec(fullSpectrumCopy);
+            //     HDF5Settings::instance()->writeH5Spectrum(mIndex, h5Spectrum);
+
+            //     //if(spectrumSeq%1000 == 0){
+            //     // qDebug().nospace() << "谱仪[#" << mIndex << "]" << "Get a full spectrum, SpectrumID:" << spectrumSeq
+            //     //      << ", specMeasureTime(ms):" << fullSpectrum->measureTime
+            //     //      << ", deathTime(*10ns):" << fullSpectrum->deathTime;
+            //     //}
+            //     // m_parseData->mergeSpecTime_online(*fullSpectrum);
+
+            //     // 7. 清理已完成的能谱数据（释放内存，可选：若需保留历史数据可注释）
+            //     mFullSpectrums.remove(mLastSpectrumSeq);
+            // }
         }
     }
 }
@@ -467,9 +542,12 @@ bool DataProcessor::extractSpectrumData(const QByteArray& packetData, SubSpectru
 bool DataProcessor::sendOTAUpgradeData(const QByteArray& data)
 {
     if (mTcpSocket){
-        //qDebug() << "Send OTA: " << data.toHex(' ');
+#if ENABLE_LIBHV
+        mTcpSocket->write(data.constData(), data.size());
+#else
         mTcpSocket->write(data);
         mTcpSocket->waitForBytesWritten();
+#endif //ENABLE_LIBHV
         return true;
     }
     else

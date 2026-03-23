@@ -12,7 +12,6 @@
 #include <QMutex>
 #include <QWaitCondition>
 #include <QtEndian>
-#include <QTcpSocket>
 #include <QFile>
 #include <QDateTime>
 
@@ -20,6 +19,13 @@
 #include "commandadapter.h"
 #include "globalsettings.h"
 #include "parsedata.h"
+
+#if ENABLE_LIBHV
+#include <hv/TcpServer.h>
+#include <hv/htime.h>
+#else
+#include <QTcpSocket>
+#endif
 
 class DataProcessor : public CommandAdapter
 {
@@ -31,8 +37,13 @@ public:
     virtual void sendCmdToSocket(CommandItem cmdItem) const override;
 
     void reallocIndex(quint8 index);//重新分配通道索引
+#if ENABLE_LIBHV
+    void reallocSocket(const hv::SocketChannelPtr& tcpSocket);
+    void reallocSocket(const hv::SocketChannelPtr& tcpSocket, DetParameter& detParameter);
+#else
     void reallocSocket(QTcpSocket *tcpSocket);
     void reallocSocket(QTcpSocket *tcpSocket, DetParameter& detParameter);
+#endif //ENABLE_LIBHV
     bool isFreeSocket();//是否关联Socket
 
     /*
@@ -86,7 +97,11 @@ signals:
     void reportOTAUpgradeData(const QByteArray& data); // 上报OTA升级数据
 
 private:
+#if ENABLE_LIBHV
+    hv::SocketChannelPtr mTcpSocket;
+#else
     QTcpSocket *mTcpSocket = nullptr;
+#endif  //ENABLE_LIBHV
     QFile* mNetFile = nullptr;
 
     QByteArray mRawData; // 存储网络原始数据
@@ -104,6 +119,8 @@ private:
     // 新增成员变量
     QMutex mSpectrumLocker;
     QHash<quint32, FullSpectrum> mFullSpectrums; // 按能谱序号存储拼接中的能谱
+    quint32 mLastSpectrumSeq = 0;
+    FullSpectrum mLastFullSpectrum; // 保存上一个全能谱，做缺包补偿用
     QVector<quint32> mAccumulateSpec;
     QVector<quint32> mCurrentSpec;
     ParseData* m_parseData;

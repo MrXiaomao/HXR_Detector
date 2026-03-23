@@ -180,3 +180,15 @@ INCLUDEPATH += $$PWD/../3rdParty/eigen-5.0.0
 # PRECOMPILED_HEADER += stable.h
 
 LIBS += -lws2_32
+
+# 启用libhv网络库
+DEFINES += ENABLE_LIBHV=1
+win32 {
+    # libhv
+    contains(DEFINES, ENABLE_LIBHV=1) {
+        message("Including libhv library")
+        INCLUDEPATH += $$PWD/../3rdParty/libhv/include
+        LIBS += -L$$PWD/../3rdParty/libhv/lib -lhv
+        LIBS += -lws2_32
+    }
+}

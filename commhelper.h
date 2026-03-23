@@ -9,9 +9,15 @@
 #include <QWaitCondition>
 #include <QTimer>
 #include <QEventLoop>
-#include "TcpAgentServer.h"
 #include "dataprocessor.h"
 #include "qhuaweiswitcherhelper.h"
+
+#if ENABLE_LIBHV
+#include <hv/TcpServer.h>
+#include <hv/htime.h>
+#else
+#include "TcpAgentServer.h"
+#endif
 
 class CommHelper : public QObject
 {
@@ -192,9 +198,14 @@ private:
     // 处理探测器断开连接的统一逻辑
     void handleDetectorDisconnection(quint8 index);
 
-    TcpAgentServer *mTcpServer = nullptr;//本地服务器
     QMutex mPeersMutex;
+#if ENABLE_LIBHV
+    hv::TcpServer *mTcpServer; // libhv服务器实例
+    QVector<hv::SocketChannelPtr> mConnectionPeers; //客户端连接表
+#else
+    TcpAgentServer *mTcpServer = nullptr;//本地服务器
     QVector<QTcpSocket*> mConnectionPeers; //客户端连接表
+#endif //ENABLE_LIBHV
 
     quint8 mHuaWeiSwitcherCount = 0;
     QList<QHuaWeiSwitcherHelper *> mHuaWeiSwitcherHelper;
@@ -207,7 +218,6 @@ private:
     QMap<quint8, DataProcessor*> mDetectorDataProcessor;//24路探测器数据处理器
     QMap<quint8, QFile*> mDetectorFileProcessor;//24路探测器有效数据文件存储句柄
     QMap<quint8, QFile*> mNetRawFileProcessor;  //24路探测器原始数据文件存储句柄
-    QMap<quint8, QVector<quint16>> mWaveAllData;
     QString mResMatrixFileName;
 
     //记录手动关闭POE供电的探测器ID
@@ -237,13 +247,21 @@ private:
     /*
      分配数据处理器
     */
+#if ENABLE_LIBHV
+    qint8 allocDataProcessor(const hv::SocketChannelPtr& socket);
+    void freeDataProcessor(const hv::SocketChannelPtr& socket);
+    /*
+     根据IP和端口号，解析探测器编号
+    */
+    qint8 indexOfAddress(const uint32_t socketDescriptor/*QString, quint16*/);
+#else
     qint8 allocDataProcessor(QTcpSocket *socket);
     void freeDataProcessor(QTcpSocket *socket);
-
     /*
      根据IP和端口号，解析探测器编号
     */
     qint8 indexOfAddress(qintptr socketDescriptor/*QString, quint16*/);
+#endif //ENABLE_LIBHV
 };
 
 #endif // COMMHELPER_H
