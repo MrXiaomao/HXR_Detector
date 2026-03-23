@@ -353,6 +353,21 @@ void DataProcessor::readyRead()
 
 void DataProcessor::inputData(const QByteArray& data)
 {
+#if ENABLE_LIBHV
+    if (mNetFile)
+    {
+        mNetFile->write(data);
+        mNetFile->flush();
+    }
+
+    // 上报原始网络数据
+    if (mIsUpgrading)
+        emit reportOTAUpgradeData(data);
+    else
+        emit reportRawNetData(data);
+#else
+#endif //ENABLE_LIBHV
+
     {
          QMutexLocker locker(&mDataLocker);
         if (!mIsMeasuring)  // 进入正式测量之前，每秒钟会有一个温度数据上传过来，不打印

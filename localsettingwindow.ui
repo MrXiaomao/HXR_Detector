@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>本地设置</string>
+   <string>本地配置</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
@@ -410,14 +410,14 @@
       <item>
        <widget class="QPushButton" name="pushButton_ok">
         <property name="text">
-         <string>确定(&amp;O)</string>
+         <string>保存参数</string>
         </property>
        </widget>
       </item>
       <item>
        <widget class="QPushButton" name="pushButton_cancel">
         <property name="text">
-         <string>取消(&amp;C)</string>
+         <string>退出</string>
         </property>
        </widget>
       </item>

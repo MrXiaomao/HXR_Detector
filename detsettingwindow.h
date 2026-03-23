@@ -132,6 +132,7 @@ public:
 
 public:
     virtual bool eventFilter(QObject *watched, QEvent *event) override;
+    virtual void showEvent(QShowEvent *event) override;
 
 private slots:
     void on_pushButton_save_clicked();

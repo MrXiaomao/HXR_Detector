@@ -716,3 +716,9 @@ void DetSettingWindow::on_tableWidget_itemChanged(QTableWidgetItem *item)
         item->setText("0");
     }
 }
+
+void DetSettingWindow::showEvent(QShowEvent */*event*/)
+{
+    ui->pushButton_read->setEnabled(!mCommhelper->isMeasuring());
+    ui->pushButton_save->setEnabled(!mCommhelper->isMeasuring());
+}

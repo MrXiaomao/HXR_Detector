@@ -72,6 +72,8 @@ LocalSettingWindow::LocalSettingWindow(QWidget *parent)
 {
     ui->setupUi(this);
 
+    commHelper = CommHelper::instance();
+
     //获取本机IP地址列表
     //获取主机名称
     QString HostName = QHostInfo::localHostName();
@@ -163,7 +165,6 @@ LocalSettingWindow::LocalSettingWindow(QWidget *parent)
 
     // 时钟同步模块
     {
-        CommHelper *commHelper = CommHelper::instance();
         commHelper->mExtendTimeSynModule.reload();
 
         ui->radioButton->blockSignals(true);
@@ -187,7 +188,7 @@ LocalSettingWindow::LocalSettingWindow(QWidget *parent)
             item->setCheckState(Qt::Checked);
             item->setData(Qt::UserRole, false);
             //item->setBackgroundColor(Qt::red);
-        }
+        }        
     }
 
     QButtonGroup *grp = new QButtonGroup(this);
@@ -238,6 +239,7 @@ LocalSettingWindow::LocalSettingWindow(QWidget *parent)
     ui->lineEdit_switcherIp_1->installEventFilter(this);
     ui->lineEdit_switcherIp_2->installEventFilter(this);
     ui->lineEdit_switcherIp_3->installEventFilter(this);
+    ui->pushButton_ok->setEnabled(!commHelper->isOpen());
 }
 
 LocalSettingWindow::~LocalSettingWindow()
@@ -282,6 +284,9 @@ bool LocalSettingWindow::eventFilter(QObject *watched, QEvent *event) {
 
 void LocalSettingWindow::updateData()
 {
+    if (commHelper->isOpen())
+        return ;
+
     if (!ui->checkBox->isChecked()){
         ui->checkBox_2->setChecked(false);
     }

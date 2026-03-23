@@ -242,7 +242,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
         } else {
             ui->statusbar->showMessage(message);
         }
-    });
+    }, Qt::QueuedConnection);
 
     QTimer::singleShot(0, this, [&](){
         qGoodStateHolder->setCurrentThemeDark(mIsDarkTheme);
@@ -1471,7 +1471,18 @@ void MainWindow::on_action_startMeasure_triggered()
     }
 
     mAutoMeasureDelayActive = ui->com_triggerModel->currentIndex() == 0;
-    mAutoMeasureDelayTimer->start();
+    if (mAutoMeasureDelayActive)
+    {
+        ui->lineEdit_triggerflag->setText("已经触发");
+
+        mAutoMeasureDelayTimer->stop();
+
+        // 直接开始测量
+        this->startMeasure();
+    }
+    else{
+        mAutoMeasureDelayTimer->start();
+    }
 }
 
 //单通道测量，单独测量某个通道
@@ -1652,7 +1663,6 @@ void MainWindow::on_pushButton_startMeasure_clicked()
     }
 
     // 测量中禁用参数配置
-    mDetSettingWindow->setEnabled(false);
     ui->pushButton_stopMeasure->setEnabled(true);
     ui->action_startMeasure->setEnabled(false);
     ui->action_stopMeasure->setEnabled(false);
@@ -1722,8 +1732,6 @@ void MainWindow::on_pushButton_stopMeasure_clicked()
 
     if (m_selectedChannels.empty()){
         // 非测量中可用参数配置
-        mDetSettingWindow->setEnabled(true);
-
         ui->action_startMeasure->setEnabled(true);
         ui->action_stopMeasure->setEnabled(false);
 
@@ -1734,10 +1742,6 @@ void MainWindow::on_pushButton_stopMeasure_clicked()
 
     ui->pushButton_startMeasure->setEnabled(true);
     ui->pushButton_stopMeasure->setEnabled(false);
-
-    // 非测量中可用参数配置
-    mDetSettingWindow->setEnabled(true);
-
     ui->action_startMeasure->setEnabled(true);
     ui->action_stopMeasure->setEnabled(false);
 }
@@ -1841,7 +1845,6 @@ void MainWindow::onMeasureCountdownTimeout()
         //清空探测器正在测量记录
         mDetectorMeasuring.clear();
 
-        mDetSettingWindow->setEnabled(true);
         ui->action_startMeasure->setEnabled(true);
         ui->action_stopMeasure->setEnabled(false);
         ui->pushButton_startMeasure->setEnabled(true);
@@ -2305,10 +2308,6 @@ void MainWindow::on_action_localService_triggered()
     w->setWindowFlags(Qt::WindowCloseButtonHint|Qt::Dialog);
     w->setWindowModality(Qt::ApplicationModal);
     w->showNormal();
-    if (commHelper->isOpen())
-    {
-        w->setEnabled(false);
-    }
 }
 
 QString MainWindow::formatTimeString(int totalSeconds)
@@ -2657,7 +2656,6 @@ void MainWindow::startMeasure()
         commHelper->startMeasure(tmStart, measureMode, CommandAdapter::WorkMode::wmSpectrum);
 
     // 测量中禁用参数配置
-    mDetSettingWindow->setEnabled(false);
     //ui->cb_calibration->setEnabled(false);
 }
 
@@ -2693,7 +2691,6 @@ void MainWindow::stopMeasure()
     mDetectorMeasuring.clear();
 
     // 非测量中可用参数配置
-    mDetSettingWindow->setEnabled(true);
     //ui->cb_calibration->setEnabled(true);
 }
 

@@ -168,10 +168,23 @@ void CommHelper::initSocket()
     mTcpServer->onMessage = [&](const hv::SocketChannelPtr& channel, hv::Buffer* buf)
     {
         qint8 index =  (qint8)(intptr_t)(channel->context());
-        QByteArray binaryData = QByteArray::fromRawData((const char*)buf->data(), buf->size());
+        QByteArray data = QByteArray::fromRawData((const char*)buf->data(), buf->size());
 
         // 上报原始网络数据
-        mDetectorDataProcessor[index]->inputData(binaryData);
+        if (mDetectorDataProcessor[index]->isUpgrading())
+            emit reportOTAUpgradeData(index, data);
+        else{
+            /*
+                保存网口数据
+            */
+            if (mNetRawFileProcessor.contains(index) && mNetRawFileProcessor[index]->isOpen()){
+                qint64 bytesWritten = mNetRawFileProcessor[index]->write((const char *)data.constData(), data.size());
+                // 实时flush，确保数据都存下来了
+                mNetRawFileProcessor[index]->flush();
+            }
+        }
+
+        mDetectorDataProcessor[index]->inputData(data);
     };
 #else
     this->mTcpServer = new TcpAgentServer();
@@ -853,9 +866,12 @@ bool CommHelper::startServer()
 void CommHelper::stopServer()
 {
 #if ENABLE_LIBHV
-    this->mTcpServer->stop();
-    delete mTcpServer;
-    mTcpServer = nullptr;
+    if (this->mTcpServer)
+    {
+        this->mTcpServer->stop();
+        delete mTcpServer;
+        mTcpServer = nullptr;
+    }
 #else
     this->mTcpServer->close();
     for (auto it = mConnectionPeers.rbegin(); it != mConnectionPeers.rend(); ++it) {
@@ -995,6 +1011,7 @@ void CommHelper::setShotInformation(const QString shotDir, const QString shotNum
 void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode measureMode, CommandAdapter::WorkMode workMode, quint8 index/* = 0*/)
 {
     mMeasureStartTime = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
+    mMeasuring = true;
 
     if (index == 0){
         mDataFileList.clear();
@@ -1236,6 +1253,7 @@ void CommHelper::stopMeasure(quint8 index/* = 0*/)
             }
         }
 
+        mMeasuring = false;
         HDF5Settings::instance()->closeH5Spectrum();
     }
     else if (index >= 1 && index <= DET_NUM){ //关闭单个通道
@@ -1282,12 +1300,18 @@ void CommHelper::stopMeasure(quint8 index/* = 0*/)
 
             //关闭能谱文件
             if (mNetRawFileProcessor.isEmpty()){
+                mMeasuring = false;
                 HDF5Settings::instance()->closeH5Spectrum();
             }
         }
     }
 }
 
+
+bool CommHelper::isMeasuring() const
+{
+    return mMeasuring;
+}
 
 /*解析历史文件*/
 bool CommHelper::openHistoryWaveFile(const QString &filePath)

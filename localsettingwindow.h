@@ -2,6 +2,7 @@
 #define LOCALSETTINGWINDOW_H
 
 #include <QWidget>
+#include "commhelper.h"
 
 namespace Ui {
 class LocalSettingWindow;
@@ -28,6 +29,7 @@ private slots:
 
 private:
     Ui::LocalSettingWindow *ui;
+    CommHelper *commHelper = nullptr;
 
     bool mSwitcher2Enabled = false;
     bool mSwitcher3Enabled = false;

@@ -89,6 +89,8 @@ public:
     */
     void stopMeasure(quint8 index = 0);
 
+    bool isMeasuring() const;
+
     /*
      设置发次信息
     */
@@ -214,6 +216,7 @@ private:
 
     // QMutex mMutexTriggerTime;
     QString mMeasureStartTime;//测量开始时刻
+    bool mMeasuring = false; // 是否正在测量
 
     QMap<quint8, DataProcessor*> mDetectorDataProcessor;//24路探测器数据处理器
     QMap<quint8, QFile*> mDetectorFileProcessor;//24路探测器有效数据文件存储句柄
