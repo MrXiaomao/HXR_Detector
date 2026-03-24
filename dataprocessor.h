@@ -74,6 +74,7 @@ public:
     void startOTAUpgrade(){mIsUpgrading = true;}
     void endOTAUpgrade(){mIsUpgrading = false;};
     bool sendOTAUpgradeData(const QByteArray& data);
+    bool isUpgrading() const{return mIsUpgrading;}
 
 public slots:
     void readyRead();

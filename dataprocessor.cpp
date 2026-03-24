@@ -89,6 +89,31 @@ void DataProcessor::reallocSocket(const hv::SocketChannelPtr& tcpSocket, DetPara
 {
     mTcpSocket = tcpSocket;
     if (mTcpSocket){
+        tcpSocket->onread = [=](hv::Buffer* buf){
+            QByteArray rawData = QByteArray::fromRawData((const char*)buf->data(), buf->size());
+            if (mNetFile)
+            {
+                mNetFile->write(rawData);
+                mNetFile->flush();
+            }
+
+            // 上报原始网络数据
+            if (mIsUpgrading)
+                emit reportOTAUpgradeData(rawData);
+            else
+                emit reportRawNetData(rawData);
+
+            this->inputData(rawData);
+        };
+
+        tcpSocket->onwrite = [=](hv::Buffer* buf) {
+            if (tcpSocket->isWriteComplete()) {
+                // 所有数据已发送完成，执行后续逻辑（如关闭连接、发送下一批数据）
+            } else {
+                // 部分数据未发送，等待下一次回调
+            }
+        };
+
         // 关联端口，自动修改配置地址信息，方便打开探测器设计页面，就知道关联的是哪个ip地址
         QString peerAddress = QString::fromStdString(tcpSocket->peerip());
         memset(detParameter.det_Ip_port, 0, IP_LENGTH);
@@ -353,20 +378,20 @@ void DataProcessor::readyRead()
 
 void DataProcessor::inputData(const QByteArray& data)
 {
-#if ENABLE_LIBHV
-    if (mNetFile)
-    {
-        mNetFile->write(data);
-        mNetFile->flush();
-    }
+// #if ENABLE_LIBHV
+//     if (mNetFile)
+//     {
+//         mNetFile->write(data);
+//         mNetFile->flush();
+//     }
 
-    // 上报原始网络数据
-    if (mIsUpgrading)
-        emit reportOTAUpgradeData(data);
-    else
-        emit reportRawNetData(data);
-#else
-#endif //ENABLE_LIBHV
+//     // 上报原始网络数据
+//     if (mIsUpgrading)
+//         emit reportOTAUpgradeData(data);
+//     else
+//         emit reportRawNetData(data);
+// #else
+// #endif //ENABLE_LIBHV
 
     {
          QMutexLocker locker(&mDataLocker);

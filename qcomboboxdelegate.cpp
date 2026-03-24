@@ -21,6 +21,7 @@ QWidget *QComboBoxDelegate::createEditor(QWidget *parent, const QStyleOptionView
     // 创建自己需要的控件进行返回
     QComboBox *editor = new QComboBox(parent);
     editor->setEditable(true);
+
     QLineEdit *ip_port_edit = editor->lineEdit();
 
     // 设置 IP:Port 正则验证器
@@ -36,7 +37,10 @@ QWidget *QComboBoxDelegate::createEditor(QWidget *parent, const QStyleOptionView
 void QComboBoxDelegate::setEditorData(QWidget *editor, const QModelIndex &index) const {
     // 将参数editor转换为对应创建的控件，再进行数据初始设置就行
     QComboBox *comboBox = static_cast<QComboBox *>(editor);
-    comboBox->addItems(mComboBoxItems);
+    // 对下拉列表项进行排序（升序）
+    QStringList sortedItems = mComboBoxItems;
+    sortedItems.sort();  // 核心排序代码
+    comboBox->addItems(sortedItems);
     comboBox->setCurrentText(index.data(Qt::EditRole).toString());
 }
 

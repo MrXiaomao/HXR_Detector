@@ -186,6 +186,7 @@ void CommHelper::initSocket()
 
         mDetectorDataProcessor[index]->inputData(data);
     };
+
 #else
     this->mTcpServer = new TcpAgentServer();
     connect(this->mTcpServer, &TcpAgentServer::newConnection, this, [=](qintptr socketDescriptor){
@@ -884,7 +885,10 @@ void CommHelper::stopServer()
 bool CommHelper::isOpen()
 {
 #if ENABLE_LIBHV
-    return this->mTcpServer->listenfd >= 0;
+    if (this->mTcpServer)
+        return this->mTcpServer->listenfd >= 0;
+    else
+        return false;
 #else
     return this->mTcpServer->isListening();
 #endif //ENABLE_LIBHV
