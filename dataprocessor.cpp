@@ -46,12 +46,14 @@ DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
 
     mTempTimeoutTimer.setSingleShot(true);
     connect(&mTempTimeoutTimer, &QTimer::timeout, this, [this](){
-        qWarning().noquote() << tr("超过%1秒未收到温度数据，触发报警！").arg(mTempTimeoutTimer.interval() / 1000);
-        reportTemperatureTimeout();
+        qWarning().noquote().nospace() << tr("谱仪[#%1]超过%2秒未收到温度数据，触发报警！").arg(mIndex).arg(mTempTimeoutTimer.interval() / 1000);
+
+        // 给CommHelper模块上报温度超时报警
+        emit reportTemperatureTimeout();
     });
 
     // 温度刷新，重启心跳定时器
-    connect(this, &DataProcessor::reportTemperatureTimeout, this, [this](){
+    connect(this, &DataProcessor::reportTemperatureData, this, [this](){
         restartTempTimeout();
     });
 }
@@ -80,12 +82,7 @@ void DataProcessor::reallocIndex(quint8 index)
 }
 
 #if ENABLE_LIBHV
-void DataProcessor::reallocSocket(const hv::SocketChannelPtr& tcpSocket)
-{
-    mTcpSocket = tcpSocket;
-}
-
-void DataProcessor::reallocSocket(const hv::SocketChannelPtr& tcpSocket, DetParameter& detParameter)
+void DataProcessor::reallocSocket(const hv::SocketChannelPtr& tcpSocket, DetParameter* detParameter)
 {
     mTcpSocket = tcpSocket;
     if (mTcpSocket){
@@ -115,29 +112,21 @@ void DataProcessor::reallocSocket(const hv::SocketChannelPtr& tcpSocket, DetPara
         };
 
         // 关联端口，自动修改配置地址信息，方便打开探测器设计页面，就知道关联的是哪个ip地址
-        QString peerAddress = QString::fromStdString(tcpSocket->peerip());
-        memset(detParameter.det_Ip_port, 0, IP_LENGTH);
-        strcpy(detParameter.det_Ip_port, peerAddress.toStdString().c_str());
-        HDF5Settings::instance()->sync();
-        updateSetting(detParameter);
+        if (detParameter){
+            QString peerAddress = QString::fromStdString(tcpSocket->peerip());
+            memset(detParameter->det_Ip_port, 0, IP_LENGTH);
+            strcpy(detParameter->det_Ip_port, peerAddress.toStdString().c_str());
+            HDF5Settings::instance()->sync();
+            updateSetting(detParameter);
+        }
+
+        // 启动温度超时检测
+        restartTempTimeout();
     }
 }
 #else
-void DataProcessor::reallocSocket(QTcpSocket *tcpSocket)
-{
-    QMutexLocker locker(&mSocketLocker);
-    if (mTcpSocket){
-        disconnect(mTcpSocket, SIGNAL(readyRead()), this, SLOT(readyRead()));
-    }
-
-    mTcpSocket = tcpSocket;
-    if (mTcpSocket){
-        connect(mTcpSocket, SIGNAL(readyRead()), this, SLOT(readyRead()));
-    }
-}
-
 #include <QHostAddress>
-void DataProcessor::reallocSocket(QTcpSocket *tcpSocket, DetParameter& detParameter)
+void DataProcessor::reallocSocket(QTcpSocket *tcpSocket, DetParameter* detParameter)
 {
     QMutexLocker locker(&mSocketLocker);
     if (mTcpSocket){
@@ -148,17 +137,19 @@ void DataProcessor::reallocSocket(QTcpSocket *tcpSocket, DetParameter& detParame
     if (mTcpSocket){
         connect(mTcpSocket, SIGNAL(readyRead()), this, SLOT(readyRead()));
 
-        // 关联端口，自动修改配置地址信息，方便打开探测器设计页面，就知道关联的是哪个ip地址
-        QString peerAddress = tcpSocket->peerAddress().toString();
-        memset(detParameter.det_Ip_port, 0, IP_LENGTH);
-        strcpy(detParameter.det_Ip_port, peerAddress.toStdString().c_str());
-        HDF5Settings::instance()->sync();
-        updateSetting(detParameter);
+        if (detParameter){
+            // 关联端口，自动修改配置地址信息，方便打开探测器设计页面，就知道关联的是哪个ip地址
+            QString peerAddress = tcpSocket->peerAddress().toString();
+            memset(detParameter->det_Ip_port, 0, IP_LENGTH);
+            strcpy(detParameter->det_Ip_port, peerAddress.toStdString().c_str());
+            HDF5Settings::instance()->sync();
+            updateSetting(detParameter);
+        }
     }
 }
 #endif //ENABLE_LIBHV
 
-void DataProcessor::updateSetting(DetParameter& detParameter, bool isRead/* = false*/)
+void DataProcessor::updateSetting(DetParameter* detParameter, bool isRead/* = false*/)
 {
     // 设置基本参数
     {
@@ -166,32 +157,32 @@ void DataProcessor::updateSetting(DetParameter& detParameter, bool isRead/* = fa
         this->clear();
 
         //#01 增益=1|0|1|1234000FFA1000000000ABCD
-        this->sendGain(isRead, detParameter.gain);
+        this->sendGain(isRead, detParameter->gain);
         //#02 死时间=1|0|3|1234000FFA1100000000ABCD
-        this->sendDeathTime(isRead, detParameter.deathTime);
+        this->sendDeathTime(isRead, detParameter->deathTime);
         //#03 触发阈值=1|0|5|1234000FFA1200000000ABCD
-        this->sendTriggerThold(isRead, detParameter.triggerThold);
+        this->sendTriggerThold(isRead, detParameter->triggerThold);
         //#04 触发模式=1|0|7|1234000FFC1000000003ABCD
-        this->sendWaveformMode(isRead, (TriggerMode)detParameter.waveformTriggerMode, detParameter.waveformLength);
+        this->sendWaveformMode(isRead, (TriggerMode)detParameter->waveformTriggerMode, detParameter->waveformLength);
         //#05 能谱刷新时间=1|0|9|1234000FFD1000000000ABCD
-        this->sendSprectnumRefreshTimelength(isRead, detParameter.spectrumRefreshTime);
+        this->sendSprectnumRefreshTimelength(isRead, detParameter->spectrumRefreshTime);
 
-        if (detParameter.trapShapeEnable || isRead){
+        if (detParameter->trapShapeEnable || isRead){
             //#07 梯形成型常数=1|0|13|1234000FFE1000000000ABCD
-            this->sendTrapTimeConst(isRead, detParameter.trapShapeTimeConstD1, detParameter.trapShapeTimeConstD2);
+            this->sendTrapTimeConst(isRead, detParameter->trapShapeTimeConstD1, detParameter->trapShapeTimeConstD2);
             //#08 上升沿参数=1|0|15|1234000FFE1100000000ABCD
-            this->sendRisePeakFallPoints(isRead, detParameter.trapShapeRisePoint, detParameter.trapShapePeakPoint, detParameter.trapShapeFallPoint);
+            this->sendRisePeakFallPoints(isRead, detParameter->trapShapeRisePoint, detParameter->trapShapePeakPoint, detParameter->trapShapeFallPoint);
         }
 
         //#09 梯形成型使能=1|0|17|1234000FFE1200000000ABCD
-        this->sendTrapShapeEnable(isRead, (TrapShapeEnable)detParameter.trapShapeEnable);
+        this->sendTrapShapeEnable(isRead, (TrapShapeEnable)detParameter->trapShapeEnable);
         
         //#10 高压输出电平=1|0|21|1234000FF91100000000ABCD,暂时不再使用，后续直接FPGA程序内部写死，不再界面可调。
-        if (detParameter.highVoltageEnable || isRead)
-            this->sendHighVolgateOutLevel(isRead, detParameter.highVoltageOutLevel);
+        if (detParameter->highVoltageEnable || isRead)
+            this->sendHighVolgateOutLevel(isRead, detParameter->highVoltageOutLevel);
 
         //#11 高压电平使能=1|0|19|1234000FF91000000000ABCD
-        this->sendHighVolgateOutLevelEnable(isRead, (HighVolgateOutLevelEnable)detParameter.highVoltageEnable);
+        this->sendHighVolgateOutLevelEnable(isRead, (HighVolgateOutLevelEnable)detParameter->highVoltageEnable);
 
         //通知发送指令
         this->notifySendNextCmd();
@@ -409,9 +400,12 @@ void DataProcessor::inputData(const QByteArray& data)
 
 
 void DataProcessor::restartTempTimeout() {
-    //心跳超时时间应该是一个全局信息，不需要单独存放，暂时采用通道1的心跳时间进行存储。
+    // 如果是模拟器发数据，这里直接return即可！！！
+
     //从HDF5加载配置信息
     HDF5Settings *settings = HDF5Settings::instance();
+    if (mTempTimeoutTimer.isActive())
+        mTempTimeoutTimer.stop();
     mTempTimeoutTimer.start(settings->pluseTime()*1000);
 }
 

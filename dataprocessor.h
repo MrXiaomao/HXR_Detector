@@ -38,8 +38,8 @@ public:
 
     void reallocIndex(quint8 index);//重新分配通道索引
 #if ENABLE_LIBHV
-    void reallocSocket(const hv::SocketChannelPtr& tcpSocket);
-    void reallocSocket(const hv::SocketChannelPtr& tcpSocket, DetParameter& detParameter);
+    //void reallocSocket(const hv::SocketChannelPtr& tcpSocket);
+    void reallocSocket(const hv::SocketChannelPtr& tcpSocket, DetParameter* detParameter = nullptr);
 #else
     void reallocSocket(QTcpSocket *tcpSocket);
     void reallocSocket(QTcpSocket *tcpSocket, DetParameter& detParameter);
@@ -67,7 +67,7 @@ public:
         return this->mIndex;
     };
 
-    void updateSetting(DetParameter& detParameter, bool isRead = false);
+    void updateSetting(DetParameter* detParameter, bool isRead = false);
 
     bool extractSpectrumData(const QByteArray& packetData, SubSpectrumPacket& subSpec);
 

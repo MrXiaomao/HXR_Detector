@@ -49,7 +49,7 @@ CommHelper::CommHelper(QObject *parent)
                 }
                 else{
                     // ip没做更改，只需要更新参数即可
-                    mDetectorDataProcessor[index]->updateSetting(detParameter);
+                    mDetectorDataProcessor[index]->updateSetting(&detParameter);
                 }
             }
 #else
@@ -112,6 +112,8 @@ void CommHelper::initSocket()
     mTcpServer->onConnection = [&](const hv::SocketChannelPtr& channel)
     {
         if (channel->isConnected()){// isOpened()){// ->status == hv::SocketChannel::CONNECTED){
+            channel->setKeepaliveTimeout(3000);// 3000ms没有数据交互就断开
+
             QString peerAddress = QString::fromStdString(channel->peerip());
             quint16 peerPort = channel->peerport();
             qDebug().nospace() << "新客户端连接，地址：" << peerAddress << ", 端口：" << peerPort;
@@ -165,27 +167,28 @@ void CommHelper::initSocket()
         }
     };
 
-    mTcpServer->onMessage = [&](const hv::SocketChannelPtr& channel, hv::Buffer* buf)
-    {
-        qint8 index =  (qint8)(intptr_t)(channel->context());
-        QByteArray data = QByteArray::fromRawData((const char*)buf->data(), buf->size());
+    // 以下代码，改到DataProcessor::reallocSocket里面去是实现了
+    // mTcpServer->onMessage = [&](const hv::SocketChannelPtr& channel, hv::Buffer* buf)
+    // {
+    //     qint8 index =  (qint8)(intptr_t)(channel->context());
+    //     QByteArray data = QByteArray::fromRawData((const char*)buf->data(), buf->size());
 
-        // 上报原始网络数据
-        if (mDetectorDataProcessor[index]->isUpgrading())
-            emit reportOTAUpgradeData(index, data);
-        else{
-            /*
-                保存网口数据
-            */
-            if (mNetRawFileProcessor.contains(index) && mNetRawFileProcessor[index]->isOpen()){
-                qint64 bytesWritten = mNetRawFileProcessor[index]->write((const char *)data.constData(), data.size());
-                // 实时flush，确保数据都存下来了
-                mNetRawFileProcessor[index]->flush();
-            }
-        }
+    //     // 上报原始网络数据
+    //     if (mDetectorDataProcessor[index]->isUpgrading())
+    //         emit reportOTAUpgradeData(index, data);
+    //     else{
+    //         /*
+    //             保存网口数据
+    //         */
+    //         if (mNetRawFileProcessor.contains(index) && mNetRawFileProcessor[index]->isOpen()){
+    //             qint64 bytesWritten = mNetRawFileProcessor[index]->write((const char *)data.constData(), data.size());
+    //             // 实时flush，确保数据都存下来了
+    //             mNetRawFileProcessor[index]->flush();
+    //         }
+    //     }
 
-        mDetectorDataProcessor[index]->inputData(data);
-    };
+    //     mDetectorDataProcessor[index]->inputData(data);
+    // };
 
 #else
     this->mTcpServer = new TcpAgentServer();
@@ -596,7 +599,7 @@ qint8 CommHelper::allocDataProcessor(const hv::SocketChannelPtr& socket)
             HDF5Settings *settings = HDF5Settings::instance();
             QMap<quint8, DetParameter>& detParameters = settings->detParameters();
             DetParameter& detParameter = detParameters[index];
-            mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
+            mDetectorDataProcessor[index]->reallocSocket(socket, &detParameter);
             socket->setContext((void*)(intptr_t)index);
             return index;
         }
@@ -611,7 +614,7 @@ qint8 CommHelper::allocDataProcessor(const hv::SocketChannelPtr& socket)
             DetParameter& detParameter = detParameters[index];
             QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
             if (detectorAddress == QString("%1:%2").arg(peerAddress).arg(peerPort)){
-                mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
+                mDetectorDataProcessor[index]->reallocSocket(socket, &detParameter);
                 socket->setContext((void*)(intptr_t)index);
                 return index;
             }
@@ -624,7 +627,7 @@ qint8 CommHelper::allocDataProcessor(const hv::SocketChannelPtr& socket)
             DetParameter& detParameter = detParameters[index];
             QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
             if (detectorAddress == peerAddress){
-                mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
+                mDetectorDataProcessor[index]->reallocSocket(socket, &detParameter);
                 socket->setContext((void*)(intptr_t)index);
                 return index;
             }
@@ -637,7 +640,7 @@ qint8 CommHelper::allocDataProcessor(const hv::SocketChannelPtr& socket)
             DetParameter& detParameter = detParameters[index];
             qstrcpy(detParameter.det_Ip_port, peerAddress.toStdString().c_str());
             settings->sync();
-            mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
+            mDetectorDataProcessor[index]->reallocSocket(socket, &detParameter);
             socket->setContext((void*)(intptr_t)index);
             return index;
         }
@@ -655,7 +658,7 @@ void CommHelper::freeDataProcessor(const hv::SocketChannelPtr& socket)
     HDF5Settings *settings = HDF5Settings::instance();
     QMap<quint8, DetParameter>& detParameters = settings->detParameters();
     DetParameter& detParameter = detParameters[index];
-    mDetectorDataProcessor[index]->reallocSocket(nullptr, detParameter);
+    mDetectorDataProcessor[index]->reallocSocket(nullptr);
 }
 
 qint8 CommHelper::indexOfAddress(const uint32_t socketDescriptor/*QString peerAddress, quint16 peerPort*/)
@@ -1439,7 +1442,7 @@ bool CommHelper::readParamters(quint8 detIndex)
     DataProcessor* detectorDataProcessor = mDetectorDataProcessor[detIndex];
     if (!detectorDataProcessor->isFreeSocket()){
         DetParameter detParameter;
-        detectorDataProcessor->updateSetting(detParameter, true);
+        detectorDataProcessor->updateSetting(&detParameter, true);
         return true;
     }
     else{
