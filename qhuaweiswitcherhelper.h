@@ -16,6 +16,8 @@
 
 #if USE_QTELNET
 class QTelnet;
+#elif ENABLE_LIBHV
+#include <hv/TcpClient.h>
 #else
 class QTcpSocket;
 #endif
@@ -96,6 +98,8 @@ signals:
 private:
 #if USE_QTELNET
     QTelnet *mTelnet = nullptr;//华为交换机控制POE电源
+#elif ENABLE_LIBHV
+    hv::TcpClient *mTelnet = nullptr;//华为交换机控制POE电源
 #else
     QTcpSocket *mTelnet = nullptr;//华为交换机控制POE电源
 #endif

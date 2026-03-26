@@ -14,6 +14,8 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
 {
 #if USE_QTELNET
     mTelnet = new QTelnet(QTelnet::TCP, this);
+#elif ENABLE_LIBHV
+    mTelnet = new hv::TcpClient();
 #else
     mTelnet = new QTelnet(this);
 #endif
@@ -29,8 +31,25 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
 #if USE_QTELNET
     connect(mTelnet, &QTelnet::socketReadyRead,this,[=](const char *data, int size){
         QByteArray rx_current(data, size);
-        qDebug() << "STR1:" << rx_current;// << "HEX:"  << rx_current.toHex(' ');
         mRespondString.append(rx_current);
+#elif ENABLE_LIBHV
+    mTelnet->onMessage = [&](const hv::SocketChannelPtr& channel, hv::Buffer* buf){
+        QByteArray rx_current = QByteArray::fromRawData((const char*)buf->data(), buf->size());
+        QByteArray dest;
+        for (int i=0; i<rx_current.size(); ++i){
+            // 保留：英文字母、数字、空格、回车、常见符号
+            if (isalpha(rx_current[i]) || isdigit((uint8_t)rx_current[i]) ||
+                (uint8_t)rx_current[i] == ' ' || (uint8_t)rx_current[i] == '\r' || (uint8_t)rx_current[i] == '\n' ||
+                ((uint8_t)rx_current[i] >= 33 && (uint8_t)rx_current[i] <= 47) ||  // !"#$%&'()*+,-./
+                ((uint8_t)rx_current[i] >= 58 && (uint8_t)rx_current[i] <= 64) ||  // :;<=>?@
+                ((uint8_t)rx_current[i] >= 91 && (uint8_t)rx_current[i] <= 96) ||  // [\]^_`
+                ((uint8_t)rx_current[i] >= 123 && (uint8_t)rx_current[i] <= 126)) { // {|}~
+                dest.push_back(rx_current[i]);
+            }
+        }
+
+        //mRespondString.append(rx_current);
+        mRespondString.append(dest);
 #else
     connect(mTelnet, &QTcpSocket::readyRead,this,[=](){
         QByteArray rx_current = mTelnet->readAll();
@@ -86,6 +105,8 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
                     QString cmd = "quit\r\n"; // 退出会话
 #if USE_QTELNET
                     mTelnet->sendData(cmd.toStdString().c_str(), cmd.size());
+#elif ENABLE_LIBHV
+                    mTelnet->channel->write(cmd.toStdString().c_str(), cmd.size());
 #else
                     mTelnet->write(cmd.toLatin1());
 #endif
@@ -100,7 +121,11 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
             if (mLogoutStep == 2) {
                 QTimer::singleShot(100, this, [=](){
                     if (mTelnet)
+#if ENABLE_LIBHV
+                        mTelnet->closesocket();
+#else
                         mTelnet->disconnectFromHost();
+#endif
                 });
 
                 mIsLoggingOut = false;
@@ -124,6 +149,8 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
             QString data = "N\r\n";
 #if USE_QTELNET
             mTelnet->sendData(data.toStdString().c_str(), data.size());
+#elif ENABLE_LIBHV
+            mTelnet->channel->write(data.toStdString().c_str(), data.size());
 #else
             mTelnet->write(data.toLatin1());
 #endif
@@ -138,6 +165,8 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
             QString data = "root@12345\r\n";
 #if USE_QTELNET
             mTelnet->sendData(data.toStdString().c_str(), data.size());
+#elif ENABLE_LIBHV
+            mTelnet->channel->write(data.toStdString().c_str(), data.size());
 #else
             mTelnet->write(data.toLatin1());
 #endif
@@ -149,6 +178,8 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
             QString data = "\r\n";
 #if USE_QTELNET
             mTelnet->sendData(data.toStdString().c_str(), data.size());
+#elif ENABLE_LIBHV
+            mTelnet->channel->write(data.toStdString().c_str(), data.size());
 #else
             mTelnet->write(data.toLatin1());
 #endif
@@ -159,6 +190,8 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
             QString data = "Y\r\n";
 #if USE_QTELNET
             mTelnet->sendData(data.toStdString().c_str(), data.size());
+#elif ENABLE_LIBHV
+            mTelnet->channel->write(data.toStdString().c_str(), data.size());
 #else
             mTelnet->write(data.toLatin1());
 #endif
@@ -169,6 +202,8 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
             QString data = "root\r\n";
 #if USE_QTELNET
             mTelnet->sendData(data.toStdString().c_str(), data.size());
+#elif ENABLE_LIBHV
+            mTelnet->channel->write(data.toStdString().c_str(), data.size());
 #else
             mTelnet->write(data.toLatin1());
 #endif
@@ -179,6 +214,8 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
             QString data = "root@12345\r\n";
 #if USE_QTELNET
             mTelnet->sendData(data.toStdString().c_str(), data.size());
+#elif ENABLE_LIBHV
+            mTelnet->channel->write(data.toStdString().c_str(), data.size());
 #else
             mTelnet->write(data.toLatin1());
 #endif
@@ -190,6 +227,8 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
             QString data = "system-view\r\n";
 #if USE_QTELNET
             mTelnet->sendData(data.toStdString().c_str(), data.size());
+#elif ENABLE_LIBHV
+            mTelnet->channel->write(data.toStdString().c_str(), data.size());
 #else
             mTelnet->write(data.toLatin1());
 #endif
@@ -213,6 +252,8 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
             QTimer::singleShot(0, this, [=](){                
 #if USE_QTELNET
                 mTelnet->sendData(mCurrentCommand.toStdString().c_str(), mCurrentCommand.size());
+#elif ENABLE_LIBHV
+                mTelnet->channel->write(mCurrentCommand.toStdString().c_str(), mCurrentCommand.size());
 #else
                 mTelnet->write(mCurrentCommand.toLatin1());
 #endif
@@ -285,9 +326,11 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
 
                     if (mBatchOn || mSingleOn){
                         QTimer::singleShot(0, this, [=](){
-                            mCurrentCommand = "poe enable\r\n";                            
+                            mCurrentCommand = "poe enable\r\n";
 #if USE_QTELNET
                             mTelnet->sendData(mCurrentCommand.toStdString().c_str(), mCurrentCommand.size());
+#elif ENABLE_LIBHV
+                            mTelnet->channel->write(mCurrentCommand.toStdString().c_str(), mCurrentCommand.size());
 #else
                             mTelnet->write(mCurrentCommand.toLatin1());
 #endif
@@ -295,9 +338,11 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
                     }
                     else if (mBatchOff || mSingleOff){
                         QTimer::singleShot(0, this, [=](){
-                            mCurrentCommand = "undo poe enable\r\n";                            
+                            mCurrentCommand = "undo poe enable\r\n";
 #if USE_QTELNET
                             mTelnet->sendData(mCurrentCommand.toStdString().c_str(), mCurrentCommand.size());
+#elif ENABLE_LIBHV
+                            mTelnet->channel->write(mCurrentCommand.toStdString().c_str(), mCurrentCommand.size());
 #else
                             mTelnet->write(mCurrentCommand.toLatin1());
 #endif
@@ -386,28 +431,46 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
             qInfo().nospace().noquote() << "交换机[" << mIp << "]会话失效，重新登录";
             emit switcherDisconnected(mIp);
         }
-
-        qDebug() << "STR2:===================" << mRespondString;
+#if ENABLE_LIBHV
+    };
+#else
     });
+#endif
 
+#if ENABLE_LIBHV
+    mTelnet->onConnection = [&](const hv::SocketChannelPtr& channel){
+        if (channel->isConnected()){
+            emit switcherConnected(mIp);
+        }
+        else if (channel->isClosed()){
+            mSwitcherIsLoginOk = false;
+            mSwitcherInSystemView = false;
+            stopHeartbeatCheck();  // 停止心跳检测
+            qDebug().nospace().noquote() << "交换机[" << mIp << "]连接失败";
+            emit switcherDisconnected(mIp);
+        }
+    };
+#else
 #if USE_QTELNET
     connect(mTelnet, &QTelnet::error, this, [=](QAbstractSocket::SocketError socketError){
 #else
     connect(mTelnet, &QTelnet::errorOccurred, this, [=](QAbstractSocket::SocketError socketError){
-#endif
         mSwitcherIsLoginOk = false;
         mSwitcherInSystemView = false;
         stopHeartbeatCheck();  // 停止心跳检测
         qDebug().nospace().noquote() << "交换机[" << mIp << "]连接错误，错误码：" << socketError;
         emit switcherDisconnected(mIp);
     });
-    
+#endif //USE_QTELNET
+#endif //ENABLE_LIBHV
+
     // 监听连接状态变化，在断开时停止心跳检测
+#if ENABLE_LIBHV
+#else
 #if USE_QTELNET
     connect(mTelnet, &QTelnet::stateChanged, this, [=](QAbstractSocket::SocketState socketState){
 #else
     connect(mTelnet, &QTcpSocket::stateChanged, this, [=](QAbstractSocket::SocketState socketState){
-#endif
         if (socketState == QAbstractSocket::UnconnectedState) {
             stopHeartbeatCheck();
             qDebug().nospace().noquote() << "交换机[" << mIp << "]连接断开[QTelnet::stateChanged]";
@@ -418,7 +481,8 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
             startHeartbeatCheck();
         }
     });
-
+#endif //USE_QTELNET
+#endif //ENABLE_LIBHV
 }
 
 //判断谱仪编号是否存在
@@ -491,6 +555,11 @@ void QHuaWeiSwitcherHelper::queryPowerStatus()
     //开机仅查询POE供电
     mCurrentQueryPort = 1;
     mCurrentCommand = "display poe power-state interface GigabitEthernet0/0/1\r\n";
+#if ENABLE_LIBHV
+    mTelnet->closesocket();
+    if (mTelnet->createsocket(23, mIp.toStdString().c_str())>=0)
+        mTelnet->start();
+#else
     mTelnet->disconnectFromHost();
 #if USE_QTELNET
     mTelnet->setType(QTelnet::TCP);
@@ -506,6 +575,7 @@ void QHuaWeiSwitcherHelper::queryPowerStatus()
     {
         //emit switcherDisconnected(mIp);
     }
+#endif
 }
 
 void QHuaWeiSwitcherHelper::forceOpenPower()
@@ -520,14 +590,20 @@ void QHuaWeiSwitcherHelper::forceOpenPower()
     //开机仅查询POE供电
     mCurrentQueryPort = 1;
     mCurrentCommand = QString("interface GigabitEthernet 0/0/%1").arg(mCurrentQueryPort) + "\r\n";
+#if ENABLE_LIBHV
+    if (mTelnet->channel->isConnected())
+#else
 #if USE_QTELNET
     if (mTelnet->isConnected())
 #else
     if (mTelnet->state() == QAbstractSocket::ConnectedState)
-#endif
+#endif //USE_QTELNET
+#endif //ENABLE_LIBHV
     {
         restartHeartbeatCheck();
-#if USE_QTELNET
+#if ENABLE_LIBHV
+        mTelnet->channel->write(mCurrentCommand.toStdString().c_str(), mCurrentCommand.size());
+#elif USE_QTELNET
         mTelnet->sendData(mCurrentCommand.toStdString().c_str(), mCurrentCommand.size());
 #else
         mTelnet->write(mCurrentCommand.toLatin1());
@@ -535,6 +611,11 @@ void QHuaWeiSwitcherHelper::forceOpenPower()
     }
     else
     {
+#if ENABLE_LIBHV
+        mTelnet->closesocket();
+        if (mTelnet->createsocket(23, mIp.toStdString().c_str())>=0){
+            mTelnet->start();
+#else
         mTelnet->disconnectFromHost();
 #if USE_QTELNET
         mTelnet->setType(QTelnet::TCP);
@@ -543,8 +624,9 @@ void QHuaWeiSwitcherHelper::forceOpenPower()
         mTelnet->connectToHost(mIp, 23);
         mTelnet->waitForConnected(1000);
         if (mTelnet->state() == QAbstractSocket::ConnectedState){
-#endif
+#endif //USE_QTELNET
             emit switcherConnected(mIp);
+#endif //ENABLE_LIBHV
         }
         else
         {
@@ -561,7 +643,7 @@ void QHuaWeiSwitcherHelper::forceOpenPower()
 */
 bool QHuaWeiSwitcherHelper::openSwitcherPOEPower(quint8 port/* = 0*/)
 {
-#if USE_QTELNET
+#if (ENABLE_LIBHV || USE_QTELNET)
     if (nullptr == mTelnet || !mTelnet->isConnected() || !mSwitcherInSystemView)
 #else
     if (nullptr == mTelnet || !(mTelnet->state() == QAbstractSocket::ConnectedState) || !mSwitcherInSystemView)
@@ -582,7 +664,9 @@ bool QHuaWeiSwitcherHelper::openSwitcherPOEPower(quint8 port/* = 0*/)
         mCurrentQueryPort = port==0 ? 1 : port;
     }
     mCurrentCommand = QString("interface GigabitEthernet 0/0/%1").arg(mCurrentQueryPort) + "\r\n";
-#if USE_QTELNET
+#if ENABLE_LIBHV
+    mTelnet->channel->write(mCurrentCommand.toStdString().c_str(), mCurrentCommand.size());
+#elif USE_QTELNET
     mTelnet->sendData(mCurrentCommand.toStdString().c_str(), mCurrentCommand.size());
 #else
     mTelnet->write(mCurrentCommand.toLatin1());
@@ -602,7 +686,9 @@ void QHuaWeiSwitcherHelper::openNextSwitcherPOEPower()
     else
         mCurrentQueryPort = mMapAssociatedDetector[mQueryPosition];
     mCurrentCommand = QString("interface GigabitEthernet 0/0/%1").arg(mCurrentQueryPort) + "\r\n";
-#if USE_QTELNET
+#if ENABLE_LIBHV
+    mTelnet->channel->write(mCurrentCommand.toStdString().c_str(), mCurrentCommand.size());
+#elif USE_QTELNET
     mTelnet->sendData(mCurrentCommand.toStdString().c_str(), mCurrentCommand.size());
 #else
     mTelnet->write(mCurrentCommand.toLatin1());
@@ -622,7 +708,9 @@ void QHuaWeiSwitcherHelper::queryNextSwitcherPOEPower()
         mCurrentQueryPort = mMapAssociatedDetector[mQueryPosition];
     //mCurrentQueryPort++;
     mCurrentCommand = QString("display poe power-state interface GigabitEthernet0/0/%1").arg(mCurrentQueryPort) + "\r\n";
-#if USE_QTELNET
+#if ENABLE_LIBHV
+    mTelnet->channel->write(mCurrentCommand.toStdString().c_str(), mCurrentCommand.size());
+#elif USE_QTELNET
     mTelnet->sendData(mCurrentCommand.toStdString().c_str(), mCurrentCommand.size());
 #else
     mTelnet->write(mCurrentCommand.toLatin1());
@@ -634,7 +722,7 @@ void QHuaWeiSwitcherHelper::queryNextSwitcherPOEPower()
 */
 bool QHuaWeiSwitcherHelper::closeSwitcherPOEPower(quint8 port/* = 0*/, bool disconnect/* = false*/)
 {
-#if USE_QTELNET
+#if (ENABLE_LIBHV || USE_QTELNET)
     if (nullptr == mTelnet || !mTelnet->isConnected() || !mSwitcherInSystemView)
 #else
     if (nullptr == mTelnet || !(mTelnet->state() == QAbstractSocket::ConnectedState) || !mSwitcherInSystemView)
@@ -656,7 +744,9 @@ bool QHuaWeiSwitcherHelper::closeSwitcherPOEPower(quint8 port/* = 0*/, bool disc
     }
     //mCurrentQueryPort = port==0 ? 1 : port;
     mCurrentCommand = QString("interface GigabitEthernet 0/0/%1").arg(mCurrentQueryPort) + "\r\n";
-#if USE_QTELNET
+#if ENABLE_LIBHV
+    mTelnet->channel->write(mCurrentCommand.toStdString().c_str(), mCurrentCommand.size());
+#elif USE_QTELNET
     mTelnet->sendData(mCurrentCommand.toStdString().c_str(), mCurrentCommand.size());
 #else
     mTelnet->write(mCurrentCommand.toLatin1());
@@ -672,7 +762,11 @@ void QHuaWeiSwitcherHelper::closeNextSwitcherPOEPower()
         // 已经关闭了所有POE供电口
         if (mDisconnect)
         {
+#if ENABLE_LIBHV
+            mTelnet->closesocket();
+#else
             mTelnet->disconnectFromHost();
+#endif
             mIsLoggingOut = false;
             mLogoutStep = 0;
             mSwitcherIsLoginOk = false;
@@ -691,7 +785,9 @@ void QHuaWeiSwitcherHelper::closeNextSwitcherPOEPower()
     else
         mCurrentQueryPort = mMapAssociatedDetector[mQueryPosition];
     mCurrentCommand = QString("interface GigabitEthernet 0/0/%1").arg(mCurrentQueryPort) + "\r\n";
-#if USE_QTELNET
+#if ENABLE_LIBHV
+    mTelnet->channel->write(mCurrentCommand.toStdString().c_str(), mCurrentCommand.size());
+#elif USE_QTELNET
     mTelnet->sendData(mCurrentCommand.toStdString().c_str(), mCurrentCommand.size());
 #else
     mTelnet->write(mCurrentCommand.toLatin1());
@@ -701,7 +797,7 @@ void QHuaWeiSwitcherHelper::closeNextSwitcherPOEPower()
 //是否仍然处于登录状态
 void QHuaWeiSwitcherHelper::checkLoginAlive()
 {
-#if USE_QTELNET
+#if (ENABLE_LIBHV || USE_QTELNET)
     if (!mTelnet->isConnected()) {
 #else
     if (!(mTelnet->state() == QAbstractSocket::ConnectedState)) {
@@ -710,14 +806,12 @@ void QHuaWeiSwitcherHelper::checkLoginAlive()
         return;
     }
 
-    // 测试过程暂时屏蔽掉
-#pragma message("Temporarily disable the clock heartbeat detection: ")
-    return ;
-
     mCurrentCommand = "display clock\r\n";
     mWaitingHeartbeatResponse = true;
     mLastHeartbeatTime.restart();
-#if USE_QTELNET
+#if ENABLE_LIBHV
+    mTelnet->channel->write(mCurrentCommand.toStdString().c_str(), mCurrentCommand.size());
+#elif USE_QTELNET
     mTelnet->sendData(mCurrentCommand.toStdString().c_str(), mCurrentCommand.size());
 #else
     mTelnet->write(mCurrentCommand.toLatin1());
@@ -765,7 +859,7 @@ void QHuaWeiSwitcherHelper::performHeartbeatCheck()
     }
     
     // 如果不在系统视图或未连接，尝试重连
-#if USE_QTELNET
+#if (ENABLE_LIBHV || USE_QTELNET)
     if (!mTelnet->isConnected() || !mSwitcherInSystemView) {
 #else
     if (!(mTelnet->state() == QAbstractSocket::ConnectedState) || !mSwitcherInSystemView) {
@@ -805,13 +899,18 @@ void QHuaWeiSwitcherHelper::reconnectSwitcher()
     qInfo().nospace().noquote() << "交换机[" << mIp << "]开始重连...";
     
     // 断开当前连接
+#if ENABLE_LIBHV
+    if (mTelnet->isConnected())
+        mTelnet->closesocket();
+#else
 #if USE_QTELNET
     if (mTelnet->isConnected()) {
 #else
     if (mTelnet->state() == QAbstractSocket::ConnectedState) {
-#endif
+#endif //USE_QTELNET
         mTelnet->disconnectFromHost();
     }
+#endif //ENABLE_LIBHV
     
     // 重置状态
     mSwitcherIsLoginOk = false;
@@ -820,6 +919,10 @@ void QHuaWeiSwitcherHelper::reconnectSwitcher()
     
     // 延迟一下再重连，避免立即重连失败
     QTimer::singleShot(2000, this, [=](){
+#if ENABLE_LIBHV
+        if (mTelnet->createsocket(23, mIp.toStdString().c_str())>=0){
+            mTelnet->start();
+#else
 #if USE_QTELNET
         mTelnet->setType(QTelnet::TCP);
         if (mTelnet->connectToHost(mIp, 23)){
@@ -827,7 +930,8 @@ void QHuaWeiSwitcherHelper::reconnectSwitcher()
         mTelnet->connectToHost(mIp, 23);
         mTelnet->waitForConnected(1000);
         if (mTelnet->state() == QAbstractSocket::ConnectedState){
-#endif
+#endif // USE_QTELNET
+#endif //ENABLE_LIBHV
             qInfo().nospace().noquote() << "交换机[" << mIp << "]重连请求已发送";
         } else {
             qWarning().nospace().noquote() << "交换机[" << mIp << "]重连失败，将在下次心跳检测时重试";
@@ -843,7 +947,7 @@ void QHuaWeiSwitcherHelper::reconnectSwitcher()
 void QHuaWeiSwitcherHelper::logout()
 {
     // 未连接则直接置状态并发出断开信号
-#if USE_QTELNET
+#if (ENABLE_LIBHV || USE_QTELNET)
     if (!mTelnet || !mTelnet->isConnected()) {
 #else
     if (!mTelnet || !(mTelnet->state() == QAbstractSocket::ConnectedState)) {
@@ -871,7 +975,9 @@ void QHuaWeiSwitcherHelper::logout()
 
     // 先 quit（从 [HUAWEI] 回到 <HUAWEI>，或直接触发退出）
     QString cmd = "quit\r\n";
-#if USE_QTELNET
+#if ENABLE_LIBHV
+    mTelnet->channel->write(cmd.toStdString().c_str(), cmd.size());
+#elif USE_QTELNET
     mTelnet->sendData(cmd.toStdString().c_str(), cmd.size());
 #else
     mTelnet->write(cmd.toLatin1());
@@ -880,7 +986,11 @@ void QHuaWeiSwitcherHelper::logout()
     // 兜底：如果对端不回显/不主动断开，3 秒后强制关闭 socket
     QTimer::singleShot(3000, this, [=](){
         if (mIsLoggingOut && mTelnet) {
+#if ENABLE_LIBHV
+            mTelnet->closesocket();
+#else
             mTelnet->disconnectFromHost();
+#endif
             mIsLoggingOut = false;
             mLogoutStep = 0;
             mSwitcherIsLoginOk = false;
