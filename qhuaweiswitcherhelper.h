@@ -14,11 +14,24 @@
 #include <QMap>
 #include <QElapsedTimer>
 
+#if USE_QTELNET
 class QTelnet;
+#else
+class QTcpSocket;
+#endif
 class QHuaWeiSwitcherHelper : public QObject
 {
     Q_OBJECT
 public:
+    enum class State {
+        Disconnected,
+        LoginUsername,
+        LoginPassword,
+        UserView,
+        SystemView,
+        CommandExecuting
+    };
+
     explicit QHuaWeiSwitcherHelper(QString ip, QObject *parent = nullptr);
 
     QString ip() const{
@@ -81,7 +94,13 @@ signals:
 
 
 private:
+#if USE_QTELNET
     QTelnet *mTelnet = nullptr;//华为交换机控制POE电源
+#else
+    QTcpSocket *mTelnet = nullptr;//华为交换机控制POE电源
+#endif
+
+    State mState;//交换机状态
     // QTimer *mStatusRefreshTimer = nullptr;//状态定时刷新时钟
     QTimer *mHeartbeatTimer = nullptr;//心跳检测定时器
     QString mIp;
@@ -98,6 +117,7 @@ private:
     QString mCurrentCommand;
     QByteArray mRespondString;
     QVector<quint8/*index-谱仪编号*/> mMapAssociatedDetector;
+    uint8_t mQueryPosition = 0;
     
     // 心跳检测相关
     QElapsedTimer mLastHeartbeatTime;  // 记录最后心跳响应时间

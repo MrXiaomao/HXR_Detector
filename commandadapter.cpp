@@ -452,18 +452,18 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
 
                     static bool isFirstError = true;
                     if (isFirstError) {
-                        qInfo() << "数据包尾部错误，后续相似错误将不再打印日志";
+                        qInfo().nospace().noquote() << "谱仪[#" << mIndex << "]数据包尾部错误，后续相似错误将不再打印日志";
                         isFirstError = false;
                         qDebug().nospace().noquote() << "谱仪[#" << mIndex << "]数据包尾部错误[" << chunk.size() << "]：" << chunk.toHex(' ');
                     }
 
-                    // 包头/包尾不对 重新开始寻找包头
+                    // 包头/包尾数据不对称 重新开始寻找包头
                     cachePool.remove(0, 4);
                     continue;
                 }
             }
             else{
-                //波形数据不足
+                //数据不足
                 break;
             }
         }

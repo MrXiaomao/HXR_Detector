@@ -168,10 +168,7 @@ include($$PWD/../3rdParty/QGoodWindow/QGoodWindow/QGoodWindow.pri)
 include($$PWD/../3rdParty/QGoodWindow/QGoodWindowHelper/QGoodWindowHelper.pri)
 include($$PWD/../3rdParty/QGoodWindow/QGoodCentralWidget/QGoodCentralWidget.pri)
 include($$PWD/../3rdParty/hdf5/C++/hdf5Wrapper.pri)
-include($$PWD/../3rdParty/QNtpClient/QNtpClient.pri)
-include($$PWD/../3rdParty/QTelnet/QTelnet.pri)
 include($$PWD/../3rdParty/alglib-cpp/alglib.pri)
-
 INCLUDEPATH += $$PWD/../3rdParty/eigen-5.0.0
 
 # 添加config配置
@@ -190,5 +187,11 @@ win32 {
         INCLUDEPATH += $$PWD/../3rdParty/libhv/include
         LIBS += -L$$PWD/../3rdParty/libhv/lib -lhv
         LIBS += -lws2_32
+    }
+
+    contains(DEFINES, USE_QTELNET=1) {
+        message("Including telnet library")
+        # include($$PWD/../3rdParty/QNtpClient/QNtpClient.pri) /*时钟同步服务器*/
+        include($$PWD/../3rdParty/QTelnet/QTelnet.pri)
     }
 }

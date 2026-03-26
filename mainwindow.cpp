@@ -127,6 +127,9 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
         /// 再给设备上电
         if (mEnableAutoMeasure)
         {
+            // 打开时钟同步模块电源
+            commHelper->openSwitcherExtendPOEPower();
+            // 打开谱仪设备电源
             commHelper->openPower();
 
             // 第三步 30s之后开始自动测量
@@ -500,6 +503,8 @@ void MainWindow::initUi()
     QTimer* systemClockTimer = new QTimer(this);
     systemClockTimer->setObjectName("systemClockTimer");
     connect(systemClockTimer, &QTimer::timeout, this, [=](){
+        static uint64_t t = 0;
+
         // 获取当前时间
         QDateTime currentDateTime = QDateTime::currentDateTime();
 
@@ -518,6 +523,45 @@ void MainWindow::initUi()
         if (mContinueMeasureTimer && mContinueMeasureTimer->isValid())
         {
             ui->edit_measureTime->setText(formatTimeString(mContinueMeasureTimer->elapsed() / 1000));
+        }
+
+        // 时钟刷新2次，温度刷新一次
+        if ((t%2) == 0){
+            for (int row=0; row<=DET_NUM; ++row){
+                if (m_mapTemperatur.contains(row)){
+                    float temperature = m_mapTemperatur[row].second;
+                    QDateTime tmTrigger = QDateTime::fromMSecsSinceEpoch(m_mapTemperatur[row].first);
+                    bool isTimeout = false;
+                    if (tmTrigger.msecsTo(currentDateTime) >= 2000)
+                        isTimeout = true;
+
+                    QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 3));
+                    if (isTimeout){
+                        // 长时间没收到温度数据了
+                        cell->setEnabled(false);
+                    }
+                    else{
+                        cell->setText(QString::number(temperature, 'f', 1) + " ℃");
+                        if (cell->isEnabled()){
+                            // 判断温度是否达到报警阈值点
+                            if (temperature > 70.0) {
+                                cell->setStyleSheet("color: red;");
+                            } else {
+                                cell->setStyleSheet("color: green;");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 能谱刷新需根据刷新时长来决定，最小1s刷新一次
+        if (commHelper->isMeasuring() && (t % m_spectrumRefreshTimelength) == 0){
+            //
+            ui->spectroMeter1_top->replot(QCustomPlot::rpQueuedReplot);
+            ui->spectroMeter1_bottom->replot(QCustomPlot::rpQueuedReplot);
+            ui->spectroMeter2_top->replot(QCustomPlot::rpQueuedReplot);
+            ui->spectroMeter2_bottom->replot(QCustomPlot::rpQueuedReplot);
         }
     });
     systemClockTimer->start(900);
@@ -631,6 +675,7 @@ void MainWindow::initUi()
         for (int column=0; column<=3; ++column){
             if (column == 0){
                 SwitchButton* cell = new SwitchButton();
+                cell->setObjectName(QStringLiteral("poeSwitcher%1").arg(column));
                 if (row == 0)
                     cell->setContentsMargins(5, 12, 5, 12);
                 else
@@ -848,8 +893,7 @@ void MainWindow::initUi()
     //更新温度状态
     connect(commHelper, &CommHelper::reportDetectorTemperature, this, [=](quint8 index, float temperature){
         int row = index;
-        QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 3));
-        cell->setText(QString::number(temperature, 'f', 1) + " ℃");
+        m_mapTemperatur[index] = qMakePair(QDateTime::currentMSecsSinceEpoch(), temperature);
 
         //将温度数据保存到文件中，实时写入，文件名称为探测器编号-日期.txt，路径为应用程序目录下的temperature文件夹中
         QString temperatureFilePath = QApplication::applicationDirPath() + "/temperature/" + QString::number(index) + "-" + QDateTime::currentDateTime().toString("yyyy-MM-dd") + ".txt";
@@ -862,13 +906,15 @@ void MainWindow::initUi()
         temperatureStream << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss") << "," << QString::number(temperature, 'f', 1) << endl;
         temperatureFile.close();
 
-        if (cell->isEnabled()){
-            if (temperature > 70.0) {
-                cell->setStyleSheet("color: red;");
-            } else {
-                cell->setStyleSheet("color: green;");
-            }
-        }
+        // QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 3));
+        // cell->setText(QString::number(temperature, 'f', 1) + " ℃");
+        // if (cell->isEnabled()){
+        //     if (temperature > 70.0) {
+        //         cell->setStyleSheet("color: red;");
+        //     } else {
+        //         cell->setStyleSheet("color: green;");
+        //     }
+        // }
     }, Qt::QueuedConnection);
 
     connect(commHelper, &CommHelper::reportTemperatureTimeout, this, [=](quint8 index){
@@ -931,7 +977,7 @@ void MainWindow::initUi()
         customPlot->xAxis->rescale(true);
         customPlot->yAxis->rescale(true);
         //customPlot->yAxis->setRange(0, 10000);
-        customPlot->replot(QCustomPlot::rpQueuedReplot);
+        //customPlot->replot(QCustomPlot::rpQueuedReplot);
     });
 
     // 接收时间戳属性据
@@ -1401,6 +1447,28 @@ void MainWindow::on_action_startMeasure_triggered()
         return;
     }
 
+    mEnableAutoMeasure = ui->cbb_measureMode->currentIndex()==1;
+    mEnableExtendTrigger = ui->com_triggerModel->currentIndex()==1;
+    m_spectrumRefreshTimelength = qMax((quint32)1000, (quint32)HDF5Settings::instance()->detParameters()[0].spectrumRefreshTime) / 1000;
+
+    if (mEnableAutoMeasure)
+    {
+        qInfo().nospace().noquote() << tr("开启自动化测量");
+    }
+    else
+    {
+        if (mEnableExtendTrigger){
+            // 提示时间同步触发模块电源是否接通
+            SwitchButton* btn = this->findChild<SwitchButton*>("poeSwitcher0");
+            if (btn && !btn->getChecked()){
+                QMessageBox::information(this, QStringLiteral("提示"), "请开启时间同步模块电源开关！");
+                return ;
+            }
+        }
+
+        qInfo().nospace().noquote() << tr("开启手动测量");
+    }
+
     ui->action_startMeasure->setEnabled(false);
     ui->action_stopMeasure->setEnabled(true);
     ui->dateTime_shotTime->setEnabled(false);
@@ -1420,17 +1488,6 @@ void MainWindow::on_action_startMeasure_triggered()
 
     updateSpectrumPlotSettings();
 
-    mEnableAutoMeasure = ui->cbb_measureMode->currentIndex()==1;
-    mEnableExtendTrigger = ui->com_triggerModel->currentIndex()==1;
-
-    if (mEnableAutoMeasure)
-    {
-        qInfo().nospace().noquote() << tr("开启自动化测量");
-    }
-    else
-    {
-        qInfo().nospace().noquote() << tr("开启手动测量");
-    }
 
     QVector<double> keys, values;
     for (int i=1; i<=2; ++i){
@@ -1754,7 +1811,6 @@ void MainWindow::on_action_stopMeasure_triggered()
     ui->com_triggerModel->setEnabled(true);
     ui->lineEdit_shotNum->setEnabled(true);
     ui->checkBox_autoIncrease->setEnabled(true);
-    ui->spinBox_measureTime->setEnabled(true);
     ui->checkBox_continueMeasure->setEnabled(true);
     ui->lineEdit_filePath->setEnabled(true);
     ui->dateTimeEdit_startTime->setEnabled(false);
@@ -1763,6 +1819,7 @@ void MainWindow::on_action_stopMeasure_triggered()
     ui->pushButton_stopMeasure->setEnabled(false);
     ui->action_waveformMode->setEnabled(true);
     ui->action_particalMode->setEnabled(true);
+    ui->spinBox_measureTime->setEnabled(!ui->checkBox_continueMeasure->isChecked());
 
     // 软件触发才允许设置打靶时间
     ui->dateTime_shotTime->setEnabled(ui->com_triggerModel->currentIndex() == 0);
@@ -2213,7 +2270,7 @@ void MainWindow::updateSpectrumDisplay(int detectorId, const quint32 spectrum[])
         }
     }
 
-    customPlot->replot(QCustomPlot::rpQueuedReplot);
+    //customPlot->replot(QCustomPlot::rpQueuedReplot);
 }
 
 // 添加计数率显示更新函数
@@ -2297,7 +2354,7 @@ void MainWindow::updateCountRateDisplay(int detectorId, double fpgaTime, double 
         customPlot->yAxis->setRange(y_min - pad, y_max + pad);
     }
 
-    customPlot->replot(QCustomPlot::rpQueuedReplot);
+    //customPlot->replot(QCustomPlot::rpQueuedReplot);
 }
 
 #include "localsettingwindow.h"
@@ -2762,7 +2819,6 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
 
     if (mEnScale)
     {
-
         m_spectrumPlotSettings[detectorId-1].xMin = detParameter.spectrumPlotEnMin;
         m_spectrumPlotSettings[detectorId-1].xMax = detParameter.spectrumPlotEnMax;
 

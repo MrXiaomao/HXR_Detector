@@ -250,6 +250,8 @@ private:
     // 能谱图像属性
     std::atomic<bool> mEnScale = false;// 是否勾选能量刻度
     QVector<SpectrumPlotSettings> m_spectrumPlotSettings = QVector<SpectrumPlotSettings>(DET_NUM);
+    QMap<quint8,QPair<qint64,float>> m_mapTemperatur;// 探测器温度表
+    quint32 m_spectrumRefreshTimelength = 1; // 能谱刷新时长(s)
 
     // 日志内容查找功能相关
     QString mLastSearchText;  // 上次查找的文本

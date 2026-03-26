@@ -968,9 +968,9 @@ void CommHelper::openPower()
         {
             if (switcherHelper->ip() == ip){
                 switcherHelper->setAssociatedDetector(ass);
-                mExtendTimeSynModule.reload();
-                if (mExtendTimeSynModule.switcherIndex == (i+1))
-                    switcherHelper->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
+                // mExtendTimeSynModule.reload();
+                // if (mExtendTimeSynModule.switcherIndex == (i+1))
+                //     switcherHelper->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
                 switcherHelper->openSwitcherPOEPower(0x00);
             }
         }
@@ -990,9 +990,9 @@ void CommHelper::closePower(bool disconnect)
         {
             if (switcherHelper->ip() == ip){
                 switcherHelper->setAssociatedDetector(ass);
-                mExtendTimeSynModule.reload();
-                if (mExtendTimeSynModule.switcherIndex == (i+1))
-                    switcherHelper->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
+                // mExtendTimeSynModule.reload();
+                // if (mExtendTimeSynModule.switcherIndex == (i+1))
+                //     switcherHelper->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
                 switcherHelper->closeSwitcherPOEPower(0x00, disconnect);
             }
         }

@@ -317,6 +317,8 @@ void DataProcessor::stopMeasure()
         mNetFile->deleteLater();
         mNetFile = nullptr;
     }
+
+    mTempTimeoutTimer.stop();
 }
 
 void DataProcessor::sendCmdToSocket(CommandItem cmdItem) const
@@ -401,11 +403,13 @@ void DataProcessor::inputData(const QByteArray& data)
 
 void DataProcessor::restartTempTimeout() {
     // 如果是模拟器发数据，这里直接return即可！！！
+#if USED_SIMULATOR
+    return;
+#endif //
+    return;
 
     //从HDF5加载配置信息
     HDF5Settings *settings = HDF5Settings::instance();
-    if (mTempTimeoutTimer.isActive())
-        mTempTimeoutTimer.stop();
     mTempTimeoutTimer.start(settings->pluseTime()*1000);
 }
 
