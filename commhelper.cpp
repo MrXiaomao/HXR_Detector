@@ -108,11 +108,11 @@ void CommHelper::initSocket()
 {
 #if ENABLE_LIBHV
     mTcpServer = new hv::TcpServer();
-    mTcpServer->setThreadNum(8);
+    mTcpServer->setThreadNum(32);
     mTcpServer->onConnection = [&](const hv::SocketChannelPtr& channel)
     {
         if (channel->isConnected()){// isOpened()){// ->status == hv::SocketChannel::CONNECTED){
-            channel->setKeepaliveTimeout(3000);// 3000ms没有数据交互就断开
+            channel->setKeepaliveTimeout(5000);// 5s没有数据交互就断开
 
             QString peerAddress = QString::fromStdString(channel->peerip());
             quint16 peerPort = channel->peerport();
@@ -280,19 +280,17 @@ void CommHelper::initSocket()
 void CommHelper::initDataProcessor()
 {
     for (int index = 0; index <= DET_NUM; ++index){
-        DataProcessor* detectorDataProcessor = new DataProcessor(index, nullptr, this);
-        mDetectorDataProcessor[index] = detectorDataProcessor;
+        DataProcessor* processor = new DataProcessor(index, nullptr, this);
+        mDetectorDataProcessor[index] = processor;
 
         // 更新温度数据
-        connect(detectorDataProcessor, &DataProcessor::reportTemperatureData,
+        connect(processor, &DataProcessor::reportTemperatureData,
         this, [=](double temperature){
-            DataProcessor* processor = qobject_cast<DataProcessor*>(sender());
             emit reportDetectorTemperature(processor->index(), temperature);
-        });
+        }, Qt::DirectConnection);
         
         //对温度超时报警进行处理
-        connect(detectorDataProcessor, &DataProcessor::reportTemperatureTimeout, this, [=](){
-            DataProcessor* processor = qobject_cast<DataProcessor*>(sender());
+        connect(processor, &DataProcessor::reportTemperatureTimeout, this, [=](){
             quint8 detID = processor->index();
             emit reportTemperatureTimeout(detID);//上报温度超时报警
 
@@ -318,32 +316,11 @@ void CommHelper::initDataProcessor()
                 else
                     qInfo().nospace() << "谱仪[#" << detID << "]重启供电失败";
             });
-        });
+        }, Qt::DirectConnection);
 
         // 能谱数据
-        connect(detectorDataProcessor, &DataProcessor::reportSpectrumData, this, [=](QByteArray& data){
-            DataProcessor* processor = qobject_cast<DataProcessor*>(sender());
+        connect(processor, &DataProcessor::reportSpectrumData, this, [=](QByteArray& data){
             {
-                // if (!mDetectorFileProcessor.contains(processor->index())){
-                //     QString filePath = QString("%1/%2/%3_%4_能谱.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(processor->index());
-                //     mDetectorFileProcessor[processor->index()] = new QFile(filePath);
-                //     mDetectorFileProcessor[processor->index()]->open(QIODevice::WriteOnly);
-                //     mDataFileList.push_back(filePath);
-
-                //     // 初始化flush信息
-                //     {
-                //         QMutexLocker flushLocker(&mMutexFileFlush);
-                //         mFileFlushInfo[processor->index()] = FileFlushInfo();
-                //     }
-
-                //     QFileInfo info(filePath);
-                //     QString absolutePath = info.absoluteFilePath();
-                //     qInfo().nospace() << "谱仪[#"<< processor->index() << "]创建存储文件：" << absolutePath;
-
-                //     filePath = QString("%1/%2/%3.H5").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime);
-                //     HDF5Settings::instance()->createH5Spectrum(filePath);
-                // }
-
                 if (mDetectorFileProcessor[processor->index()]->isOpen()){
                     qint64 bytesWritten = mDetectorFileProcessor[processor->index()]->write((const char *)data.constData(), data.size());
                     // 检查是否需要flush（每10秒或每1MB）
@@ -351,24 +328,22 @@ void CommHelper::initDataProcessor()
                 }
             }
             // 数据解包
-            detectorDataProcessor->inputSpectrumData(processor->index(), data);
-        });
+            processor->inputSpectrumData(processor->index(), data);
+        }, Qt::DirectConnection);
 
-        connect(detectorDataProcessor, &DataProcessor::reportFullSpectrum,
-                this, [=](quint8 index, const FullSpectrum& fullSpectrum){
-                    emit reportFullSpectrum(index, fullSpectrum);
-                });
+        connect(processor, &DataProcessor::reportFullSpectrum,
+            this, [=](quint8 index, const FullSpectrum& fullSpectrum){
+                emit reportFullSpectrum(index, fullSpectrum);
+        }, Qt::DirectConnection);
 
 
         // 原始网络数据
-        connect(detectorDataProcessor, &DataProcessor::reportOTAUpgradeData, this, [=](const QByteArray& data){
-            DataProcessor* processor = qobject_cast<DataProcessor*>(sender());
+        connect(processor, &DataProcessor::reportOTAUpgradeData, this, [=](const QByteArray& data){
             quint8 detId = processor->index();
             emit reportOTAUpgradeData(detId, data);
-        });
+        }, Qt::DirectConnection);
 
-        connect(detectorDataProcessor, &DataProcessor::reportRawNetData, this, [=](const QByteArray& data){
-            DataProcessor* processor = qobject_cast<DataProcessor*>(sender());
+        connect(processor, &DataProcessor::reportRawNetData, this, [=](const QByteArray& data){
             /*
                 保存数据
             */
@@ -376,47 +351,22 @@ void CommHelper::initDataProcessor()
             {
                 if (mNetRawFileProcessor.contains(processor->index()) && mNetRawFileProcessor[processor->index()]->isOpen()){
                     qint64 bytesWritten = mNetRawFileProcessor[processor->index()]->write((const char *)data.constData(), data.size());
-                    // 实时flush，确保数据都存下来了
-                    mNetRawFileProcessor[processor->index()]->flush();
+                    // 每10秒或每1MB执行一次flush（改为每10秒），避免每次写入都flush影响性能
+                    checkAndFlushFile(processor->index(), bytesWritten);
                 }
             }
-        });
+        }, Qt::DirectConnection);
 
         //波形数据
-        connect(detectorDataProcessor, &DataProcessor::reportWaveformData, this, [=](QByteArray& data){
-            DataProcessor* processor = qobject_cast<DataProcessor*>(sender());
+        connect(processor, &DataProcessor::reportWaveformData, this, [=](QByteArray& data){
             /*
                 保存数据
             */
             quint8 detId = processor->index();
-            {
-                // QMutexLocker locker(&mMutexTriggerTime);
-                // if (mTriggerTime.isEmpty()){
-                //     mTriggerTime = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
-                // }
-
-                // if (!mDetectorFileProcessor.contains(processor->index())){
-                //     QString filePath = QString("%1/%2/%3_%4_波形.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(processor->index());
-                //     mDetectorFileProcessor[processor->index()] = new QFile(filePath);
-                //     mDetectorFileProcessor[processor->index()]->open(QIODevice::WriteOnly | QIODevice::Append); //覆盖式写入
-                //     mDataFileList.push_back(filePath);
-
-                //     // 初始化flush信息
-                //     {
-                //         QMutexLocker flushLocker(&mMutexFileFlush);
-                //         mFileFlushInfo[processor->index()] = FileFlushInfo();
-                //     }
-
-                //     QFileInfo info(filePath);
-                //     QString absolutePath = info.absoluteFilePath();
-                //     qInfo().nospace() << "谱仪[#"<< processor->index() << "]创建存储文件：" << absolutePath;
-                // }
-
-                if (mDetectorFileProcessor[processor->index()]->isOpen()){
-                    qint64 bytesWritten = mDetectorFileProcessor[processor->index()]->write((const char *)data.constData(), data.size());
-                    // 检查是否需要flush（每10秒或每1MB）
-                    checkAndFlushFile(processor->index(), bytesWritten);
-                }
+            if (mDetectorFileProcessor[processor->index()]->isOpen()){
+                qint64 bytesWritten = mDetectorFileProcessor[processor->index()]->write((const char *)data.constData(), data.size());
+                // 检查是否需要flush（每10秒或每1MB）
+                checkAndFlushFile(processor->index(), bytesWritten);
             }
 
             data.remove(0, 6);//移除包头
@@ -439,14 +389,13 @@ void CommHelper::initDataProcessor()
                     waveform.append(amplitude);
                 }
 
-                emit reportWaveformCurveData(processor->index(), waveform);
+                QMetaObject::invokeMethod(this, "reportWaveformCurveData", Qt::DirectConnection, Q_ARG(quint8, processor->index()), Q_ARG(QVector<quint16>&, waveform));
+                //emit reportWaveformCurveData(processor->index(), waveform);
             }
-        });
+        }, Qt::DirectConnection);
 
         //粒子数据
-        connect(detectorDataProcessor, &DataProcessor::reportParticleData, this, [=](QByteArray& data){
-            DataProcessor* processor = qobject_cast<DataProcessor*>(sender());
-
+        connect(processor, &DataProcessor::reportParticleData, this, [=](QByteArray& data){
             /*
                 保存粒子数据
             */
@@ -525,10 +474,9 @@ void CommHelper::initDataProcessor()
 
             // 上报计数
             emit reportParticleCurveData(index, sequence);
-        });
+        }, Qt::DirectConnection);
 
-        connect(detectorDataProcessor, &DataProcessor::reportTimestampData, this, [=](QByteArray& data){
-            DataProcessor* processor = qobject_cast<DataProcessor*>(sender());
+        connect(processor, &DataProcessor::reportTimestampData, this, [=](QByteArray& data){
             bool ok;
             quint32 utc = data.mid(6, 4).toHex().toUInt(&ok, 16); // utc时间戳
             quint32 msecond = data.mid(10, 4).toHex().toUInt(&ok, 16)*1000/65536; // 毫秒
@@ -539,14 +487,12 @@ void CommHelper::initDataProcessor()
 
             // 上报时间戳信息
             emit reportTimestampe(index, tm);
-        });
+        }, Qt::DirectConnection);
 
-        connect(detectorDataProcessor, &DataProcessor::reportParamterData, this, [=](QByteArray& data){
-            DataProcessor* processor = qobject_cast<DataProcessor*>(sender());
-
+        connect(processor, &DataProcessor::reportParamterData, this, [=](QByteArray& data){
             // 上报配置参数信息
             emit reportParamterData(index, data);
-        });
+        }, Qt::DirectConnection);
     }
 }
 
@@ -636,8 +582,9 @@ qint8 CommHelper::allocDataProcessor(const hv::SocketChannelPtr& socket)
 
     //重新分配空闲的数据处理器
     for (int index = 1; index <= DET_NUM; ++index){
-        if (mDetectorDataProcessor[index]->isFreeSocket()){
-            DetParameter& detParameter = detParameters[index];
+        DetParameter& detParameter = detParameters[index];
+        QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
+        if (mDetectorDataProcessor[index]->isFreeSocket() && detectorAddress==QStringLiteral("0.0.0.0")){
             qstrcpy(detParameter.det_Ip_port, peerAddress.toStdString().c_str());
             settings->sync();
             mDetectorDataProcessor[index]->reallocSocket(socket, &detParameter);
@@ -1080,7 +1027,7 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
 
                     QFileInfo info(filePath);
                     QString absolutePath = info.absoluteFilePath();
-                    qInfo().nospace() << "谱仪[#"<< index << "]创建存储文件：" << absolutePath;
+                    qDebug().nospace() << "谱仪[#"<< index << "]创建存储文件：" << absolutePath;
                 }
 
                 if (measureMode == CommandAdapter::MeasureMode::mmManual)
@@ -1146,7 +1093,7 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
 
                 QFileInfo info(filePath);
                 QString absolutePath = info.absoluteFilePath();
-                qInfo().nospace() << "谱仪[#"<< index << "]创建存储文件：" << absolutePath;
+                qDebug().nospace() << "谱仪[#"<< index << "]创建存储文件：" << absolutePath;
             }
 
             if (measureMode == CommandAdapter::MeasureMode::mmManual)
@@ -1165,8 +1112,8 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
 */
 void CommHelper::checkAndFlushFile(quint8 index, qint64 bytesWritten)
 {
-    const qint64 FLUSH_SIZE_THRESHOLD = 5*1024 * 1024; // Bites
-    const qint64 FLUSH_TIME_THRESHOLD_MS = 60*1000; // 毫秒
+    const qint64 FLUSH_SIZE_THRESHOLD = 5*1024 * 1024; // Bytes
+    const qint64 FLUSH_TIME_THRESHOLD_MS = 10*1000; // 10秒
     
     // 快速检查：如果写入的数据很小，且还没有初始化flush信息，可能不需要检查
     // 但这需要在锁内检查，所以我们还是需要加锁

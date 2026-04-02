@@ -16,11 +16,125 @@
 
 #if USE_QTELNET
 class QTelnet;
-#elif ENABLE_LIBHV
+#elif ENABLE_LIBHV_SOCKET
 #include <hv/TcpClient.h>
 #else
 class QTcpSocket;
 #endif
+
+#if ENABLE_LIBHV_SOCKET
+#include <thread>
+#include <chrono>
+#include <future>
+#include <atomic>
+#include <QWaitCondition>
+#include <QMutex>
+
+/*QThreadTimer解决QTimer无法在子线程使用的问题（因为子线程里面没有事件循环）*/
+class QThreadTimer : public QObject {
+    Q_OBJECT
+public:
+    // 构造函数：默认重复模式
+    explicit QThreadTimer(QObject* parent = nullptr)
+        : QObject(parent), m_delayMs(0), m_isSingleShot(false), m_running(false) {}
+
+    // 设置单次触发模式
+    void setSingleShot(bool singleShot) {
+        m_isSingleShot = singleShot;
+    }
+
+    // 设置延迟时间（毫秒）
+    void setInterval(int delayMs) {
+        m_delayMs = delayMs;
+    }
+
+    // 定时器状态
+    bool isActive() const {
+        return m_running.load();
+    }
+
+    // 启动定时器（重复/单次）
+    void start() {
+        if (m_running.load() || m_delayMs < 0) return;
+        m_running.store(true);
+
+        // 启动子线程执行定时逻辑
+        m_thread = std::make_unique<std::thread>([this]() {
+            while (m_running.load()) {
+                QMutexLocker locker(&m_mutex);
+                // 等待 m_delayMs 或被唤醒
+                bool timeout = m_waitCondition.wait(&m_mutex, m_delayMs);
+                //std::this_thread::sleep_for(std::chrono::milliseconds(m_delayMs));
+                if (!m_running.load()) break; // 被中断，退出
+                if (!timeout) { // 超时触发任务
+                    emit this->timeout();
+                    if (m_isSingleShot) {
+                        m_running.store(false);
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    // 停止定时器
+    void stop() {
+        m_running.store(false);
+        m_waitCondition.wakeOne(); // 唤醒等待的线程
+        if (m_thread && m_thread->joinable()) {
+            m_thread->join(); // 等待线程结束后回收资源
+            m_thread.reset();
+        }
+    }
+
+    // 重载1：支持成员函数指针
+    template<typename Receiver>
+    static void singleShot(int delayMs, Receiver* receiver, void (Receiver::*member)()) {
+        if (!receiver || !member) return;
+
+        QThreadTimer* timer = new QThreadTimer();
+        timer->setSingleShot(true);
+        timer->setInterval(delayMs);
+
+        // 自动选择连接方式（根据线程是否有事件循环）
+        Qt::ConnectionType connType = Qt::DirectConnection;
+        if (receiver->thread()->eventDispatcher()) {
+            connType = Qt::QueuedConnection;
+        }
+
+        // 新式连接：信号→槽（函数指针）
+        QObject::connect(timer, &QThreadTimer::timeout, receiver, member, connType);
+        QObject::connect(timer, &QThreadTimer::timeout, timer, &QThreadTimer::deleteLater);
+
+        timer->start();
+    }
+
+    // 重载2：支持Lambda表达式
+    template<typename Receiver>
+    static void singleShot(int delayMs, Receiver* receiver, std::function<void()> func) {
+        if (!func) return;
+
+        std::async(std::launch::async, [delayMs, callback = std::bind(func)]() {
+            std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
+            callback();
+        });
+    }
+
+signals:
+    void timeout(); // 定时触发信号
+
+private:
+    std::unique_ptr<std::thread> m_thread;
+    QWaitCondition m_waitCondition;
+    //std::condition_variable m_waitCondition;
+    QMutex m_mutex;
+    //std::mutex m_mutex;
+    int m_delayMs;               // 延迟时间（毫秒）
+    bool m_isSingleShot;         // 是否单次触发
+    std::atomic<bool> m_running; // 原子变量：标记定时器是否运行
+};
+#endif //ENABLE_LIBHV_SOCKET
+
 class QHuaWeiSwitcherHelper : public QObject
 {
     Q_OBJECT
@@ -98,15 +212,17 @@ signals:
 private:
 #if USE_QTELNET
     QTelnet *mTelnet = nullptr;//华为交换机控制POE电源
-#elif ENABLE_LIBHV
+#elif ENABLE_LIBHV_SOCKET
     hv::TcpClient *mTelnet = nullptr;//华为交换机控制POE电源
+    QThreadTimer *mHeartbeatTimer = nullptr;//心跳检测定时器
 #else
     QTcpSocket *mTelnet = nullptr;//华为交换机控制POE电源
+    QTimer *mHeartbeatTimer = nullptr;//心跳检测定时器
 #endif
 
     State mState;//交换机状态
     // QTimer *mStatusRefreshTimer = nullptr;//状态定时刷新时钟
-    QTimer *mHeartbeatTimer = nullptr;//心跳检测定时器
+
     QString mIp;
     QEventLoop mSwitcherEventLoop;
     quint8 mCurrentQueryPort = 0;
@@ -140,6 +256,8 @@ private:
     // 退出登录相关
     bool mIsLoggingOut = false;
     quint8 mLogoutStep = 0; // 0=未退出, 1=已发第一条 quit, 2=已发第二条 quit
+
+    QMap<quint8, bool> mMapPoeState;
 };
 
 #endif // QHUAWEISWITCHERHELPER_H

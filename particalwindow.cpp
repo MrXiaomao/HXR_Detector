@@ -14,7 +14,7 @@ ParticalWindow::ParticalWindow(QWidget *parent)
 
     commHelper = CommHelper::instance();
     connect(commHelper, &CommHelper::reportParticleCurveData, this, [=]{
-        pkgCount++;
+        pkgCount.store(pkgCount.load()+1);
         // if (!measuring){
         //     measuring = true;
         //     timerStart = QDateTime::currentDateTime();
@@ -29,8 +29,8 @@ ParticalWindow::ParticalWindow(QWidget *parent)
             ui->pushButton_start->setEnabled(false);
             ui->pushButton_save->setEnabled(false);
         }
-        ui->lineEdit_pkgCount->setText(QString::number(pkgCount));
-    });
+        //ui->lineEdit_pkgCount->setText(QString::number(pkgCount));
+    }, Qt::QueuedConnection);
 
     //波形路径
     {
@@ -49,6 +49,7 @@ ParticalWindow::ParticalWindow(QWidget *parent)
         qint64 tt = timerStart.secsTo(now);
         QTime time = QTime(0,0,0).addSecs(tt);
         ui->label_5->setText(time.toString("HH:mm:ss"));
+        ui->lineEdit_pkgCount->setText(QString::number(pkgCount.load()));
     });
 
     ui->pushButton_save->setEnabled(false);

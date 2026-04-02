@@ -101,7 +101,6 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
         //判断缓存数据大小是否小于指令集长度最小单位
         if (cachePool.size() < 12)
             break;
-
         bool findNaul = false;
 
         //温度监测（心跳检测）
@@ -114,7 +113,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
             cachePool.remove(0, 12);
 
             //上传温度数据
-            QMetaObject::invokeMethod(this, "reportTemperatureData", Qt::QueuedConnection, Q_ARG(float, temperature));
+            QMetaObject::invokeMethod(this, "reportTemperatureData", Qt::DirectConnection, Q_ARG(float, temperature));
         }
 
         //增益指令
@@ -434,25 +433,24 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                     if (mIsMeasuring || dataType == dtTimestamp)
                     {
                         if (dataType == dtWaveform)
-                            QMetaObject::invokeMethod(this, "reportWaveformData", Qt::QueuedConnection, Q_ARG(QByteArray&, chunk));
+                            QMetaObject::invokeMethod(this, "reportWaveformData", Qt::DirectConnection, Q_ARG(QByteArray&, chunk));
                         else if (dataType == dtSpectrum)
-                            QMetaObject::invokeMethod(this, "reportSpectrumData", Qt::QueuedConnection, Q_ARG(QByteArray&, chunk));
+                            QMetaObject::invokeMethod(this, "reportSpectrumData", Qt::DirectConnection, Q_ARG(QByteArray&, chunk));
                         else if (dataType == dtParticle)
-                            QMetaObject::invokeMethod(this, "reportParticleData", Qt::QueuedConnection, Q_ARG(QByteArray&, chunk));
+                            QMetaObject::invokeMethod(this, "reportParticleData", Qt::DirectConnection, Q_ARG(QByteArray&, chunk));
                         else if (dataType == dtTimestamp)
-                            QMetaObject::invokeMethod(this, "reportTimestampData", Qt::QueuedConnection, Q_ARG(QByteArray&, chunk));
+                            QMetaObject::invokeMethod(this, "reportTimestampData", Qt::DirectConnection, Q_ARG(QByteArray&, chunk));
 
                         //上报有效数据包个数
-                        // QMetaObject::invokeMethod(this, "reportValidDataPkgRef", Qt::QueuedConnection, Q_ARG(quint32, mValidDataPkgRef));
+                        // QMetaObject::invokeMethod(this, "reportValidDataPkgRef", Qt::DirectConnection, Q_ARG(quint32, mValidDataPkgRef));
                     }
                 }
                 else {
                     /*异常数据，一定要注意！！！！！！！！！！！！！！！！！*/
                     findNaul = false;
 
-                    static bool isFirstError = true;
                     if (isFirstError) {
-                        qInfo().nospace().noquote() << "谱仪[#" << mIndex << "]数据包尾部错误，后续相似错误将不再打印日志";
+                        qWarning().nospace().noquote() << "谱仪[#" << mIndex << "]数据包尾部错误，后续相似错误将不再提示";
                         isFirstError = false;
                         qDebug().nospace().noquote() << "谱仪[#" << mIndex << "]数据包尾部错误[" << chunk.size() << "]：" << chunk.toHex(' ');
                     }
@@ -467,7 +465,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                 break;
             }
         }
-
+        
         if (findNaul){
             //已经处理过完整的数据包
 
@@ -750,6 +748,7 @@ void CommandAdapter::sendWorkMode(bool isRead, WorkMode workMode){
 ***********************************************************/
 //开始测量 波形测量/能谱测量共用一个开始
 void CommandAdapter::sendStartMeasure(CommandAdapter::MeasureMode measureMode){
+    isFirstError = true;
     mValidDataPkgRef = 0;
     mAskStopMeasure = false;
     QByteArray askCurrentCmd = QByteArray::fromHex(QString("12 34 00 0F EA 10 00 00 00 01 AB CD").toUtf8());

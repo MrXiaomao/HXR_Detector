@@ -138,7 +138,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
                 ui->action_stopMeasure->setEnabled(true);
 
                 /// 开始测量
-                startMeasure();
+                this->startMeasure();
             });
         }
     }, Qt::QueuedConnection);
@@ -697,7 +697,7 @@ void MainWindow::initUi()
                             if (commHelper->openSwitcherPOEPower(row))
                             {
                                 commHelper->manualOpenSwitcherPOEPower(row);
-                                cell->setChecked(true);
+                                //cell->setChecked(true);
                                 //打印日志
                                 qInfo().nospace() << "谱仪[#" << row << "]手动打开POE供电";
                             }
@@ -706,7 +706,7 @@ void MainWindow::initUi()
                             if (commHelper->closeSwitcherPOEPower(row))
                             {
                                 commHelper->manualCloseSwitcherPOEPower(row);
-                                cell->setChecked(false);
+                                //cell->setChecked(false);
                                 //打印日志
                                 qInfo().nospace() << "谱仪[#" << row << "]手动关闭POE供电";
                             }
@@ -915,7 +915,7 @@ void MainWindow::initUi()
         //         cell->setStyleSheet("color: green;");
         //     }
         // }
-    }, Qt::QueuedConnection);
+    }, Qt::DirectConnection);
 
     connect(commHelper, &CommHelper::reportTemperatureTimeout, this, [=](quint8 index){
         QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(index, 3));
@@ -956,7 +956,7 @@ void MainWindow::initUi()
             // 更新计数率显示
             updateCountRateDisplay(index, currenTime, countRate);
         }
-    });
+    }, Qt::DirectConnection);
 
     // 接收波形曲线数据
     connect(commHelper, &CommHelper::reportWaveformCurveData, this, [=](quint8 index, QVector<quint16>& data){
@@ -996,7 +996,7 @@ void MainWindow::initUi()
             mAutoMeasureDelayActive = true;
             qInfo().noquote().nospace() << "收到打靶信号时间戳：" << tm.toString("yyyy-MM-dd HH:mm:ss") << "，自动测量将在" << coolTimelength << "秒后触发";
         }
-    });
+    }, Qt::QueuedConnection);
 
     // QTimer *timer = new QTimer(this);
     // static QElapsedTimer elapsedTimer;
@@ -1438,6 +1438,8 @@ void MainWindow::onTriggerModelChanged(int index)
 // 开始测量 全部通道测量
 void MainWindow::on_action_startMeasure_triggered()
 {
+    //打印线程编号
+    qDebug() << "MainWindow::on_action_startMeasure_triggered(), thread id:" << QThread::currentThreadId();
     clearCustomPlotData();
     //先检查路径有效性 lineEdit_filePath
     QString filePath = ui->lineEdit_filePath->text();
@@ -2261,14 +2263,14 @@ void MainWindow::updateSpectrumDisplay(int detectorId, const quint32 spectrum[])
     // 更新图表
     getGraph(detectorId, true)->setData(x, y);
 
-    if (customPlot->property("enableAutoScale").toBool())
-        customPlot->rescaleAxes(true);
-    else if (customPlot->property("enableFixedScale").toBool()){
-        if (!qFuzzyCompare(y_max, yMaxOld) && (y_max > yMaxOld)){
-            y_max = y_min + (y_max - y_min) * 1.1;
-            customPlot->yAxis->setRange(y_min - 1, y_max);
-        }
-    }
+    // if (customPlot->property("enableAutoScale").toBool())
+    //     customPlot->rescaleAxes(true);
+    // else if (customPlot->property("enableFixedScale").toBool()){
+    //     if (!qFuzzyCompare(y_max, yMaxOld) && (y_max > yMaxOld)){
+    //         y_max = y_min + (y_max - y_min) * 1.1;
+    //         customPlot->yAxis->setRange(y_min - 1, y_max);
+    //     }
+    // }
 
     //customPlot->replot(QCustomPlot::rpQueuedReplot);
 }

@@ -33,7 +33,7 @@ private:
     QDateTime timerStart;
     CommHelper *commHelper = nullptr;//网络指令
     bool measuring = false;
-    quint64 pkgCount = 0;
+    std::atomic<quint64> pkgCount = 0;
 };
 
 #endif // WAVEFORMWINDOW_H

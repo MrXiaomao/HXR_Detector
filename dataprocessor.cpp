@@ -11,23 +11,18 @@ DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
     mDataProcessThread->setWorkThreadProc([=](){
         while (!mTerminatedDataThread)
         {
+            QByteArray localRaw;
             {
                 QMutexLocker locker(&mDataLocker);
-                if (mRawData.size() == 0){
-                    while (!mDataReady){
-                        mDataCondition.wait(&mDataLocker);
-                    }
-
-                    mCachePool.append(mRawData);
-                    mRawData.clear();
-                    mDataReady = false;
+                while (!mTerminatedDataThread && mRawData.isEmpty()) {
+                    mDataCondition.wait(&mDataLocker);
                 }
-                else{
-                    mCachePool.append(mRawData);
-                    mRawData.clear();
-                }
+                if (mTerminatedDataThread)
+                    break;
+                localRaw.swap(mRawData);
             }
 
+            mCachePool.append(localRaw);
             if (!mTerminatedDataThread)
                 analyzeCommands(mCachePool);
         }
@@ -56,6 +51,13 @@ DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
     connect(this, &DataProcessor::reportTemperatureData, this, [this](){
         restartTempTimeout();
     });
+
+    // 启动能谱定时写入定时器：每隔 10s 将缓存的能谱批量写入 HDF5
+    mSpectrumWriteTimer.setInterval(10 * 1000);   // 10 秒
+    mSpectrumWriteTimer.setSingleShot(false);
+    connect(&mSpectrumWriteTimer, &QTimer::timeout,
+            this, &DataProcessor::flushSpectrumBuffer);
+    mSpectrumWriteTimer.start();
 }
 
 
@@ -64,8 +66,7 @@ DataProcessor::~DataProcessor()
     if (mDataProcessThread){
         // 终止线程
         mTerminatedDataThread = true;
-        mDataReady = true;
-        mDataCondition.wakeAll();
+        mDataCondition.wakeOne();
         mDataProcessThread->wait();
     }
 
@@ -87,13 +88,10 @@ void DataProcessor::reallocSocket(const hv::SocketChannelPtr& tcpSocket, DetPara
     mTcpSocket = tcpSocket;
     if (mTcpSocket){
         tcpSocket->onread = [=](hv::Buffer* buf){
+            if(buf->size()==0) return;
+            //打印线程编号
+            // qDebug() << "DataProcessor::reallocSocket(), thread id:" << QThread::currentThreadId();
             QByteArray rawData = QByteArray::fromRawData((const char*)buf->data(), buf->size());
-            if (mNetFile)
-            {
-                mNetFile->write(rawData);
-                mNetFile->flush();
-            }
-
             // 上报原始网络数据
             if (mIsUpgrading)
                 emit reportOTAUpgradeData(rawData);
@@ -212,25 +210,7 @@ void DataProcessor::startMeasure(CommandAdapter::WorkMode workMode)
     // 创建新对象，初始化测量状态
     m_parseData = new ParseData();
 
-    if (mNetFile)
-    {
-        mNetFile->close();
-        mNetFile->deleteLater();
-        mNetFile = nullptr;
-    }
-
     QString mMeasureStartTime = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
-    QString filePath = QString("./cache/net/%1_%2_Net.dat").arg(mIndex).arg(mMeasureStartTime);
-    if (mIndex != 0)
-    {
-        // 时钟同步模块不需要录制网络数据
-        mNetFile = new QFile(filePath);
-        if (!mNetFile->open(QIODevice::WriteOnly | QIODevice::Append))
-        {
-            mNetFile->deleteLater();
-            mNetFile = nullptr;
-        }
-    }
 
     //测量前下发配置
     //HDF5Settings *settings = HDF5Settings::instance();
@@ -265,25 +245,7 @@ void DataProcessor::startAutoMeasure(QDateTime tmStart, CommandAdapter::WorkMode
     // 创建新对象，初始化测量状态
     m_parseData = new ParseData();
 
-    if (mNetFile)
-    {
-        mNetFile->close();
-        mNetFile->deleteLater();
-        mNetFile = nullptr;
-    }
-
     QString mMeasureStartTime = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
-    QString filePath = QString("./cache/net/%1_%2_Net.dat").arg(mIndex).arg(mMeasureStartTime);
-    if (mIndex != 0)
-    {
-        // 时钟同步模块不需要录制网络数据
-        mNetFile = new QFile(filePath);
-        if (!mNetFile->open(QIODevice::WriteOnly | QIODevice::Append))
-        {
-            mNetFile->deleteLater();
-            mNetFile = nullptr;
-        }
-    }
 
     //测量前下发配置
     //HDF5Settings *settings = HDF5Settings::instance();
@@ -310,13 +272,6 @@ void DataProcessor::stopMeasure()
 {
     //#16 停止测量=1|0|26|1234000FEA1000000000ABCD
     this->sendStopMeasure();
-
-    if (mNetFile)
-    {
-        mNetFile->close();
-        mNetFile->deleteLater();
-        mNetFile = nullptr;
-    }
 
     mTempTimeoutTimer.stop();
 }
@@ -354,11 +309,6 @@ void DataProcessor::readyRead()
         return;
 
     QByteArray rawData = socket->readAll();
-    if (mNetFile)
-    {
-        mNetFile->write(rawData);
-        mNetFile->flush();
-    }
 
     // 上报原始网络数据
     if (mIsUpgrading)
@@ -366,38 +316,30 @@ void DataProcessor::readyRead()
     else
         emit reportRawNetData(rawData);
 
-    this->inputData(rawData);
+    // this->inputData(rawData);
+    {
+        QMutexLocker locker(&mDataLocker);
+        // if (!mIsMeasuring)  // 进入正式测量之前，每秒钟会有一个温度数据上传过来，不打印
+        // {
+            // qDebug().noquote()<< "[" << mIndex << "] "<< "Recv HEX[" << data.size() << "]: " << data.toHex(' ');
+        // }
+
+        mRawData.append(rawData);
+    }
+
+    mDataCondition.wakeOne();
 }
 
 void DataProcessor::inputData(const QByteArray& data)
 {
-// #if ENABLE_LIBHV
-//     if (mNetFile)
-//     {
-//         mNetFile->write(data);
-//         mNetFile->flush();
-//     }
+    QMutexLocker locker(&mDataLocker);
+    // if (!mIsMeasuring)  // 进入正式测量之前，每秒钟会有一个温度数据上传过来，不打印
+    // {
+        // qDebug().noquote()<< "[" << mIndex << "] "<< "Recv HEX[" << data.size() << "]: " << data.toHex(' ');
+    // }
+    mRawData.append(data);
 
-//     // 上报原始网络数据
-//     if (mIsUpgrading)
-//         emit reportOTAUpgradeData(data);
-//     else
-//         emit reportRawNetData(data);
-// #else
-// #endif //ENABLE_LIBHV
-
-    {
-         QMutexLocker locker(&mDataLocker);
-        if (!mIsMeasuring)  // 进入正式测量之前，每秒钟会有一个温度数据上传过来，不打印
-        {
-            // qDebug().noquote()<< "[" << mIndex << "] "<< "Recv HEX[" << data.size() << "]: " << data.toHex(' ');
-        }
-
-        mRawData.append(data);
-        mDataReady = true;
-    }
-
-    mDataCondition.wakeAll();
+    mDataCondition.wakeOne();
 }
 
 
@@ -490,9 +432,12 @@ void DataProcessor::inputSpectrumData(quint8 no, QByteArray& data){
             FullSpectrum fullSpectrumCopy = *fullSpectrum; // 拷贝数据，避免在锁外访问
             emit reportFullSpectrum(mIndex, fullSpectrumCopy);
 
-            // H5能谱文件写入
+            // H5 能谱写入改为缓冲，交由定时器每隔一段时间统一写入
             H5Spectrum h5Spectrum = FullSpectoH5Spec(fullSpectrumCopy);
-            HDF5Settings::instance()->writeH5Spectrum(mIndex, h5Spectrum);
+            {
+                QMutexLocker spectrumLocker(&mSpectrumLocker);
+                mPendingH5Spectrums.append(h5Spectrum);
+            }
 
             //if(spectrumSeq%1000 == 0){
                 // qDebug().nospace() << "谱仪[#" << mIndex << "]" << "Get a full spectrum, SpectrumID:" << spectrumSeq
@@ -542,6 +487,26 @@ void DataProcessor::inputSpectrumData(quint8 no, QByteArray& data){
             // }
         }
     }
+}
+
+/**
+ * @brief DataProcessor::flushSpectrumBuffer
+ * 按固定时间间隔（如 10s）将缓存在内存中的 H5Spectrum 批量写入 HDF5 文件
+ */
+void DataProcessor::flushSpectrumBuffer()
+{
+    QVector<H5Spectrum> pending;
+    {
+        QMutexLocker spectrumLocker(&mSpectrumLocker);
+        if (mPendingH5Spectrums.isEmpty()) {
+            return;
+        }
+        pending.swap(mPendingH5Spectrums);
+    }
+
+    HDF5Settings* settings = HDF5Settings::instance();
+    // 一次性批量写入，避免逐个扩展数据集带来的开销
+    settings->writeH5SpectrumBatch(mIndex, pending);
 }
 
 /**

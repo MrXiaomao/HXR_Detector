@@ -1,4 +1,4 @@
-﻿#ifndef GLOBALSETTINGS_H
+#ifndef GLOBALSETTINGS_H
 #define GLOBALSETTINGS_H
 
 #include <QObject>
@@ -794,9 +794,9 @@ typedef struct _DetParameter{
         //是否启用
         trapShapeEnable = true;
         //时间常数D1
-        trapShapeTimeConstD1 = 59310;
+        trapShapeTimeConstD1 = 24111;
         //时间常数D2
-        trapShapeTimeConstD2 = 24111;
+        trapShapeTimeConstD2 = 59310;
         //上升沿
         trapShapeRisePoint = 10;
         //平顶
@@ -857,6 +857,13 @@ public:
      */
     void writeH5Spectrum(quint8 index, const H5Spectrum& data);
 
+    /**
+     * @brief 批量写入多个 H5Spectrum 到同一探测器的数据集中
+     * @param index 探测器索引（1~DET_NUM)
+     * @param data  要写入的结构体数据容器
+     */
+    void writeH5SpectrumBatch(quint8 index, const QVector<H5Spectrum>& data);
+
         /**
      * @brief 从HDF5文件一次性指定探测器的全部读取H5Spectrum结构体
      * @param filePath H5文件路径
@@ -897,6 +904,8 @@ public:
 private:
     //H5::H5File *mfH5Setting = nullptr; // H5配置文件
     H5::H5File *mfH5Spectrum = nullptr; // H5能谱文件
+    QString mSpectrumFilePath;          // 当前能谱文件路径
+    bool mSpectrumFileFull = false;     // 文件是否已达到容量上限
     quint32 mSpectrumRef = 0;// 能谱计数
     H5::DataSet mSpectrumDataset[DET_NUM];
     H5::CompType mCompDataType;//复合数据类型

@@ -606,6 +606,7 @@ void DetSettingWindow::loadAt(quint8 detId)
     setLonLat(detId-1, detParameter.longitude, detParameter.latitude);
     //网络设置
     //IP地址
+    model->setData(model->index(row, 2), QString::fromLatin1(detParameter.det_Ip_port));
 
     //能谱设置
     //能谱刷新时间（毫秒）
@@ -721,4 +722,19 @@ void DetSettingWindow::showEvent(QShowEvent */*event*/)
 {
     ui->pushButton_read->setEnabled(!mCommhelper->isMeasuring());
     ui->pushButton_save->setEnabled(!mCommhelper->isMeasuring());
+
+    //从HDF5加载配置信息
+    HDF5Settings *settings = HDF5Settings::instance();
+    QMap<quint8, DetParameter> &detParameters = settings->detParameters();
+    for (int i=1; i<=DET_NUM; ++i){
+        DetParameter detParameter = detParameters[i];
+        ui->tableWidget->item(i - 1, 1)->setText(detParameter.det_Ip_port);
+        ui->tableWidget->item(i - 1, 2)->setText(QString::number(detParameter.latitude));
+        ui->tableWidget->item(i - 1, 3)->setText(QString::number(detParameter.longitude));
+        ui->tableWidget->item(i - 1, 4)->setText(QString::number(detParameter.gain));
+        ui->tableWidget->item(i - 1, 5)->setText(QString::number(detParameter.triggerThold));
+        ui->tableWidget->item(i - 1, 6)->setText(QString::number(detParameter.deathTime));
+        ui->tableWidget->item(i - 1, 7)->setText(QString::number(detParameter.highVoltageOutLevel));
+        ui->tableWidget->item(i - 1, 7)->setCheckState(detParameter.highVoltageEnable ? Qt::Checked : Qt::Unchecked);
+    }
 }

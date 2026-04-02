@@ -1,4 +1,4 @@
-﻿/*
+/*
  * @Author: MrPan
  * @Date: 2025-11-13 11:36:00
  * @LastEditors: Maoxiaoqing
@@ -79,6 +79,7 @@ public:
 public slots:
     void readyRead();
     void restartTempTimeout();   // 收到温度时调用
+    void flushSpectrumBuffer();  // 定时将缓存的能谱写入HDF5
 
 signals:   
     void relayConnected();// 继电器
@@ -103,11 +104,9 @@ private:
 #else
     QTcpSocket *mTcpSocket = nullptr;
 #endif  //ENABLE_LIBHV
-    QFile* mNetFile = nullptr;
 
     QByteArray mRawData; // 存储网络原始数据
     QByteArray mCachePool; // 缓存数据，数据处理之前，先转移到二级缓存池
-    bool mDataReady = false;// 数据长度不够，还没准备好
     bool mTerminatedDataThread = false;
     QMutex mDataLocker;
     QWaitCondition mDataCondition;
@@ -127,6 +126,10 @@ private:
     ParseData* m_parseData;
     
     QTimer mTempTimeoutTimer; //心跳检测定时器
+    QTimer mSpectrumWriteTimer; // 能谱定时写入定时器
+
+    // HDF5 能谱写入缓冲（按 10s 周期批量写入）
+    QVector<H5Spectrum> mPendingH5Spectrums;
 
     QFile *mNetDataFile = nullptr;//网络数据保存文件
     bool mIsUpgrading = false; // 是否正在进行OTA升级

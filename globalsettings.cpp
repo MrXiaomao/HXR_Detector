@@ -1,4 +1,4 @@
-﻿#include "globalsettings.h"
+#include "globalsettings.h"
 #include <QFileInfo>
 #include <QApplication>
 #include <QTextCodec>
@@ -460,6 +460,8 @@ void HDF5Settings::createH5Spectrum(QString filePath)
 
         try {
             mSpectrumRef = 0;
+            mSpectrumFileFull = false;
+            mSpectrumFilePath = filePath;
             QTextCodec* gbk_codec = QTextCodec::codecForName("GBK");
             QByteArray filePathBytes = gbk_codec->fromUnicode(filePath);
             mfH5Spectrum = new H5::H5File(filePathBytes.toStdString(), H5F_ACC_TRUNC);//, H5::FileCreatPropList::DEFAULT, fapl);
@@ -574,6 +576,8 @@ void HDF5Settings::closeH5Spectrum()
         mfH5Spectrum->close();
         delete mfH5Spectrum;
         mfH5Spectrum = nullptr;
+        mSpectrumFileFull = false;
+        mSpectrumFilePath.clear();
     }
 }
 
@@ -683,11 +687,33 @@ H5::CompType HDF5Settings::createH5SpectrumType()
  */
 void HDF5Settings::writeH5Spectrum(quint8 index, const H5Spectrum& data)
 {
+    // 如果文件已经标记为写满，直接返回
+    if (mSpectrumFileFull)
+        return;
+
     QMutexLocker locker(&mWrite_mutex);
     if (!mfH5Spectrum)
         return;
 
     try {
+        // 写入前预测大小，若超过 16GB，则整条丢弃、关闭文件
+        if (!mSpectrumFilePath.isEmpty()) {
+            const qint64 maxBytes = 16ll * 1024 * 1024 * 1024; // 16GB
+            QFileInfo info(mSpectrumFilePath);
+            if (info.exists()) {
+                const qint64 currentSize  = info.size();
+                const qint64 estimateSize = currentSize + static_cast<qint64>(sizeof(H5Spectrum));
+                if (estimateSize > maxBytes) {
+                    mSpectrumFileFull = true;
+                    qWarning().noquote().nospace()
+                        << QObject::tr("HDF5 能谱文件已达到 16GB 上限，丢弃后续能谱写入：")
+                        << mSpectrumFilePath;
+                    closeH5Spectrum();
+                    return;
+                }
+            }
+        }
+
         // hsize_t columns = 8195;
         hsize_t columns = sizeof(H5Spectrum) / sizeof(quint32);
 
@@ -718,13 +744,92 @@ void HDF5Settings::writeH5Spectrum(quint8 index, const H5Spectrum& data)
         hsize_t offset[2] = {current_dims[0] - 1, 0};  // 偏移到最后一行
         file_space.selectHyperslab(H5S_SELECT_SET, mem_dims, offset);
 
-        // 5. 写入数据（示例：填充i值）
-        //QByteArray data(columns, static_cast<uchar>(i));
+        // 5. 写入数据
         dataset.write(&data, H5::PredType::NATIVE_UINT, mem_space, file_space);
 
         // 强制同步（避免异常丢失）
-        //H5Fflush(dataset.getId(), H5F_SCOPE_GLOBAL);
         if (++mSpectrumRef >= 100)
+        {
+            H5Fflush(mfH5Spectrum->getId(), H5F_SCOPE_GLOBAL);  // 同步文件元数据
+            mSpectrumRef = 0;
+        }
+    } catch (H5::Exception& e) {
+        e.printErrorStack();
+    }
+}
+
+/**
+ * @brief 批量写入多个 H5Spectrum 到同一探测器的数据集中
+ * @param index 探测器索引（1~DET_NUM)
+ * @param data  要写入的结构体数据容器
+ */
+void HDF5Settings::writeH5SpectrumBatch(quint8 index, const QVector<H5Spectrum>& data)
+{
+    if (data.isEmpty())
+        return;
+
+    // 如果文件已经标记为写满，直接返回
+    if (mSpectrumFileFull)
+        return;
+
+    QMutexLocker locker(&mWrite_mutex);
+    if (!mfH5Spectrum)
+        return;
+
+    try {
+        const hsize_t columns = sizeof(H5Spectrum) / sizeof(quint32);
+        const hsize_t rows    = static_cast<hsize_t>(data.size());
+
+        // 写入前预测大小，若超过 16GB，则整批丢弃、关闭文件
+        if (!mSpectrumFilePath.isEmpty()) {
+            const qint64 maxBytes = 16ll * 1024 * 1024 * 1024; // 16GB
+            QFileInfo info(mSpectrumFilePath);
+            if (info.exists()) {
+                const qint64 currentSize  = info.size();
+                const qint64 estimateSize = currentSize + static_cast<qint64>(rows) * static_cast<qint64>(sizeof(H5Spectrum));
+                if (estimateSize > maxBytes) {
+                    mSpectrumFileFull = true;
+                    qWarning().noquote()
+                        << QObject::tr("HDF5 能谱文件已达到 16GB 上限，丢弃后续能谱写入：")
+                        << mSpectrumFilePath;
+                    closeH5Spectrum();
+                    return;
+                }
+            }
+        }
+
+        // 确保数据集存在
+        if (mSpectrumDataset[index-1].getId() == -1)
+            mSpectrumDataset[index-1] = createDataSet(mfH5Spectrum, index);
+
+        H5::DataSet dataset = mSpectrumDataset[index-1];
+
+        // 1. 获取当前维度
+        H5::DataSpace file_space = dataset.getSpace();
+        hsize_t current_dims[2];
+        file_space.getSimpleExtentDims(current_dims, nullptr);
+
+        // 2. 扩展数据集维度，一次扩展 rows 行
+        current_dims[0] += rows;
+        dataset.extend(current_dims);
+
+        // 3. 重新获取扩展后的文件空间
+        file_space = dataset.getSpace();
+
+        // 4. 定义内存空间（rows 行数据）
+        hsize_t mem_dims[2] = {rows, columns};
+        H5::DataSpace mem_space(2, mem_dims);
+
+        // 5. 设置写入偏移（从原来最后一行之后开始）
+        hsize_t offset[2] = {current_dims[0] - rows, 0};
+        file_space.selectHyperslab(H5S_SELECT_SET, mem_dims, offset);
+
+        // 6. 批量写入
+        dataset.write(data.constData(), H5::PredType::NATIVE_UINT, mem_space, file_space);
+
+        // 7. 更新 flush 计数器（按行数累加）
+        mSpectrumRef += rows;
+        if (mSpectrumRef >= 100)
         {
             H5Fflush(mfH5Spectrum->getId(), H5F_SCOPE_GLOBAL);  // 同步文件元数据
             mSpectrumRef = 0;

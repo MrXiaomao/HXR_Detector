@@ -390,7 +390,7 @@
          <string notr="true">color: rgb(255, 0, 0);</string>
         </property>
         <property name="text">
-         <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;注意事项：增减交换机，需要先断开交换机连接，然后重新进行连接，新配置才会生效！&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+         <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;注意事项：修改交换机参数，需要先断开交换机连接，然后重新进行连接，新配置才会生效！&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
         </property>
        </widget>
       </item>

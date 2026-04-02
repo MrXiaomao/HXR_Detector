@@ -217,6 +217,8 @@ private:
     bool mCmdReady = false;//上一条指令是否已经收到响应
     QWaitCondition mCmdWaitCondition;
     QLiteThread* mCmdProcessThread = nullptr;// 处理指令线程
+
+    bool isFirstError = true;
 };
 
 #endif // COMMANDADAPTER_H

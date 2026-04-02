@@ -92,7 +92,8 @@ LocalSettingWindow::LocalSettingWindow(QWidget *parent)
         }
     }
 
-    ui->comboBox_ip->addItem("127.0.0.1");
+    if (ui->comboBox_ip->findText(QStringLiteral("127.0.0.1")) == -1)
+        ui->comboBox_ip->addItem("127.0.0.1");
     ui->comboBox_ip->addItem("0.0.0.0");
     ui->spinBox->setMaximum(DET_NUM);
 
