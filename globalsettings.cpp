@@ -887,7 +887,7 @@ void HDF5Settings::writeH5SpectrumBatch(quint8 index, const QVector<H5Spectrum>&
     const qint64 elapsed = costTimer.elapsed();
     if (elapsed > SLOW_BATCH_THRESHOLD_MS) {
         ++mSlowBatchWriteCount;
-        qWarning().noquote().nospace()
+        qDebug().noquote().nospace()
             << "writeH5SpectrumBatch慢调用: det=" << index
             << ", rows=" << data.size()
             << ", elapsedMs=" << elapsed

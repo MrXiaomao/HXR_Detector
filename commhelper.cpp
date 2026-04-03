@@ -5,6 +5,7 @@
 #include <QDataStream>
 #include <QNetworkSession>
 #include <QNetworkConfigurationManager>
+#include <QDateTime>
 
 CommHelper::CommHelper(QObject *parent)
     : QObject{parent}
@@ -1114,6 +1115,12 @@ void CommHelper::checkAndFlushFile(quint8 index, qint64 bytesWritten)
 {
     const qint64 FLUSH_SIZE_THRESHOLD = 5*1024 * 1024; // Bytes
     const qint64 FLUSH_TIME_THRESHOLD_MS = 10*1000; // 10秒
+    const qint64 SLOW_FLUSH_THRESHOLD_MS = 20;
+    QElapsedTimer costTimer;
+    costTimer.start();
+    bool triggeredBySize = false;
+    bool triggeredByTime = false;
+    bool needFlush = false;
     
     // 快速检查：如果写入的数据很小，且还没有初始化flush信息，可能不需要检查
     // 但这需要在锁内检查，所以我们还是需要加锁
@@ -1131,8 +1138,9 @@ void CommHelper::checkAndFlushFile(quint8 index, qint64 bytesWritten)
         flushInfo.bytesSinceLastFlush += bytesWritten;
         
         // 检查是否达到阈值
-        bool needFlush = (flushInfo.bytesSinceLastFlush >= FLUSH_SIZE_THRESHOLD) ||
-                         (flushInfo.lastFlushTimer.elapsed() >= FLUSH_TIME_THRESHOLD_MS);
+        triggeredBySize = (flushInfo.bytesSinceLastFlush >= FLUSH_SIZE_THRESHOLD);
+        triggeredByTime = (flushInfo.lastFlushTimer.elapsed() >= FLUSH_TIME_THRESHOLD_MS);
+        needFlush = triggeredBySize || triggeredByTime;
         
         if (!needFlush) {
             // 不需要flush，直接返回（锁在作用域结束时自动释放）
@@ -1151,6 +1159,18 @@ void CommHelper::checkAndFlushFile(quint8 index, qint64 bytesWritten)
         if (file && file->isOpen()) {
             file->flush();
         }
+    }
+
+    const qint64 elapsed = costTimer.elapsed();
+    if (elapsed > SLOW_FLUSH_THRESHOLD_MS) {
+        ++mSlowFlushCount;
+        qDebug().noquote().nospace()
+            << "checkAndFlushFile慢调用: det=" << index
+            << ", elapsedMs=" << elapsed
+            << ", count=" << mSlowFlushCount
+            << ", trigger(size=" << (triggeredBySize ? 1 : 0)
+            << ",time=" << (triggeredByTime ? 1 : 0) << ")"
+            << ", ts=" << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz");
     }
 }
 

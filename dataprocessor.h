@@ -106,6 +106,7 @@ private:
 #endif  //ENABLE_LIBHV
 
     QByteArray mRawData; // 存储网络原始数据
+    quint64 mRawDataPeak = 0; // mRawData历史峰值（字节）
     QByteArray mCachePool; // 缓存数据，数据处理之前，先转移到二级缓存池
     bool mTerminatedDataThread = false;
     QMutex mDataLocker;

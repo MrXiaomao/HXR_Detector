@@ -1,4 +1,4 @@
-﻿#ifndef MAINWINDOW_H
+#ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
 #include <QMainWindow>
@@ -251,6 +251,16 @@ private:
     std::atomic<bool> mEnScale = false;// 是否勾选能量刻度
     QVector<SpectrumPlotSettings> m_spectrumPlotSettings = QVector<SpectrumPlotSettings>(DET_NUM);
     QMap<quint8,QPair<qint64,float>> m_mapTemperatur;// 探测器温度表
+
+    // 温度离线/定时写盘缓存（满足：temperature/<yyyy-MM-dd>/<index>.txt；跨午夜按点归档）
+    struct TempPoint {
+        QString dtStr;      // "yyyy-MM-dd HH:mm:ss"（精确到秒）
+        float temperature;
+    };
+    QHash<quint8, QHash<QString, QVector<TempPoint>>> m_tempPointCache; // index -> day(yyyy-MM-dd) -> points
+    QTimer* m_tempFlushTimer = nullptr; // 每10秒flush一次
+    void flushTemperatureCache();
+
     quint32 m_spectrumRefreshTimelength = 1; // 能谱刷新时长(s)
 
     // 日志内容查找功能相关

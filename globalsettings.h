@@ -911,6 +911,7 @@ private:
     bool mSpectrumFileFull = false;     // 文件是否已达到容量上限
     quint32 mSpectrumRef = 0;// 能谱计数
     H5::DataSet mSpectrumDataset[DET_NUM];
+    quint64 mSlowBatchWriteCount = 0;   // writeH5SpectrumBatch慢调用计数
     H5::CompType mCompDataType;//复合数据类型
     H5::CompType mSpectrumDataType;//复合数据类型
     QMap<quint8, DetParameter> mMapDetParameter;

@@ -1,4 +1,4 @@
-﻿#ifndef COMMANDADAPTER_H
+#ifndef COMMANDADAPTER_H
 #define COMMANDADAPTER_H
 
 #include <QObject>
@@ -9,6 +9,7 @@
 #include <QQueue>
 #include <qlitethread.h>
 #include <QTimer>
+#include <QElapsedTimer>
 
 struct CommandItem
 {
@@ -219,6 +220,13 @@ private:
     QLiteThread* mCmdProcessThread = nullptr;// 处理指令线程
 
     bool isFirstError = true;
+
+    // 统计数据包错误率相关
+    quint64 mTailErrorCount = 0;
+    quint64 mTypeErrorCount = 0;
+    quint64 mResyncDropBytes = 0;
+    quint64 mHeaderScanDropBytes = 0;
+    QElapsedTimer mParserStatTimer;
 };
 
 #endif // COMMANDADAPTER_H

@@ -465,7 +465,7 @@
       <item>
        <widget class="QLabel" name="label_9">
         <property name="text">
-         <string>注：经纬度表示谱仪探头防止在球体表面的经纬度，其中纬度从北极开始算起为0°，南极点为180°。</string>
+         <string>注：经纬度表示谱仪探头放置在球体表面的经纬度，其中纬度从北极开始算起为0°，南极点为180°。</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>

@@ -316,16 +316,7 @@ void DataProcessor::readyRead()
     else
         emit reportRawNetData(rawData);
 
-    // this->inputData(rawData);
-    {
-        QMutexLocker locker(&mDataLocker);
-        // if (!mIsMeasuring)  // 进入正式测量之前，每秒钟会有一个温度数据上传过来，不打印
-        // {
-            // qDebug().noquote()<< "[" << mIndex << "] "<< "Recv HEX[" << data.size() << "]: " << data.toHex(' ');
-        // }
-
-        mRawData.append(rawData);
-    }
+    this->inputData(rawData);
 
     mDataCondition.wakeOne();
 }
@@ -338,6 +329,14 @@ void DataProcessor::inputData(const QByteArray& data)
         // qDebug().noquote()<< "[" << mIndex << "] "<< "Recv HEX[" << data.size() << "]: " << data.toHex(' ');
     // }
     mRawData.append(data);
+    const quint64 currentSize = static_cast<quint64>(mRawData.size());
+    if (currentSize > mRawDataPeak) {
+        mRawDataPeak = currentSize;
+        qDebug().noquote().nospace()
+            << "谱仪[#"<< mIndex << "] mRawData峰值更新(inputData): "
+            << mRawDataPeak << " bytes, ts="
+            << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz");
+    }
 
     mDataCondition.wakeOne();
 }

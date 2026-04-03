@@ -4,6 +4,9 @@
 #include "globalsettings.h"
 #include "switchbutton.h"
 #include <QTimer>
+#include <QDir>
+#include <QFile>
+#include <QTextStream>
 #include "energycalibration.h"
 #include "qcustomplothelper.h"
 
@@ -17,6 +20,13 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     setWindowTitle(QApplication::applicationName()+" - "+APP_VERSION);
 
     commHelper = CommHelper::instance();
+
+    // 温度批量写盘：回调只缓存，定时每60秒统一落盘到
+    // temperature/<yyyy-MM-dd>/<index>.txt（跨午夜按点归档到各自yyyy-MM-dd）
+    m_tempFlushTimer = new QTimer(this);
+    m_tempFlushTimer->setInterval(60 * 1000);
+    connect(m_tempFlushTimer, &QTimer::timeout, this, &MainWindow::flushTemperatureCache);
+    m_tempFlushTimer->start();
 
     // 连续测量计时器
     mContinueMeasureTimer = new QElapsedTimer();
@@ -892,30 +902,18 @@ void MainWindow::initUi()
 
     //更新温度状态
     connect(commHelper, &CommHelper::reportDetectorTemperature, this, [=](quint8 index, float temperature){
-        int row = index;
-        m_mapTemperatur[index] = qMakePair(QDateTime::currentMSecsSinceEpoch(), temperature);
-
-        //将温度数据保存到文件中，实时写入，文件名称为探测器编号-日期.txt，路径为应用程序目录下的temperature文件夹中
-        QString temperatureFilePath = QApplication::applicationDirPath() + "/temperature/" + QString::number(index) + "-" + QDateTime::currentDateTime().toString("yyyy-MM-dd") + ".txt";
-        QFile temperatureFile(temperatureFilePath);
-        if (!temperatureFile.open(QIODevice::WriteOnly | QIODevice::Append)) {
-            qWarning() << "Failed to open temperature file:" << temperatureFilePath;
+        if (index < 1 || index > DET_NUM)
             return;
-        }
-        QTextStream temperatureStream(&temperatureFile);
-        temperatureStream << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss") << "," << QString::number(temperature, 'f', 1) << endl;
-        temperatureFile.close();
 
-        // QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 3));
-        // cell->setText(QString::number(temperature, 'f', 1) + " ℃");
-        // if (cell->isEnabled()){
-        //     if (temperature > 70.0) {
-        //         cell->setStyleSheet("color: red;");
-        //     } else {
-        //         cell->setStyleSheet("color: green;");
-        //     }
-        // }
-    }, Qt::DirectConnection);
+        // 仅缓存数据：回调里不做文件 IO，由QTimer每10秒统一写盘
+        QDateTime now = QDateTime::currentDateTime();
+        m_mapTemperatur[index] = qMakePair(now.toMSecsSinceEpoch(), temperature);
+
+        const QString ymd = now.toString("yyyy-MM-dd");
+        const QString dtStr = now.toString("yyyy-MM-dd HH:mm:ss"); // 精确到秒
+        TempPoint p{dtStr, temperature};
+        m_tempPointCache[index][ymd].push_back(p);
+    }, Qt::QueuedConnection);
 
     connect(commHelper, &CommHelper::reportTemperatureTimeout, this, [=](quint8 index){
         QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(index, 3));
@@ -1227,6 +1225,53 @@ void MainWindow::clearCustomPlotData()
     }
 }
 
+void MainWindow::flushTemperatureCache()
+{
+    if (m_tempPointCache.isEmpty())
+        return;
+
+    const QString baseDirPath = QApplication::applicationDirPath() + "/temperature";
+
+    const QList<quint8> indexKeys = m_tempPointCache.keys();
+    for (quint8 index : indexKeys)
+    {
+        auto& dayMap = m_tempPointCache[index]; // index -> ymd -> points
+        const QStringList dayKeys = dayMap.keys();
+        for (const QString& ymd : dayKeys)
+        {
+            QVector<TempPoint>& points = dayMap[ymd];
+            if (points.isEmpty())
+                continue;
+
+            const QString dayDirPath = baseDirPath + "/" + ymd;
+            QDir dayDir(dayDirPath);
+            if (!dayDir.exists())
+                dayDir.mkpath(dayDirPath);
+
+            const QString filePath = dayDirPath + "/" + QString::number(index) + ".txt";
+            QFile temperatureFile(filePath);
+            if (!temperatureFile.open(QIODevice::WriteOnly | QIODevice::Append))
+            {
+                qWarning().noquote().nospace()
+                    << "Failed to open temperature file: " << filePath;
+                continue; // 保留points，下一轮flush再写
+            }
+
+            QTextStream temperatureStream(&temperatureFile);
+            for (const TempPoint& p : points)
+            {
+                temperatureStream << p.dtStr << "," << QString::number(p.temperature, 'f', 1) << "\n";
+            }
+            temperatureFile.close();
+
+            points.clear();
+        }
+        dayMap.clear();
+    }
+
+    m_tempPointCache.clear();
+}
+
 void MainWindow::closeEvent(QCloseEvent *event) {
     //确保子对话框都退出
     mDetSettingWindow->close();
@@ -1249,6 +1294,12 @@ void MainWindow::closeEvent(QCloseEvent *event) {
     // else
     // {
         // 断开网络
+        if (m_tempFlushTimer)
+            m_tempFlushTimer->stop();
+
+        // 关闭前把缓存的温度点写入磁盘，避免丢数据
+        flushTemperatureCache();
+
         commHelper->stopMeasure();
         commHelper->stopServer();
         event->accept();

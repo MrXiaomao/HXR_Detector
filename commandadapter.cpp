@@ -2,6 +2,7 @@
 #include <QDebug>
 #include <QtEndian>
 #include <QTimer>
+#include <QDateTime>
 #include "globalsettings.h"
 
 const QByteArray CommandAdapter::kCmdTempHead = QByteArray::fromHex("12 34 00 0A DA 11");
@@ -26,6 +27,7 @@ CommandAdapter::CommandAdapter(quint8 index, QObject *parent)
     : QObject{parent}
     , mIndex(index)
 {
+    mParserStatTimer.start();
     mCmdProcessThread = new QLiteThread(this) ;
     //mCmdProcessThread->setObjectName("mCmdProcessThread");
     mCmdProcessThread->setWorkThreadProc([=](){
@@ -97,6 +99,18 @@ void CommandAdapter::clear()
 
 void CommandAdapter::analyzeCommands(QByteArray &cachePool)
 {
+    auto dumpParserStats = [&]() {
+        if (mParserStatTimer.elapsed() >= 5000) {
+            qDebug().noquote().nospace()
+                << "谱仪[#"<< mIndex << "]解析统计: tailErr=" << mTailErrorCount
+                << ", typeErr=" << mTypeErrorCount
+                << ", removeBytes(resync4)=" << mResyncDropBytes
+                << ", removeBytes(scan1)=" << mHeaderScanDropBytes
+                << ", ts=" << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz");
+            mParserStatTimer.restart();
+        }
+    };
+
     while(1){
         //判断缓存数据大小是否小于指令集长度最小单位
         if (cachePool.size() < 12)
@@ -414,11 +428,14 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
             else{
                 /*异常数据，一定要注意！！！！！！！！！！！！！！！！！*/
                 findNaul = false;
+                ++mTypeErrorCount;
+                mResyncDropBytes += 4;
 
-                qInfo() << "数据包类型错误：" << cachePool.mid(4, 2).toHex(' ');
+                qDebug() << "数据包类型错误：" << cachePool.mid(4, 2).toHex(' ');
 
                 //重新开始寻找包头
                 cachePool.remove(0, 4);
+                dumpParserStats();
             }
 
             if (cachePool.size() >= onePkgSize){
@@ -448,6 +465,8 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                 else {
                     /*异常数据，一定要注意！！！！！！！！！！！！！！！！！*/
                     findNaul = false;
+                    ++mTailErrorCount;
+                    mResyncDropBytes += 4;
 
                     if (isFirstError) {
                         qWarning().nospace().noquote() << "谱仪[#" << mIndex << "]数据包尾部错误，后续相似错误将不再提示";
@@ -457,6 +476,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
 
                     // 包头/包尾数据不对称 重新开始寻找包头
                     cachePool.remove(0, 4);
+                    dumpParserStats();
                     continue;
                 }
             }
@@ -480,6 +500,8 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
 
             /*继续寻找包头,删除包头继续寻找*/
             cachePool.remove(0, 1);
+            ++mHeaderScanDropBytes;
+            dumpParserStats();
             continue;
         }
         else{
