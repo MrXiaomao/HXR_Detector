@@ -530,6 +530,7 @@ void DetSettingWindow::saveAt(quint8 detId)
     QString det_Ip_port = model->data(model->index(detId - 1, 1)).toString();
     strcpy(detParameter.det_Ip_port, det_Ip_port.toStdString().c_str());
 
+    detParameter.id = detId;
     detParameter.longitude = model->data(model->index(detId - 1, 2)).toDouble();
     detParameter.latitude = model->data(model->index(detId - 1, 3)).toDouble();
     detParameter.gain = model->data(model->index(detId - 1, 4)).toDouble();

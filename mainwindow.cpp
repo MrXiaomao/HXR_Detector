@@ -1,4 +1,4 @@
-﻿#include "mainwindow.h"
+#include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "qcustomplot.h"
 #include "globalsettings.h"
@@ -526,7 +526,7 @@ void MainWindow::initUi()
         }
 
         // 时钟刷新2次，温度刷新一次
-        if ((t%2) == 0){
+        if ((t++%2) == 0){
             for (int row=0; row<=DET_NUM; ++row){
                 if (m_mapTemperatur.contains(row)){
                     float temperature = m_mapTemperatur[row].second;
@@ -1451,7 +1451,7 @@ void MainWindow::on_action_startMeasure_triggered()
 
     mEnableAutoMeasure = ui->cbb_measureMode->currentIndex()==1;
     mEnableExtendTrigger = ui->com_triggerModel->currentIndex()==1;
-    m_spectrumRefreshTimelength = qMax((quint32)1000, (quint32)HDF5Settings::instance()->detParameters()[0].spectrumRefreshTime) / 1000;
+    m_spectrumRefreshTimelength = qMax((quint32)1000, (quint32)HDF5Settings::instance()->detParameters()[1].spectrumRefreshTime) / 1000;
 
     if (mEnableAutoMeasure)
     {

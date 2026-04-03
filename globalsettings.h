@@ -11,6 +11,7 @@
 #include <QReadWriteLock>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
+#include <QElapsedTimer>
 
 #include <cstring>      // 用于内存初始化（如memset）
 #include <QtEndian> //qFromBigEndian需要
@@ -753,6 +754,8 @@ typedef struct _DetParameter{
     quint16 highVoltageOutLevel;
 
     _DetParameter(){
+        id = 1;
+
         longitude = 0.0;
 
         latitude = 0.0;

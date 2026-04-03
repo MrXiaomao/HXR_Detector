@@ -3,6 +3,45 @@
 #include <QApplication>
 #include <QTextCodec>
 #include <QMessageBox>
+#include <QDateTime>
+
+namespace {
+
+/** 内存中只保留通道 1..DET_NUM，去掉 id=0 等非法键，并强制每路 id 与键一致。 */
+void normalizeDetParameterMap(QMap<quint8, DetParameter>& map)
+{
+    map.remove(0);
+    for (quint8 k : map.keys()) {
+        if (k > DET_NUM)
+            map.remove(k);
+    }
+    for (int i = 1; i <= DET_NUM; ++i) {
+        const quint8 ki = static_cast<quint8>(i);
+        if (!map.contains(ki)) {
+            DetParameter d;
+            d.id = ki;
+            map[ki] = d;
+        } else {
+            map[ki].id = ki;
+        }
+    }
+}
+
+/** 写入 HDF5 Configuration：固定 DET_NUM 行，行序与 id 一一对应为 1..DET_NUM。 */
+QVector<DetParameter> configurationRowsForWrite(const QMap<quint8, DetParameter>& map)
+{
+    QVector<DetParameter> data;
+    data.reserve(DET_NUM);
+    for (int i = 1; i <= DET_NUM; ++i) {
+        const quint8 ki = static_cast<quint8>(i);
+        DetParameter row = map.value(ki, DetParameter());
+        row.id = ki;
+        data.push_back(row);
+    }
+    return data;
+}
+
+} // namespace
 
 H5Spectrum FullSpectoH5Spec(const FullSpectrum& src)
 {
@@ -144,11 +183,13 @@ QMap<quint8, DetParameter>& HDF5Settings::detParameters()
 void HDF5Settings::setDetParameter(QMap<quint8, DetParameter>& detParameters)
 {
     mMapDetParameter = detParameters;
+    normalizeDetParameterMap(mMapDetParameter);
 }
 
 void HDF5Settings::sync()
 {
     QMutexLocker locker(&mWrite_mutex);
+    normalizeDetParameterMap(mMapDetParameter);
     H5::H5File *mfH5Setting = openH5Config();
     if (mfH5Setting == nullptr)
         return;
@@ -163,12 +204,8 @@ void HDF5Settings::sync()
         } else {
             cfg = mfH5Setting->createGroup("Config");
         }
-        // 3 准备数据
-        QVector<DetParameter> data;
-        for (auto &pair : mMapDetParameter.toStdMap())
-        {
-            data.push_back(pair.second);
-        }
+        // 3 准备数据：固定 DET_NUM 行，id 为 1..DET_NUM（文件中不再出现 id=0）
+        const QVector<DetParameter> data = configurationRowsForWrite(mMapDetParameter);
 
         hsize_t dims[1] = {DET_NUM};
         H5::DataSpace dataspace(1, dims);
@@ -203,7 +240,7 @@ void HDF5Settings::sync()
 void HDF5Settings::writeDetParStrAttr(H5::DataSet& dataset)
 {
     // 给每个字段写解释（多个键）
-    writeStrAttr(dataset, "id",   "通道号(0~23)");
+    writeStrAttr(dataset, "id",   "通道号(1~32)");
     writeStrAttr(dataset, "longitude",  "经度(0~360)");
     writeStrAttr(dataset, "latitude",   "纬度(0~180)");
     writeStrAttr(dataset, "gain", "增益(0.08~10.0)");
@@ -269,11 +306,7 @@ H5::H5File *HDF5Settings::openH5Config()
 
             // 创建配置信息分组
             {
-                QVector<DetParameter> data;
-                for (auto &pair : mMapDetParameter.toStdMap())
-                {
-                    data.push_back(pair.second);
-                }
+                const QVector<DetParameter> data = configurationRowsForWrite(mMapDetParameter);
 
                 hsize_t dims[1] = {DET_NUM};
                 H5::DataSpace dataspace(1, dims);
@@ -302,6 +335,7 @@ H5::H5File *HDF5Settings::openH5Config()
 void HDF5Settings::createH5Config()
 {
     H5::H5File *mfH5Setting = nullptr; // H5配置文件
+    bool configNeedsRewrite = false;
     if (QFileInfo::exists(DEFAULT_HDF5_FILENAME))
     {
         try {
@@ -316,12 +350,25 @@ void HDF5Settings::createH5Config()
             file_space.getSimpleExtentDims(dims.data());
 
             // 读取数据
-            //一次性读取所有数据
+            //一次性读取所有数据（兼容旧文件中带 id=0 的行：只采纳 id 在 1..DET_NUM 的记录）
             QVector<DetParameter> read_data(dims[0]);
             globalDataset.read(read_data.data(), mCompDataType);
-            for (const auto& item : read_data) {
-                mMapDetParameter[item.id] = item;
+            if (static_cast<hsize_t>(dims[0]) != static_cast<hsize_t>(DET_NUM))
+                configNeedsRewrite = true;
+            else {
+                for (const auto& item : read_data) {
+                    if (item.id == 0 || item.id > DET_NUM) {
+                        configNeedsRewrite = true;
+                        break;
+                    }
+                }
             }
+            mMapDetParameter.clear();
+            for (const auto& item : read_data) {
+                if (item.id >= 1 && item.id <= DET_NUM)
+                    mMapDetParameter[item.id] = item;
+            }
+            normalizeDetParameterMap(mMapDetParameter);
         } catch (H5::FileIException& error) {
             QMessageBox::warning(nullptr, "打开配置文件", "H5配置文件打开失败，文件被占用！");
         } catch (H5::DataSetIException& error) {
@@ -347,11 +394,7 @@ void HDF5Settings::createH5Config()
 
             // 创建配置信息分组
             {
-                QVector<DetParameter> data;
-                for (auto &pair : mMapDetParameter.toStdMap())
-                {
-                    data.push_back(pair.second);
-                }
+                const QVector<DetParameter> data = configurationRowsForWrite(mMapDetParameter);
 
                 hsize_t dims[1] = {DET_NUM};
                 H5::DataSpace dataspace(1, dims);
@@ -422,6 +465,9 @@ void HDF5Settings::createH5Config()
         delete mfH5Setting;
         mfH5Setting = nullptr;
     }
+
+    if (configNeedsRewrite)
+        sync();
 }
 
 H5::DataSet HDF5Settings::createDataSet(H5::H5File* H5File, quint8 index)
@@ -468,11 +514,8 @@ void HDF5Settings::createH5Spectrum(QString filePath)
 
             // 写入配置信息分组
             {
-                QVector<DetParameter> data;
-                for (auto &pair : mMapDetParameter.toStdMap())
-                {
-                    data.push_back(pair.second);
-                }
+                normalizeDetParameterMap(mMapDetParameter);
+                const QVector<DetParameter> data = configurationRowsForWrite(mMapDetParameter);
 
                 hsize_t dims[1] = {DET_NUM};
                 H5::DataSpace dataspace(1, dims);
@@ -765,6 +808,9 @@ void HDF5Settings::writeH5Spectrum(quint8 index, const H5Spectrum& data)
  */
 void HDF5Settings::writeH5SpectrumBatch(quint8 index, const QVector<H5Spectrum>& data)
 {
+    const qint64 SLOW_BATCH_THRESHOLD_MS = 20;
+    QElapsedTimer costTimer;
+    costTimer.start();
     if (data.isEmpty())
         return;
 
@@ -836,6 +882,17 @@ void HDF5Settings::writeH5SpectrumBatch(quint8 index, const QVector<H5Spectrum>&
         }
     } catch (H5::Exception& e) {
         e.printErrorStack();
+    }
+
+    const qint64 elapsed = costTimer.elapsed();
+    if (elapsed > SLOW_BATCH_THRESHOLD_MS) {
+        ++mSlowBatchWriteCount;
+        qWarning().noquote().nospace()
+            << "writeH5SpectrumBatch慢调用: det=" << index
+            << ", rows=" << data.size()
+            << ", elapsedMs=" << elapsed
+            << ", count=" << mSlowBatchWriteCount
+            << ", ts=" << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz");
     }
 }
 
