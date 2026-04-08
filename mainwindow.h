@@ -158,6 +158,21 @@ private slots:
     // 更新所有能谱图像的属性,detectorId为0时更新所有能谱图像的属性
     void updateSpectrumPlotSettings(int detectorId=0);
 
+    // 自定测量定时检查
+    void onAutoMeasureDelayTimeout();
+
+    // 交换机登录状态更新
+    void onSwitcherLogged(const QString& ip);
+
+    // 探测器上线处理
+    void onDetectorOnline(quint8 index);
+
+    // 探测器离线处理
+    void onDetectorOffline(quint8 index);
+
+    // 交换机POE电源状态报告
+    void onPoePowerStatusReport(quint8 index, bool on);
+
     // 日志内容查找功能
     void on_bt_search_clicked();
     void on_bt_searchPrevious_clicked();
@@ -219,7 +234,7 @@ private:
 
     // 自动化测量定时器
     QTimer *mAutoMeasureDelayTimer = nullptr;
-    bool mAutoMeasureDelayActive = false; // 自动测量延时器是否正在倒计时
+    bool mAutoMeasureTimerActive = false; // 自动测量定时器是否正在倒计时
     // 连续测量计时器
     QElapsedTimer *mContinueMeasureTimer = nullptr;
 

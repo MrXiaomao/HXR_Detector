@@ -33,45 +33,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     // 自动化测量计时器
     mAutoMeasureDelayTimer = new QTimer(this);
     mAutoMeasureDelayTimer->setInterval(1000); // 每秒触发一次
-    connect(mAutoMeasureDelayTimer, &QTimer::timeout, this, [=](){
-        if (mAutoMeasureDelayActive)
-        {            
-            QDateTime now = QDateTime::currentDateTime();
-            if (ui->cbb_measureMode->currentIndex() == 0){
-                // 手动测量模式
-                QDateTime tmStart = ui->dateTimeEdit_startTime->dateTime();
-                if (now >= tmStart)
-                {
-                    ui->lineEdit_triggerflag->setText("已经触发");
-
-                    mAutoMeasureDelayTimer->stop();
-
-                    // 直接开始测量
-                    this->startMeasure();
-                }
-            }
-            else{
-                // 自动化测量模式
-                QDateTime tmStart = ui->dateTimeEdit_startTime->dateTime().addSecs(-30);// 提前30秒做好准备工作
-                if (now >= tmStart)
-                {
-                    ui->lineEdit_triggerflag->setText("已经触发");
-
-                    mAutoMeasureDelayTimer->stop();
-
-                    // 第一步 先启动服务
-                    if (!commHelper->isOpen())
-                    {
-                        emit ui->action_startServer->trigger();
-                    }
-
-                    // 第二步 先连接交换机
-                    commHelper->connectSwitcher(false);
-                }
-            }
-
-        }
-    });
+    connect(mAutoMeasureDelayTimer, &QTimer::timeout, this, &MainWindow::onAutoMeasureDelayTimeout);
 
     // 初始化测量倒计时定时器
     mMeasureCountdownTimer = new QTimer(this);
@@ -118,41 +80,16 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     connect(ui->lineEdit_search, &QLineEdit::returnPressed, this, &MainWindow::on_lineEdit_search_returnPressed);
     connect(ui->lineEdit_search, &QLineEdit::textChanged, this, &MainWindow::on_lineEdit_search_textChanged);
 
-    // 继电器
+    // 交换机连接状态更新(连接后必须登录才能使用)
     connect(commHelper, &CommHelper::switcherConnected, this, [=](QString ip){
         mSwitcherConnected = true;
-        qInfo().nospace().noquote() << tr("交换机[%1]已连通").arg(ip);
+        qDebug().nospace().noquote() << tr("交换机[%1]已连通").arg(ip);
     }, Qt::QueuedConnection);
 
-    connect(commHelper, &CommHelper::switcherLogged, this, [=](QString ip){
-        // QLabel* label_Connected = this->findChild<QLabel*>("label_Connected");
-        // label_Connected->setStyleSheet("color:#00ff00;");
-        // label_Connected->setText(tr("交换机[%1]已连通").arg(ip));
-        mSwitcherLogged = true;
-        updateConnectButtonState(true);
-        ui->action_powerOn->setEnabled(true);
-        ui->action_powerOff->setEnabled(true);
-        qInfo().nospace().noquote() << tr("交换机[%1]已登录").arg(ip);
+    // 交换机登录状态更新
+    connect(commHelper, &CommHelper::switcherLogged, this, &MainWindow::onSwitcherLogged);
 
-        /// 再给设备上电
-        if (mEnableAutoMeasure)
-        {
-            // 打开时钟同步模块电源
-            commHelper->openSwitcherExtendPOEPower();
-            // 打开谱仪设备电源
-            commHelper->openPower();
-
-            // 第三步 30s之后开始自动测量
-            ui->action_stopMeasure->setEnabled(false);
-            QTimer::singleShot(30000, this, [=](){
-                ui->action_stopMeasure->setEnabled(true);
-
-                /// 开始测量
-                this->startMeasure();
-            });
-        }
-    }, Qt::QueuedConnection);
-
+    // 交换机断开连接
     connect(commHelper, &CommHelper::switcherDisconnected, this, [=](QString ip){
         mSwitcherConnected = false;
         updateConnectButtonState(false);
@@ -161,51 +98,16 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
         qCritical().nospace().noquote() << tr("交换机[%1]连接已断开").arg(ip);
     }, Qt::QueuedConnection);
 
-    // 探测器
-    connect(commHelper, &CommHelper::detectorOnline, this, [=](quint8 index){
-        int row = index;
-        QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 1));
-        cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::green));
-        cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 3));
-        cell->setStyleSheet("color: green;");
-        cell->setEnabled(true);
+    // 交换机上POE电源状态更新
+    connect(commHelper, &CommHelper::reportPoePowerStatus, this, &MainWindow::onPoePowerStatusReport, Qt::QueuedConnection);
 
-        //记录联网的探测器ID
-        mOnlineDetectors.append(index);
-        qInfo().nospace() << "谱仪[#" << index << "]上线";
-        //如果该探测器在温度超时报警列表中，则删除
-        if (mTemperatureTimeoutDetectors.contains(index)){
-            mTemperatureTimeoutDetectors.removeOne(index);
-            //如果该探测器正在测量，则重新开始测量
-            if (mDetectorMeasuring[index]){
-                commHelper->startMeasure(QDateTime::currentDateTime(), CommandAdapter::MeasureMode::mmManual, CommandAdapter::WorkMode::wmSpectrum, index);
-                //打印日志
-                qInfo().nospace() << "谱仪[#" << index << "]自动重新开始测量";
-            }
-        }
-    }, Qt::QueuedConnection);
+    // 探测器上线
+    connect(commHelper, &CommHelper::detectorOnline, this, &MainWindow::onDetectorOnline, Qt::QueuedConnection);
 
-    connect(commHelper, &CommHelper::detectorOffline, this, [=](quint8 index){
-        int row = index;
-        QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 1));
-        cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::red));
-        cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 2));
-        cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::red));
-        cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 3));
-        cell->setStyleSheet("color: gray;");
-        cell->setEnabled(false);
+    // 探测器下线
+    connect(commHelper, &CommHelper::detectorOffline, this, &MainWindow::onDetectorOffline, Qt::QueuedConnection);
 
-        // 探测器离线时，清除测量状态记录
-        // mDetectorMeasuring[index] = false;
-        // mDetectorMeasuring.remove(index);
-        //清除联网的探测器ID
-        if (mOnlineDetectors.contains(index)){
-            mOnlineDetectors.removeOne(index);
-            qInfo().nospace() << "谱仪[#" << index << "]离线";
-        }
-    }, Qt::QueuedConnection);
-
-    //测量开始
+    // 开始指令下发，测量正式开始
     connect(commHelper, &CommHelper::measureStart, this, [=](quint8 index){
         int row = index;
         QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 2));
@@ -220,7 +122,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
         qInfo().nospace() << "谱仪[#" << index << "]测量已启动，准备接收数据";//开始实验，准备接收数据
     }, Qt::QueuedConnection);
 
-    //测量结束
+    // 测量停止指令下发，测量结束
     connect(commHelper, &CommHelper::measureStop, this, [=](quint8 index){
         int row = index;
         QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 2));
@@ -229,27 +131,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
         qInfo().nospace() << "谱仪[#" << index << "]测量已停止";
     }, Qt::QueuedConnection);
 
-    //POE电源状态
-    connect(commHelper, &CommHelper::reportPoePowerStatus, this, [=](quint8 index, bool on){
-        int row = index;
-        SwitchButton* cell =  qobject_cast<SwitchButton*>(ui->tableWidget_detector->cellWidget(row, 0));
-        // qInfo().nospace() << "谱仪[#" << index << "]POE电源状态: " << (on ? "开" : "关");
-        if(on)
-        {
-            if (row == 0)
-                qInfo().nospace() << "时间同步触发模块POE电源状态: 开，模块开机中...";
-            else
-                qInfo().nospace() << "谱仪[#" << index << "]POE电源状态: 开，谱仪开机中...";
-        }else{
-            if (row == 0)
-                qInfo().nospace() << "时间同步触发模块已关机，POE电源状态: 关";
-            else
-                qInfo().nospace() << "谱仪[#" << index << "]已关机，POE电源状态: 关";
-        }
-        cell->setChecked(on);
-    }, Qt::QueuedConnection);
-
-    connect(ui->statusbar,&QStatusBar::messageChanged,this,[&](const QString &message){
+    connect(ui->statusbar, &QStatusBar::messageChanged,this,[&](const QString &message){
         if(message.isEmpty()) {
             ui->statusbar->showMessage(tr("准备就绪"));
         } else {
@@ -980,10 +862,10 @@ void MainWindow::initUi()
         //customPlot->replot(QCustomPlot::rpQueuedReplot);
     });
 
-    // 接收时间戳属性据
+    // 接收触发信号时间戳
     connect(commHelper, &CommHelper::reportTimestampe, this, [=](quint8 index, QDateTime& tm){
         // 只有启用了外触发才会接收打靶信号的时间戳，并且只在自动测量未激活时更新界面显示
-        if (mEnableExtendTrigger && !mAutoMeasureDelayActive)
+        if (mEnableExtendTrigger && !mAutoMeasureTimerActive)
         {
             // 只有开启了自动化测量，才接收自动触发的时间戳，并更新界面显示
             ui->dateTime_shotTime->setDateTime(tm);
@@ -993,7 +875,7 @@ void MainWindow::initUi()
             qint32 coolTimelength = ui->spinBox_coolTimeLength->value();
             ui->dateTimeEdit_startTime->setDateTime(tm.addSecs(coolTimelength));
 
-            mAutoMeasureDelayActive = true;
+            mAutoMeasureTimerActive = true;
             qInfo().noquote().nospace() << "收到打靶信号时间戳：" << tm.toString("yyyy-MM-dd HH:mm:ss") << "，自动测量将在" << coolTimelength << "秒后触发";
         }
     }, Qt::QueuedConnection);
@@ -1205,6 +1087,141 @@ void MainWindow::clearCustomPlotData()
     }
 }
 
+// 自动测量，定时器检测是否接近测量起始时刻。在起始时刻提前30s做好准备工作：
+void MainWindow::onAutoMeasureDelayTimeout()
+{
+    if (!mAutoMeasureTimerActive) return;
+
+    QDateTime now = QDateTime::currentDateTime();
+    if (ui->cbb_measureMode->currentIndex() == 0){
+        // 手动测量模式
+        QDateTime tmStart = ui->dateTimeEdit_startTime->dateTime();
+        if (now >= tmStart)
+        {
+            ui->lineEdit_triggerflag->setText("已经触发");
+            mAutoMeasureDelayTimer->stop();
+
+            // 直接开始测量
+            this->startMeasure();
+        }
+    }
+    else{
+        // 自动化测量模式
+        QDateTime tmStart = ui->dateTimeEdit_startTime->dateTime().addSecs(-30);// 提前30秒做好准备工作
+        if (now >= tmStart)
+        {
+            ui->lineEdit_triggerflag->setText("已经触发");
+
+            mAutoMeasureDelayTimer->stop();
+
+            // 第一步 先启动服务
+            if (!commHelper->isOpen())
+            {
+                emit ui->action_startServer->trigger();
+            }
+
+            // 第二步 先连接交换机，开启电源
+            commHelper->connectSwitcher(false);
+        }
+    }
+}
+
+//交换机登录成功的回调
+void MainWindow::onSwitcherLogged(const QString& ip)
+{
+    // QLabel* label_Connected = this->findChild<QLabel*>("label_Connected");
+    // label_Connected->setStyleSheet("color:#00ff00;");
+    // label_Connected->setText(tr("交换机[%1]已连通").arg(ip));
+    mSwitcherLogged = true;
+    updateConnectButtonState(true);
+    ui->action_powerOn->setEnabled(true);
+    ui->action_powerOff->setEnabled(true);
+    qInfo().nospace().noquote() << tr("交换机[%1]已登录").arg(ip);
+
+    /// 再给设备上电
+    if (mEnableAutoMeasure)
+    {
+        // 打开时钟同步模块电源
+        commHelper->openSwitcherExtendPOEPower();
+        // 打开谱仪设备电源
+        commHelper->openPower();
+
+        // 第三步 30s之后开始自动测量
+        ui->action_stopMeasure->setEnabled(false);
+        QTimer::singleShot(30000, this, [=](){
+            ui->action_stopMeasure->setEnabled(true);
+
+            /// 开始测量
+            this->startMeasure();
+        });
+    }
+}
+
+//探测器上线
+void MainWindow::onDetectorOnline(quint8 index)
+{
+    int row = index;
+    QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 1));
+    cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::green));
+    cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 3));
+    cell->setStyleSheet("color: green;");
+    cell->setEnabled(true);
+
+    //记录联网的探测器ID
+    mOnlineDetectors.append(index);
+    qInfo().nospace() << "谱仪[#" << index << "]上线";
+    //如果该探测器在温度超时报警列表中，则删除
+    if (mTemperatureTimeoutDetectors.contains(index)){
+        mTemperatureTimeoutDetectors.removeOne(index);
+        //如果该探测器正在测量，则重新开始测量
+        if (mDetectorMeasuring[index]){
+            commHelper->startMeasure(QDateTime::currentDateTime(), CommandAdapter::MeasureMode::mmManual, CommandAdapter::WorkMode::wmSpectrum, index);
+            //打印日志
+            qInfo().nospace() << "谱仪[#" << index << "]自动重新开始测量";
+        }
+    }
+}
+
+//探测器离线
+void MainWindow::onDetectorOffline(quint8 index)
+{
+    int row = index;
+    QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 1));
+    cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::red));
+    cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 2));
+    cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::red));
+    cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 3));
+    cell->setStyleSheet("color: gray;");
+    cell->setEnabled(false);
+
+    //清除联网的探测器ID
+    if (mOnlineDetectors.contains(index)){
+        mOnlineDetectors.removeOne(index);
+        qInfo().nospace() << "谱仪[#" << index << "]离线";
+    }
+}
+
+// 交换机POE电源状态报告
+void MainWindow::onPoePowerStatusReport(quint8 index, bool on)
+{
+    int row = index;
+    SwitchButton* cell =  qobject_cast<SwitchButton*>(ui->tableWidget_detector->cellWidget(row, 0));
+    if(on)
+    {
+        if (row == 0)
+            qInfo().nospace() << "时间同步触发模块POE电源状态: 开，模块开机中...";
+        else
+            qInfo().nospace() << "谱仪[#" << index << "]POE电源状态: 开，谱仪开机中...";
+    }else{
+        if (row == 0)
+            qInfo().nospace() << "时间同步触发模块已关机，POE电源状态: 关";
+        else
+            qInfo().nospace() << "谱仪[#" << index << "]已关机，POE电源状态: 关";
+    }
+    cell->setChecked(on);
+}
+
+// 将缓存的温度数据写入磁盘，避免丢数据
 void MainWindow::flushTemperatureCache()
 {
     QHash<quint8, QHash<QString, QVector<TempPoint>>> tempData;
@@ -1493,6 +1510,7 @@ void MainWindow::on_action_startMeasure_triggered()
     if (mEnableAutoMeasure)
     {
         qInfo().nospace().noquote() << tr("开启自动化测量");
+        mAutoMeasureTimerActive = false; // 等到触发信号后，再置为true
     }
     else
     {
@@ -1548,11 +1566,9 @@ void MainWindow::on_action_startMeasure_triggered()
         ui->spinBox_coolTimeLength->setValue(ui->dateTime_shotTime->dateTime().secsTo(now));
     }
 
-    mAutoMeasureDelayActive = ui->com_triggerModel->currentIndex() == 0;
-    if (mAutoMeasureDelayActive)
+    if (!mEnableExtendTrigger)
     {
         ui->lineEdit_triggerflag->setText("已经触发");
-
         mAutoMeasureDelayTimer->stop();
 
         // 直接开始测量
@@ -2169,17 +2185,12 @@ void MainWindow::resetDetectorSpectrum(int detectorId) {
 
     // 清空能谱
     memset(it->spectrum, 0, sizeof(it->spectrum));
-    // for (int i = 0; i < 8192; ++i)
-    //     it->spectrum[i] = 0;
-
     // 清空上次测量累积时间的能谱序号
     it->lastSpectrumID = 0;
     // 清空上次测量累积时间的计数率
     it->lastAccumulateCount = 0;
-
     // 清空计数率历史并释放内存
     QVector<double>().swap(it->countRateHistory);
-    // 如果是 QList<double>，同样写法：QList<double>().swap(it->countRateHistory);
 
     qDebug().noquote().nospace() << "Detector" << detectorId << "spectrum and countRateHistory reset";
 }

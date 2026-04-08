@@ -53,7 +53,7 @@ DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
     });
 
     // 启动能谱定时写入定时器：每隔 10s 将缓存的能谱批量写入 HDF5
-    mSpectrumWriteTimer.setInterval(10 * 1000);   // 10 秒
+    mSpectrumWriteTimer.setInterval(10000);   // 10 秒
     mSpectrumWriteTimer.setSingleShot(false);
     connect(&mSpectrumWriteTimer, &QTimer::timeout,
             this, &DataProcessor::flushSpectrumBuffer);
@@ -246,12 +246,6 @@ void DataProcessor::startAutoMeasure(QDateTime tmStart, CommandAdapter::WorkMode
     m_parseData = new ParseData();
 
     QString mMeasureStartTime = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
-
-    //测量前下发配置
-    //HDF5Settings *settings = HDF5Settings::instance();
-    //QMap<quint8, DetParameter>& detParameters = settings->detParameters();
-    //DetParameter& detParameter = detParameters[mIndex];
-    //this->updateSetting(detParameter); 参数设置在上线时候已经发过了，这里就不用重复发送了
 
     //#12 波形工作模式=1|0|22|1234000FFF1000000000ABCD
     //#13 能谱工作模式=1|0|23|1234000FFF1000000001ABCD
@@ -500,6 +494,11 @@ void DataProcessor::flushSpectrumBuffer()
     }
 
     HDF5Settings* settings = HDF5Settings::instance();
+
+    //打印线程号
+    qDebug() << "det[" << mIndex << "] writeH5SpectrumBatch thread:" << QThread::currentThreadId()
+             << " bytesWritten:" << pending.size() * sizeof(H5Spectrum);
+
     // 一次性批量写入，避免逐个扩展数据集带来的开销
     settings->writeH5SpectrumBatch(mIndex, pending);
 }

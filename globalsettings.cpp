@@ -828,7 +828,7 @@ void HDF5Settings::writeH5SpectrumBatch(quint8 index, const QVector<H5Spectrum>&
 
         // 写入前预测大小，若超过 16GB，则整批丢弃、关闭文件
         if (!mSpectrumFilePath.isEmpty()) {
-            const qint64 maxBytes = 16ll * 1024 * 1024 * 1024; // 16GB
+            const qint64 maxBytes = 16 * 1024 * 1024 * 1024; // 16GB
             QFileInfo info(mSpectrumFilePath);
             if (info.exists()) {
                 const qint64 currentSize  = info.size();
@@ -882,17 +882,6 @@ void HDF5Settings::writeH5SpectrumBatch(quint8 index, const QVector<H5Spectrum>&
         }
     } catch (H5::Exception& e) {
         e.printErrorStack();
-    }
-
-    const qint64 elapsed = costTimer.elapsed();
-    if (elapsed > SLOW_BATCH_THRESHOLD_MS) {
-        ++mSlowBatchWriteCount;
-        qDebug().noquote().nospace()
-            << "writeH5SpectrumBatch慢调用: det=" << index
-            << ", rows=" << data.size()
-            << ", elapsedMs=" << elapsed
-            << ", count=" << mSlowBatchWriteCount
-            << ", ts=" << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz");
     }
 }
 

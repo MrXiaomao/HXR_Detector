@@ -297,13 +297,13 @@ void CommHelper::initDataProcessor()
         // 能谱数据
         connect(processor, &DataProcessor::reportSpectrumData, this, [=](QByteArray& data){
             quint8 detId = processor->getIndex();
-            /*{
+            {
                 if (mDetectorFileProcessor[detId]->isOpen()){
                     qint64 bytesWritten = mDetectorFileProcessor[detId]->write((const char *)data.constData(), data.size());
                     // 检查是否需要flush（每10秒或每1MB）
                     checkAndFlushFile(detId, bytesWritten);
                 }
-            }*/
+            }
             // 数据解包
             processor->mergeSubSpec(detId, data);
         }, Qt::DirectConnection);
@@ -966,24 +966,6 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
 
             DataProcessor* detectorDataProcessor = mDetectorDataProcessor[index];
             if (!detectorDataProcessor->isFreeSocket()){
-                //创建网口数据文件存储
-                // if (!mNetRawFileProcessor.contains(index)){
-                //     QString filePath = QString("%1/%2/%3_%4_Net.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(index);
-                //     mNetRawFileProcessor[index] = new QFile(filePath);
-                //     mNetRawFileProcessor[index]->open(QIODevice::WriteOnly | QIODevice::Append); //覆盖式写入
-                //     mDataFileList.push_back(filePath);
-
-                //     // 初始化flush信息
-                //     {
-                //         QMutexLocker flushLocker(&mMutexFileFlush);
-                //         mFileFlushInfo[index] = FileFlushInfo();
-                //     }
-
-                //     QFileInfo info(filePath);
-                //     QString absolutePath = info.absoluteFilePath();
-                //     qDebug().nospace() << "谱仪[#"<< index << "]创建存储文件：" << absolutePath;
-                // }
-                
                 //创建有效网络数据文件存储
                 if (!mDetectorFileProcessor.contains(index)){
                     QString filePath = QString("%1/%2/%3_%4_能谱.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(index);
@@ -1089,8 +1071,10 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
 */
 void CommHelper::checkAndFlushFile(quint8 index, qint64 bytesWritten)
 {
+    //打印线程号
+    qDebug() << "det[" << index << "] checkAndFlushFile thread:" << QThread::currentThreadId() << " bytesWritten:" << bytesWritten;
     const qint64 FLUSH_SIZE_THRESHOLD = 5*1024 * 1024; // Bytes
-    const qint64 FLUSH_TIME_THRESHOLD_MS = 10*1000; // 10秒
+    const qint64 FLUSH_TIME_THRESHOLD_MS = 10000; // 10秒
     bool triggeredBySize = false;
     bool triggeredByTime = false;
     bool needFlush = false;
