@@ -2,8 +2,8 @@
  * @Author: MrPan
  * @Date: 2025-11-13 11:36:00
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-01-16 10:27:56
- * @Description: 请填写简介
+ * @LastEditTime: 2026-04-08 09:46:01
+ * @Description: 处理界面与探测器之间的数据交互，包括网络数据、能谱数据、温度数据等，控制探测器的工作模式、参数设置、数据采集等
  */
 #ifndef DATAPROCESSOR_H
 #define DATAPROCESSOR_H
@@ -46,11 +46,10 @@ public:
 #endif //ENABLE_LIBHV
     bool isFreeSocket();//是否关联Socket
 
-    /*
-     * 添加数据
-     */
-    void inputData(const QByteArray& data);
-    void inputSpectrumData(quint8 no, QByteArray& data);
+    // 追加原始网络数据
+    void appendRawTcpData(const QByteArray& data);
+    // 解析能谱数据包，并拼接成完整能谱
+    void mergeSubSpec(quint8 no, QByteArray& data);
 
     /*
      * 开始测量
@@ -63,7 +62,8 @@ public:
      */
     void stopMeasure();
 
-    quint8 index(){
+    //获取探测器编号1-32
+    quint8 getIndex(){
         return this->mIndex;
     };
 

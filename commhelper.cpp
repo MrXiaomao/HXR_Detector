@@ -167,30 +167,6 @@ void CommHelper::initSocket()
             return;
         }
     };
-
-    // 以下代码，改到DataProcessor::reallocSocket里面去是实现了
-    // mTcpServer->onMessage = [&](const hv::SocketChannelPtr& channel, hv::Buffer* buf)
-    // {
-    //     qint8 index =  (qint8)(intptr_t)(channel->context());
-    //     QByteArray data = QByteArray::fromRawData((const char*)buf->data(), buf->size());
-
-    //     // 上报原始网络数据
-    //     if (mDetectorDataProcessor[index]->isUpgrading())
-    //         emit reportOTAUpgradeData(index, data);
-    //     else{
-    //         /*
-    //             保存网口数据
-    //         */
-    //         if (mNetRawFileProcessor.contains(index) && mNetRawFileProcessor[index]->isOpen()){
-    //             qint64 bytesWritten = mNetRawFileProcessor[index]->write((const char *)data.constData(), data.size());
-    //             // 实时flush，确保数据都存下来了
-    //             mNetRawFileProcessor[index]->flush();
-    //         }
-    //     }
-
-    //     mDetectorDataProcessor[index]->inputData(data);
-    // };
-
 #else
     this->mTcpServer = new TcpAgentServer();
     connect(this->mTcpServer, &TcpAgentServer::newConnection, this, [=](qintptr socketDescriptor){
@@ -285,14 +261,13 @@ void CommHelper::initDataProcessor()
         mDetectorDataProcessor[index] = processor;
 
         // 更新温度数据
-        connect(processor, &DataProcessor::reportTemperatureData,
-        this, [=](double temperature){
-            emit reportDetectorTemperature(processor->index(), temperature);
+        connect(processor, &DataProcessor::reportTemperatureData, this, [=](double temperature){
+            emit reportDetectorTemperature(processor->getIndex(), temperature);
         }, Qt::DirectConnection);
         
         //对温度超时报警进行处理
         connect(processor, &DataProcessor::reportTemperatureTimeout, this, [=](){
-            quint8 detID = processor->index();
+            quint8 detID = processor->getIndex();
             emit reportTemperatureTimeout(detID);//上报温度超时报警
 
             handleDetectorDisconnection(detID);
@@ -321,15 +296,16 @@ void CommHelper::initDataProcessor()
 
         // 能谱数据
         connect(processor, &DataProcessor::reportSpectrumData, this, [=](QByteArray& data){
-            {
-                if (mDetectorFileProcessor[processor->index()]->isOpen()){
-                    qint64 bytesWritten = mDetectorFileProcessor[processor->index()]->write((const char *)data.constData(), data.size());
+            quint8 detId = processor->getIndex();
+            /*{
+                if (mDetectorFileProcessor[detId]->isOpen()){
+                    qint64 bytesWritten = mDetectorFileProcessor[detId]->write((const char *)data.constData(), data.size());
                     // 检查是否需要flush（每10秒或每1MB）
-                    checkAndFlushFile(processor->index(), bytesWritten);
+                    checkAndFlushFile(detId, bytesWritten);
                 }
-            }
+            }*/
             // 数据解包
-            processor->inputSpectrumData(processor->index(), data);
+            processor->mergeSubSpec(detId, data);
         }, Qt::DirectConnection);
 
         connect(processor, &DataProcessor::reportFullSpectrum,
@@ -340,7 +316,7 @@ void CommHelper::initDataProcessor()
 
         // 原始网络数据
         connect(processor, &DataProcessor::reportOTAUpgradeData, this, [=](const QByteArray& data){
-            quint8 detId = processor->index();
+            quint8 detId = processor->getIndex();
             emit reportOTAUpgradeData(detId, data);
         }, Qt::DirectConnection);
 
@@ -348,12 +324,12 @@ void CommHelper::initDataProcessor()
             /*
                 保存数据
             */
-            quint8 detId = processor->index();
+            quint8 detId = processor->getIndex();
             {
-                if (mNetRawFileProcessor.contains(processor->index()) && mNetRawFileProcessor[processor->index()]->isOpen()){
-                    qint64 bytesWritten = mNetRawFileProcessor[processor->index()]->write((const char *)data.constData(), data.size());
+                if (mNetRawFileProcessor.contains(detId) && mNetRawFileProcessor[detId]->isOpen()){
+                    qint64 bytesWritten = mNetRawFileProcessor[detId]->write((const char *)data.constData(), data.size());
                     // 每10秒或每1MB执行一次flush（改为每10秒），避免每次写入都flush影响性能
-                    checkAndFlushFile(processor->index(), bytesWritten);
+                    checkAndFlushFile(detId, bytesWritten);
                 }
             }
         }, Qt::DirectConnection);
@@ -363,11 +339,11 @@ void CommHelper::initDataProcessor()
             /*
                 保存数据
             */
-            quint8 detId = processor->index();
-            if (mDetectorFileProcessor[processor->index()]->isOpen()){
-                qint64 bytesWritten = mDetectorFileProcessor[processor->index()]->write((const char *)data.constData(), data.size());
+            quint8 detId = processor->getIndex();
+            if (mDetectorFileProcessor[detId]->isOpen()){
+                qint64 bytesWritten = mDetectorFileProcessor[detId]->write((const char *)data.constData(), data.size());
                 // 检查是否需要flush（每10秒或每1MB）
-                checkAndFlushFile(processor->index(), bytesWritten);
+                checkAndFlushFile(detId, bytesWritten);
             }
 
             data.remove(0, 6);//移除包头
@@ -390,8 +366,9 @@ void CommHelper::initDataProcessor()
                     waveform.append(amplitude);
                 }
 
-                QMetaObject::invokeMethod(this, "reportWaveformCurveData", Qt::DirectConnection, Q_ARG(quint8, processor->index()), Q_ARG(QVector<quint16>&, waveform));
-                //emit reportWaveformCurveData(processor->index(), waveform);
+                QMetaObject::invokeMethod(this, "reportWaveformCurveData", Qt::DirectConnection, 
+                    Q_ARG(quint8, processor->getIndex()), Q_ARG(QVector<quint16>&, waveform));
+                //emit reportWaveformCurveData(processor->getIndex(), waveform);
             }
         }, Qt::DirectConnection);
 
@@ -400,32 +377,32 @@ void CommHelper::initDataProcessor()
             /*
                 保存粒子数据
             */
-            quint8 detId = processor->index();
+            quint8 detId = processor->getIndex();
             {
                 // QMutexLocker locker(&mMutexTriggerTime);
                 // if (mTriggerTime.isEmpty()){
                 //     mTriggerTime = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
                 // }
 
-                // if (!mDetectorFileProcessor.contains(processor->index())){
-                //     QString filePath = QString("%1/%2/%3_%4_粒子.txt").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(processor->index());
-                //     mDetectorFileProcessor[processor->index()] = new QFile(filePath);
-                //     mDetectorFileProcessor[processor->index()]->open(QIODevice::WriteOnly | QIODevice::Append); //覆盖式写入
+                // if (!mDetectorFileProcessor.contains(detId)){
+                //     QString filePath = QString("%1/%2/%3_%4_粒子.txt").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(detId);
+                //     mDetectorFileProcessor[detId] = new QFile(filePath);
+                //     mDetectorFileProcessor[detId]->open(QIODevice::WriteOnly | QIODevice::Append); //覆盖式写入
                 //     mDataFileList.push_back(filePath);
                 //     // 写入表头
                 //     QString line = QString("测量时长(s),时间,ADC采样幅度,粒子类型\n");
-                //     qint64 bytesWritten = mDetectorFileProcessor[processor->index()]->write((const char *)line.toUtf8());
+                //     qint64 bytesWritten = mDetectorFileProcessor[detId]->write((const char *)line.toUtf8());
                 //     // 检查是否需要flush（每10秒或每1MB）
 
                 //     // 初始化flush信息
                 //     {
                 //         QMutexLocker flushLocker(&mMutexFileFlush);
-                //         mFileFlushInfo[processor->index()] = FileFlushInfo();
+                //         mFileFlushInfo[detId] = FileFlushInfo();
                 //     }
 
                 //     QFileInfo info(filePath);
                 //     QString absolutePath = info.absoluteFilePath();
-                //     qInfo().nospace() << "谱仪[#"<< processor->index() << "]创建存储文件：" << absolutePath;
+                //     qInfo().nospace() << "谱仪[#"<< detId << "]创建存储文件：" << absolutePath;
                 // }
             }
 
@@ -460,19 +437,18 @@ void CommHelper::initDataProcessor()
                 quint64 tmUnix = tmUtc - 2208988800; // UTC时间戳（1970）-unix时间戳
                 QDateTime tm = QDateTime::fromMSecsSinceEpoch(tmUnix*1000 + msecond);
 
-                if (mDetectorFileProcessor[processor->index()]->isOpen()){
+                if (mDetectorFileProcessor[detId]->isOpen()){
                     QString line = QString("%1,%2,%3,%4\n")
                                     .arg(sequence)
                                     .arg(tm.toString("yyyy-MM-dd HH:mm:ss.zzz"))
                                     .arg(amplitude)
                                     .arg(typeFlag);
                     QByteArray lineData = line.toUtf8();
-                    qint64 bytesWritten = mDetectorFileProcessor[processor->index()]->write((const char *)lineData.constData(), lineData.size());
+                    qint64 bytesWritten = mDetectorFileProcessor[detId]->write((const char *)lineData.constData(), lineData.size());
                 }
             }
 
-            mDetectorFileProcessor[processor->index()]->flush();
-
+            mDetectorFileProcessor[detId]->flush();
             // 上报计数
             emit reportParticleCurveData(index, sequence);
         }, Qt::DirectConnection);
@@ -1115,9 +1091,6 @@ void CommHelper::checkAndFlushFile(quint8 index, qint64 bytesWritten)
 {
     const qint64 FLUSH_SIZE_THRESHOLD = 5*1024 * 1024; // Bytes
     const qint64 FLUSH_TIME_THRESHOLD_MS = 10*1000; // 10秒
-    const qint64 SLOW_FLUSH_THRESHOLD_MS = 20;
-    QElapsedTimer costTimer;
-    costTimer.start();
     bool triggeredBySize = false;
     bool triggeredByTime = false;
     bool needFlush = false;
@@ -1159,18 +1132,6 @@ void CommHelper::checkAndFlushFile(quint8 index, qint64 bytesWritten)
         if (file && file->isOpen()) {
             file->flush();
         }
-    }
-
-    const qint64 elapsed = costTimer.elapsed();
-    if (elapsed > SLOW_FLUSH_THRESHOLD_MS) {
-        ++mSlowFlushCount;
-        qDebug().noquote().nospace()
-            << "checkAndFlushFile慢调用: det=" << index
-            << ", elapsedMs=" << elapsed
-            << ", count=" << mSlowFlushCount
-            << ", trigger(size=" << (triggeredBySize ? 1 : 0)
-            << ",time=" << (triggeredByTime ? 1 : 0) << ")"
-            << ", ts=" << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz");
     }
 }
 

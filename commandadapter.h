@@ -1,3 +1,10 @@
+/*
+ * @Author: MrPan
+ * @Date: 2025-11-13 11:36:00
+ * @LastEditors: Maoxiaoqing
+ * @LastEditTime: 2026-04-08 10:08:11
+ * @Description: 协议（下行指令 + 上行数据）、拆包（上行流式解析）、发指令 API
+ */
 #ifndef COMMANDADAPTER_H
 #define COMMANDADAPTER_H
 
@@ -226,7 +233,7 @@ private:
     quint64 mTypeErrorCount = 0;
     quint64 mResyncDropBytes = 0;
     quint64 mHeaderScanDropBytes = 0;
-    QElapsedTimer mParserStatTimer;
+    // QElapsedTimer mParserStatTimer;
 };
 
 #endif // COMMANDADAPTER_H

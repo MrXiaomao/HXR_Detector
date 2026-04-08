@@ -217,7 +217,7 @@ private:
     int mTotalCountdown = 0;  // 总倒计时时间（秒），用于计算已测量时长
     //bool mContinueMeasure = false; // 是否继续测量模式
 
-    // 自动化测量延时器
+    // 自动化测量定时器
     QTimer *mAutoMeasureDelayTimer = nullptr;
     bool mAutoMeasureDelayActive = false; // 自动测量延时器是否正在倒计时
     // 连续测量计时器
@@ -259,6 +259,7 @@ private:
     };
     QHash<quint8, QHash<QString, QVector<TempPoint>>> m_tempPointCache; // index -> day(yyyy-MM-dd) -> points
     QTimer* m_tempFlushTimer = nullptr; // 每10秒flush一次
+    QMutex mMutexTemperature; //温度数据缓存锁
     void flushTemperatureCache();
 
     quint32 m_spectrumRefreshTimelength = 1; // 能谱刷新时长(s)

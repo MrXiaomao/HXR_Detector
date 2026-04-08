@@ -912,8 +912,10 @@ void MainWindow::initUi()
         const QString ymd = now.toString("yyyy-MM-dd");
         const QString dtStr = now.toString("yyyy-MM-dd HH:mm:ss"); // 精确到秒
         TempPoint p{dtStr, temperature};
+
+        QMutexLocker flushLocker(&mMutexTemperature);
         m_tempPointCache[index][ymd].push_back(p);
-    }, Qt::QueuedConnection);
+    }, Qt::DirectConnection);
 
     connect(commHelper, &CommHelper::reportTemperatureTimeout, this, [=](quint8 index){
         QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(index, 3));
@@ -1161,24 +1163,6 @@ void MainWindow::initCustomPlot(int index, QCustomPlot* customPlot, QString axis
         //graph->setSmooth(true);
     }
 
-    // if (graphCount == 1){
-    //     QSharedPointer<QCPAxisTickerLog> logTicker(new QCPAxisTickerLog);
-    //     customPlot->yAxis->setTicker(logTicker);
-    //     //customPlot->yAxis2->setTicker(logTicker);
-    //     customPlot->yAxis->setScaleType(QCPAxis::ScaleType::stLogarithmic);
-    //     customPlot->yAxis->setNumberFormat("eb");//使用科学计数法表示刻度
-    //     customPlot->yAxis->setNumberPrecision(0);//小数点后面小数位数
-
-    //     customPlot->yAxis2->setTicker(logTicker);
-    //     customPlot->yAxis2->setScaleType(QCPAxis::ScaleType::stLogarithmic);
-    //     customPlot->yAxis2->setNumberFormat("eb");//使用科学计数法表示刻度
-    //     customPlot->yAxis2->setNumberPrecision(0);//小数点后面小数位数
-    // }
-    // else {
-    //     QSharedPointer<QCPAxisTicker> ticker(new QCPAxisTicker);
-    //     customPlot->yAxis->setTicker(ticker);
-    // }
-
     customPlot->replot();
     connect(customPlot->xAxis, SIGNAL(rangeChanged(const QCPRange &)), customPlot->xAxis2, SLOT(setRange(const QCPRange &)));
     connect(customPlot->yAxis, SIGNAL(rangeChanged(const QCPRange &)), customPlot->yAxis2, SLOT(setRange(const QCPRange &)));
@@ -1206,8 +1190,6 @@ void MainWindow::clearCustomPlotData()
                 {
                     customPlot->graph(g)->data()->clear();  // 只清数据
                 }
-
-                customPlot->replot();
             }
         }
 
@@ -1219,23 +1201,28 @@ void MainWindow::clearCustomPlotData()
             {
                 customPlot->graph(g)->data()->clear();  // 只清数据
             }
-
-            customPlot->replot();
         }
     }
 }
 
 void MainWindow::flushTemperatureCache()
 {
-    if (m_tempPointCache.isEmpty())
+    QHash<quint8, QHash<QString, QVector<TempPoint>>> tempData;
+    {
+        QMutexLocker locker(&mMutexTemperature);
+        tempData = m_tempPointCache;
+        m_tempPointCache.clear();
+    }
+
+    if (tempData.isEmpty())
         return;
 
     const QString baseDirPath = QApplication::applicationDirPath() + "/temperature";
 
-    const QList<quint8> indexKeys = m_tempPointCache.keys();
+    const QList<quint8> indexKeys = tempData.keys();
     for (quint8 index : indexKeys)
     {
-        auto& dayMap = m_tempPointCache[index]; // index -> ymd -> points
+        auto& dayMap = tempData[index]; // index -> ymd -> points
         const QStringList dayKeys = dayMap.keys();
         for (const QString& ymd : dayKeys)
         {
@@ -1268,8 +1255,6 @@ void MainWindow::flushTemperatureCache()
         }
         dayMap.clear();
     }
-
-    m_tempPointCache.clear();
 }
 
 void MainWindow::closeEvent(QCloseEvent *event) {
@@ -1492,6 +1477,7 @@ void MainWindow::on_action_startMeasure_triggered()
     //打印线程编号
     qDebug() << "MainWindow::on_action_startMeasure_triggered(), thread id:" << QThread::currentThreadId();
     clearCustomPlotData();
+    updateSpectrumPlotSettings();
     //先检查路径有效性 lineEdit_filePath
     QString filePath = ui->lineEdit_filePath->text();
     QDir dir(filePath);
@@ -1518,7 +1504,6 @@ void MainWindow::on_action_startMeasure_triggered()
                 return ;
             }
         }
-
         qInfo().nospace().noquote() << tr("开启手动测量");
     }
 
@@ -1538,23 +1523,6 @@ void MainWindow::on_action_startMeasure_triggered()
     ui->action_waveformMode->setEnabled(false);
     ui->action_particalMode->setEnabled(false);
     ui->spinBox_coolTimeLength->setEnabled(false);
-
-    updateSpectrumPlotSettings();
-
-
-    QVector<double> keys, values;
-    for (int i=1; i<=2; ++i){
-        QCustomPlot *spectroMeter_top = this->findChild<QCustomPlot*>(QString("spectroMeter%1_top").arg(i));
-        for (int j=0; j<spectroMeter_top->graphCount(); ++j)
-            spectroMeter_top->graph(j)->data()->clear();
-
-        QCustomPlot *spectroMeter_bottom = this->findChild<QCustomPlot*>(QString("spectroMeter%1_bottom").arg(i));
-        for (int j=0; j<spectroMeter_bottom->graphCount(); ++j)
-            spectroMeter_bottom->graph(j)->data()->clear();
-
-        spectroMeter_top->replot();
-        spectroMeter_bottom->replot();
-    }
 
     for (auto index : mOnlineDetectors){
         if (index != 0)
@@ -1600,6 +1568,7 @@ void MainWindow::on_pushButton_startMeasure_clicked()
 {
     //清空图像中的曲线数据
     clearCustomPlotData();
+    updateSpectrumPlotSettings();
 
     //先检查路径有效性 lineEdit_filePath
     QString filePath = ui->lineEdit_filePath->text();
@@ -1724,20 +1693,6 @@ void MainWindow::on_pushButton_startMeasure_clicked()
 
             if (m_selectedChannels.contains(index))
                 continue;
-
-            // 先清空曲线内容
-            {
-                QCustomPlot* spectroMeter_bottom = getCustomPlot(index, true);
-                QCPGraph* graph = getGraph(index, true);
-                graph->data()->clear();
-                spectroMeter_bottom->replot();
-            }
-            {
-                QCustomPlot* spectroMeter_top = getCustomPlot(index, false);
-                QCPGraph* graph = getGraph(index, false);
-                graph->data()->clear();
-                spectroMeter_top->replot();
-            }
 
             // 再发送开始测量指令
             if (mOnlineDetectors.contains(index))
@@ -2830,6 +2785,8 @@ void MainWindow::on_cbb_energyCalibration_toggled(bool checked)
     mEnScale = checked;
 
     updateSpectrumPlotSettings();
+    ui->spectroMeter1_bottom->replot();
+    ui->spectroMeter2_bottom->replot();
 }
 
 void MainWindow::updateSpectrumPlotSettings(int detectorId)
@@ -2842,8 +2799,6 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
             // 更新X轴范围
             ui->spectroMeter1_bottom->xAxis->setRange(m_spectrumPlotSettings[index-1].xMin, m_spectrumPlotSettings[index-1].xMax);
             ui->spectroMeter2_bottom->xAxis->setRange(m_spectrumPlotSettings[index-1].xMin, m_spectrumPlotSettings[index-1].xMax);
-            ui->spectroMeter1_bottom->replot();
-            ui->spectroMeter2_bottom->replot();
         }
 
         // 取公共最小值/最大值

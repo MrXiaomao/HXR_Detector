@@ -237,7 +237,6 @@ private:
     };
     QMap<quint8, FileFlushInfo> mFileFlushInfo; // 每个探测器的文件flush信息
     QMutex mMutexFileFlush; // 保护mFileFlushInfo的互斥锁
-    quint64 mSlowFlushCount = 0; // checkAndFlushFile耗时超过阈值计数
 
     // 检查和执行文件flush的辅助函数
     void checkAndFlushFile(quint8 index, qint64 bytesWritten);

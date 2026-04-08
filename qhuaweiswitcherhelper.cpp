@@ -270,7 +270,7 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
             mWaitingHeartbeatResponse = false;
             mLastHeartbeatTime.restart();
             mRespondString.clear();
-            qDebug().nospace().noquote() << "交换机[" << mIp << "]心跳检测正常";
+            // qDebug().nospace().noquote() << "交换机[" << mIp << "]心跳检测正常";
         }
         else if (mSwitcherInSystemView){
             /*
@@ -830,7 +830,7 @@ void QHuaWeiSwitcherHelper::checkLoginAlive()
 #else
     mTelnet->write(mCurrentCommand.toLatin1());
 #endif
-    qDebug().nospace().noquote() << "交换机[" << mIp << "]发送心跳检测命令";
+    // qDebug().nospace().noquote() << "交换机[" << mIp << "]发送心跳检测命令";
 }
 
 // 启动心跳检测

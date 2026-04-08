@@ -98,7 +98,7 @@ void DataProcessor::reallocSocket(const hv::SocketChannelPtr& tcpSocket, DetPara
             else
                 emit reportRawNetData(rawData);
 
-            this->inputData(rawData);
+            this->appendRawTcpData(rawData);
         };
 
         tcpSocket->onwrite = [=](hv::Buffer* buf) {
@@ -316,26 +316,22 @@ void DataProcessor::readyRead()
     else
         emit reportRawNetData(rawData);
 
-    this->inputData(rawData);
+    this->appendRawTcpData(rawData);
 
     mDataCondition.wakeOne();
 }
 
-void DataProcessor::inputData(const QByteArray& data)
+void DataProcessor::appendRawTcpData(const QByteArray& data)
 {
     QMutexLocker locker(&mDataLocker);
-    // if (!mIsMeasuring)  // 进入正式测量之前，每秒钟会有一个温度数据上传过来，不打印
-    // {
-        // qDebug().noquote()<< "[" << mIndex << "] "<< "Recv HEX[" << data.size() << "]: " << data.toHex(' ');
-    // }
     mRawData.append(data);
     const quint64 currentSize = static_cast<quint64>(mRawData.size());
     if (currentSize > mRawDataPeak) {
         mRawDataPeak = currentSize;
-        qDebug().noquote().nospace()
-            << "谱仪[#"<< mIndex << "] mRawData峰值更新(inputData): "
-            << mRawDataPeak << " bytes, ts="
-            << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz");
+        // qDebug().noquote().nospace()
+        //     << "谱仪[#"<< mIndex << "] mRawData峰值更新(appendRawTcpData): "
+        //     << mRawDataPeak << " bytes, ts="
+        //     << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz");
     }
 
     mDataCondition.wakeOne();
@@ -355,11 +351,11 @@ void DataProcessor::restartTempTimeout() {
 }
 
 /**
- * @brief DataProcessor::inputSpectrumData
+ * @brief 解析能谱数据包，并拼接成完整能谱，一个能谱由32个子包组成，每个子包包含256道能谱数据
  * @param no 探测器通道编号
  * @param data 完整的能谱数据包，传入进来时已经验证了包的完整性
  */
-void DataProcessor::inputSpectrumData(quint8 no, QByteArray& data){
+void DataProcessor::mergeSubSpec(quint8 no, QByteArray& data){
     // 能谱数据：一个能谱数据包长度为256*32bit，但完整的能谱数据为8192*32bit。
     // 1. 提取数据包数据（256道 quint32 数据）
     quint32 spectrumSeq = 0;
@@ -509,7 +505,7 @@ void DataProcessor::flushSpectrumBuffer()
 }
 
 /**
- * @brief 从数据包中提取能谱数据
+ * @brief 将网口数据直接转化为结构体SubSpectrumPacket
  * @param packetData 完整的数据包
  * @param spectrum 输出的能谱数据数组
  * @return 成功返回true，失败返回false
@@ -528,16 +524,6 @@ bool DataProcessor::extractSpectrumData(const QByteArray& packetData, SubSpectru
 
     // 处理字节序（Windows是小端序，网络数据通常是大端序）
     packet.convertNetworkToHost();
-
-    // 调试信息
-    // qDebug() << "Get a subSpectrum Packets, spectrumSeq:" << packet.spectrumSeq
-    //          << "subSquenceID:" << packet.spectrumSubNo;
-
-    // quint32 utc = packet.timeUTCs; // utc时间戳
-    // quint32 second = packet.timeUTCms; // 小数秒
-    // QDateTime tm = QDateTime::fromSecsSinceEpoch(utc, Qt::TimeSpec::UTC, second);
-    // qDebug() << tm.toString("yyyy-MM-dd HH:mm:ss.zzz");
-
     return true;
 }
 

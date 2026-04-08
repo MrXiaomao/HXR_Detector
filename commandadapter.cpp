@@ -27,7 +27,7 @@ CommandAdapter::CommandAdapter(quint8 index, QObject *parent)
     : QObject{parent}
     , mIndex(index)
 {
-    mParserStatTimer.start();
+    // mParserStatTimer.start();
     mCmdProcessThread = new QLiteThread(this) ;
     //mCmdProcessThread->setObjectName("mCmdProcessThread");
     mCmdProcessThread->setWorkThreadProc([=](){
@@ -99,17 +99,17 @@ void CommandAdapter::clear()
 
 void CommandAdapter::analyzeCommands(QByteArray &cachePool)
 {
-    auto dumpParserStats = [&]() {
-        if (mParserStatTimer.elapsed() >= 5000) {
-            qDebug().noquote().nospace()
-                << "谱仪[#"<< mIndex << "]解析统计: tailErr=" << mTailErrorCount
-                << ", typeErr=" << mTypeErrorCount
-                << ", removeBytes(resync4)=" << mResyncDropBytes
-                << ", removeBytes(scan1)=" << mHeaderScanDropBytes
-                << ", ts=" << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz");
-            mParserStatTimer.restart();
-        }
-    };
+    // auto dumpParserStats = [&]() {
+    //     if (mParserStatTimer.elapsed() >= 5000) {
+    //         qDebug().noquote().nospace()
+    //             << "谱仪[#"<< mIndex << "]解析统计: tailErr=" << mTailErrorCount
+    //             << ", typeErr=" << mTypeErrorCount
+    //             << ", removeBytes(resync4)=" << mResyncDropBytes
+    //             << ", removeBytes(scan1)=" << mHeaderScanDropBytes
+    //             << ", ts=" << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz");
+    //         mParserStatTimer.restart();
+    //     }
+    // };
 
     while(1){
         //判断缓存数据大小是否小于指令集长度最小单位
@@ -404,7 +404,9 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
 
             //数据类型
             bool ok;
-            DataType dataType = (DataType)cachePool.mid(4, 2).toHex().toUShort(&ok, 16);
+            quint16 type = qFromBigEndian<quint16>(
+                reinterpret_cast<const uchar*>(cachePool.constData() + 4));
+            DataType dataType = (DataType)type;
             if (dataType == dtWaveform){
                 //波形
                 //包头0xFFFFAAB1 + 数据类型（0x00D1）+ 波形数据（波形长度*16bit） + 保留位（32bit）+ 包尾0xFFFFCCD1
@@ -435,17 +437,29 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
 
                 //重新开始寻找包头
                 cachePool.remove(0, 4);
-                dumpParserStats();
+                // dumpParserStats();
             }
 
             if (cachePool.size() >= onePkgSize){
                 // 满足数据包长度
-                QByteArray chunk = cachePool.left(onePkgSize);
-
+                // QByteArray chunk = cachePool.left(onePkgSize);
+                QByteArray chunk = QByteArray(cachePool.constData(), onePkgSize);
                 //继续检查包尾
-                if (chunk.endsWith(kspecTail)){
-                    mValidDataPkgRef++;
+                // 直接用指针判断尾（更安全）
+                const char* p = cachePool.constData();
+
+                if (memcmp(p + onePkgSize - 4, kspecTail.constData(), 4) == 0) {
+                    // chunk = cachePool.left(onePkgSize); // 现在才安全
                     cachePool.remove(0, onePkgSize);
+                    mValidDataPkgRef++;
+                // }
+                // else {
+                //     cachePool.remove(0, 1);
+                // }
+
+                // if (chunk.endsWith(kspecTail)){
+                //     mValidDataPkgRef++;
+                //     cachePool.remove(0, onePkgSize);
 
                     if (mIsMeasuring || dataType == dtTimestamp)
                     {
@@ -476,7 +490,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
 
                     // 包头/包尾数据不对称 重新开始寻找包头
                     cachePool.remove(0, 4);
-                    dumpParserStats();
+                    // dumpParserStats();
                     continue;
                 }
             }
@@ -501,7 +515,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
             /*继续寻找包头,删除包头继续寻找*/
             cachePool.remove(0, 1);
             ++mHeaderScanDropBytes;
-            dumpParserStats();
+            // dumpParserStats();
             continue;
         }
         else{
