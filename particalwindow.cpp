@@ -13,23 +13,13 @@ ParticalWindow::ParticalWindow(QWidget *parent)
     ui->setupUi(this);
 
     commHelper = CommHelper::instance();
-    connect(commHelper, &CommHelper::reportParticleCurveData, this, [=]{
+    connect(commHelper, &CommHelper::reportParticle, this, [=]{
         pkgCount.store(pkgCount.load()+1);
-        // if (!measuring){
-        //     measuring = true;
-        //     timerStart = QDateTime::currentDateTime();
-        //     timer->start(1000);
-        //     ui->pushButton_save->setEnabled(false);
-        //     ui->pushButton_start->setEnabled(false);
-        //     ui->pushButton_stop->setEnabled(true);
-        //     ui->label_2->setText(timerStart.toString("yyyy-MM-dd HH:mm:ss"));
-        // }
         if (!measuring){
             ui->pushButton_stop->setEnabled(true);
             ui->pushButton_start->setEnabled(false);
             ui->pushButton_save->setEnabled(false);
         }
-        //ui->lineEdit_pkgCount->setText(QString::number(pkgCount));
     }, Qt::QueuedConnection);
 
     //波形路径

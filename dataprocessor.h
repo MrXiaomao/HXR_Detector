@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-11-13 11:36:00
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-04-08 17:10:58
+ * @LastEditTime: 2026-04-08 22:03:22
  * @Description: 处理界面与探测器之间的数据交互，包括网络数据、能谱数据、温度数据等，控制探测器的工作模式、参数设置、数据采集等
  */
 #ifndef DATAPROCESSOR_H
@@ -48,8 +48,6 @@ public:
 
     // 追加原始网络数据
     void appendRawTcpData(const QByteArray& data);
-    // 解析能谱数据包，并拼接成完整能谱
-    void mergeSubSpec(quint8 no, QByteArray& data);
 
     /*
      * 开始测量
@@ -78,8 +76,18 @@ public:
 
 public slots:
     void readyRead();
-    void restartTempTimeout();   // 收到温度时调用
-    void flushSpectrumBuffer();  // 定时将缓存的能谱写入HDF5
+    // 收到温度时调用
+    void restartTempTimeout();   
+    // 定时将缓存的能谱写入HDF5
+    void flushSpectrumBuffer();  
+    // 解析能谱数据包，并拼接成完整能谱
+    void mergeSubSpec(quint8 no, const QByteArray& data);
+    // 解析波形数据包
+    void extractWaveformData(quint8 no, const QByteArray& packetData);
+    // 解析粒子数据包
+    void extractParticleData(quint8 no, const QByteArray& packetData);
+    // 解析时间戳数据包
+    void extractTimestampData(quint8 no, const QByteArray& packetData);
 
 signals:   
     void relayConnected();// 继电器
@@ -90,13 +98,20 @@ signals:
     void detectorConnected(quint8 index);  // 探测器
     void detectorDisconnected(quint8 index);
 
-    void reportWaveformCurveData(quint8, QVector<quint32>& data);
-    void reportParticleCurveData(quint8, QVector<quint32>& data);
-    void reportFullSpectrum(quint8 index, const FullSpectrum& fullSpectrum); // 发送完整的能谱数据
+    // 上报分包数据
+    void reportRawNetData(quint8 index, const QByteArray& data); // 上报原始网络数据
+    void reportOTAUpgradeData(quint8 index, const QByteArray& data); // 上报OTA升级数据
+    // void reportSpectrumData(quint8 index, const QByteArray& data); // 发送能谱数据包（分包数据）
+    // void reportWaveformData(quint8 index, const QByteArray& data); // 发送波形数据包（分包数据）
+    // void reportParticleData(quint8 index, const QByteArray& data); // 发送粒子数据包（分包数据）
+    // void reportTimestampData(quint8 index, const QByteArray& data); // 发送时间戳数据包（分包数据）
 
+    // 上传解析后的数据
+    void reportFullSpectrum(quint8 index, const FullSpectrum& fullSpectrum); // 发送完整的能谱数据
+    void reportWaveCurveInfo(quint8, QVector<quint16>& wave); // 发送解析后的波形曲线
+    void reportParticleInfo(quint8 index, QVector<ParticleData>& particles); // 发送解析后的粒子信息
+    void reportTriggerTimeInfo(quint8 index, QDateTime trTime); // 发送解析后的触发时间戳信息
     void reportTemperatureTimeout(quint8 index); // 温度心跳超时信号
-    void reportRawNetData(const QByteArray& data); // 上报原始网络数据
-    void reportOTAUpgradeData(const QByteArray& data); // 上报OTA升级数据
 
 private:
 #if ENABLE_LIBHV

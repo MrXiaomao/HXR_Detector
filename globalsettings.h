@@ -139,6 +139,13 @@ struct FullSpectrum {
 };
 #pragma pack(pop)
 
+// 存放粒子信息的数据
+struct ParticleData{
+    QDateTime time;//粒子事件发生的时间
+    quint16 energy; //粒子幅度
+    quint16 typeFlag; //粒子类型标志（0：γ；1：α）
+};
+
 // 将FullSpectrum结构中的部分数据转化为H5Spectrum类型，用于存储。
 H5Spectrum FullSpectoH5Spec(const FullSpectrum& src);
 

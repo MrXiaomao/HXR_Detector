@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-11-13 11:36:00
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-04-08 10:08:11
+ * @LastEditTime: 2026-04-08 22:06:06
  * @Description: 协议（下行指令 + 上行数据）、拆包（上行流式解析）、发指令 API
  */
 #ifndef COMMANDADAPTER_H
@@ -37,14 +37,14 @@ public:
 
     virtual void sendCmdToSocket(CommandItem cmdItem) const{};
 
-    Q_SIGNAL void reportSpectrumData(QByteArray&);
-    Q_SIGNAL void reportWaveformData(QByteArray&);
-    Q_SIGNAL void reportParticleData(QByteArray&);
-    Q_SIGNAL void reportTimestampData(QByteArray&);
-    Q_SIGNAL void reportParamterData(QByteArray&);
-    Q_SIGNAL void reportTemperatureData(float temperature);
+signals:
+    void reportSpectrumData(quint8 index, const QByteArray&); // 上报能谱数据
+    void reportWaveformData(quint8 index, const QByteArray&); // 上报波形数据
+    void reportParticleData(quint8 index, const QByteArray&); // 上报粒子数据
+    void reportTimestampData(quint8 index, const QByteArray&); // 上报外触发时间戳数据
+    void reportParamterData(quint8 index, const QByteArray&); // 上报参数数据
+    void reportTemperatureData(float temperature);
 
-// signals:
 // public slots:
 //     void restartTempTimeout();   // 收到温度时调用
 

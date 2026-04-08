@@ -256,7 +256,7 @@ void CommHelper::initSocket()
 
 void CommHelper::initDataProcessor()
 {
-    for (int index = 0; index <= DET_NUM; ++index){
+    for (int index = 1; index <= DET_NUM; ++index){
         DataProcessor* processor = new DataProcessor(index, nullptr, this);
         mDetectorDataProcessor[index] = processor;
 
@@ -269,55 +269,60 @@ void CommHelper::initDataProcessor()
         connect(processor, &DataProcessor::reportTemperatureTimeout, this, 
             &CommHelper::onTemperatureTimeout, Qt::DirectConnection);
 
-        connect(processor, &DataProcessor::reportFullSpectrum, this, [=](quint8 index, const FullSpectrum& fullSpectrum){
-                emit reportFullSpectrum(index, fullSpectrum);
+        // 能谱数据（解析后的完整能谱数据）
+        connect(processor, &DataProcessor::reportFullSpectrum, this, [=](quint8 detID, const FullSpectrum& fullSpectrum){
+            emit reportFullSpectrum(detID, fullSpectrum); //通知界面更新能谱数据
+        }, Qt::QueuedConnection);
+
+        // 波形数据（解析后的数据）
+        connect(processor, &DataProcessor::reportWaveCurveInfo, this, [=](quint8 detID, QVector<quint16>& wave){
+            emit reportWaveCurve(detID, wave); //通知界面更新波形数据
+        }, Qt::QueuedConnection);
+
+        // 粒子数据（解析后的粒子信息）
+        connect(processor, &DataProcessor::reportParticleInfo, this, 
+            &CommHelper::onParticleInfo, Qt::DirectConnection);
+
+        // 触发信号时间戳(解析后的数据)
+        connect(processor, &DataProcessor::reportTriggerTimeInfo, this, [=](quint8 detID, QDateTime triggerTime){
+            emit reportTimestampe(triggerTime); //通知界面更新触发时间戳
         }, Qt::DirectConnection);
 
         // 原始OTA升级数据
-        connect(processor, &DataProcessor::reportOTAUpgradeData, this, [=](const QByteArray& data){
-            quint8 detId = processor->getIndex();
-            emit reportOTAUpgradeData(detId, data);
-        }, Qt::DirectConnection);
+        connect(processor, &DataProcessor::reportOTAUpgradeData, this, [=](quint8 detID, const QByteArray& data){
+            emit reportOTAUpgradeData(detID, data);
+        }, Qt::QueuedConnection);
 
         // 原始网络数据
         connect(processor, &DataProcessor::reportRawNetData, this, 
             &CommHelper::onRawNetData, Qt::DirectConnection);
 
         // 能谱数据
-        connect(processor, &DataProcessor::reportSpectrumData, this, 
+        connect(processor, &DataProcessor::reportSpectrumData, this,
             &CommHelper::onSpectrumData, Qt::DirectConnection);
 
         // 波形数据包
         connect(processor, &DataProcessor::reportWaveformData, this, 
             &CommHelper::onWaveformData, Qt::DirectConnection);
-
-        // 粒子数据包
-        connect(processor, &DataProcessor::reportParticleData, this, 
-            &CommHelper::onParticleData, Qt::DirectConnection);
-
-        // 触发信号上传时间戳数据包
-        connect(processor, &DataProcessor::reportTimestampData, this, 
-            &CommHelper::onTriggerTimeData, Qt::DirectConnection);
         
         // 配置参数数据包
-        connect(processor, &DataProcessor::reportParamterData, this, [=](QByteArray& data){
+        connect(processor, &DataProcessor::reportParamterData, this, [=](quint8 detID, const QByteArray& data){
             // 上报配置参数信息
-            emit reportParamterData(index, data);
+            emit reportParamterData(detID, data);
         }, Qt::DirectConnection);
     }
 }
 
 // 网口原始数据
-void CommHelper::onRawNetData(const QByteArray& data)
+void CommHelper::onRawNetData(quint8 detID, const QByteArray& data)
 {
     return; // 暂时屏蔽原始网络数据的保存，避免性能问题
   
     // 保存数据
-    quint8 detId = processor->getIndex();
-    if (mNetRawFileProcessor.contains(detId) && mNetRawFileProcessor[detId]->isOpen()){
-        qint64 bytesWritten = mNetRawFileProcessor[detId]->write((const char *)data.constData(), data.size());
+    if (mNetRawFileProcessor.contains(detID) && mNetRawFileProcessor[detID]->isOpen()){
+        qint64 bytesWritten = mNetRawFileProcessor[detID]->write((const char *)data.constData(), data.size());
         // 每10秒或每1MB执行一次flush（改为每10秒），避免每次写入都flush影响性能
-        checkAndFlushNetRawFile(detId, bytesWritten);
+        checkAndFlushNetRawFile(detID, bytesWritten);
     }
 }
 
@@ -351,127 +356,37 @@ void CommHelper::onTemperatureTimeout(quint8 detID)
 }
 
 // 处理分包后的能谱数据包
-void CommHelper::onSpectrumData(QByteArray& data)
+void CommHelper::onSpectrumData(quint8 detId, const QByteArray& data)
 {
-    quint8 detId = processor->getIndex();
     // 保存数据
     if (mDetectFileProcessor[detId]->isOpen()){
         qint64 bytesWritten = mDetectFileProcessor[detId]->write((const char *)data.constData(), data.size());
         // 检查是否需要flush（每10秒或每1MB）
         checkAndFlushDetectFile(detId, bytesWritten);
     }
-    
-    // 数据解包
-    processor->mergeSubSpec(detId, data);
 }
 
 // 处理分包后的波形数据包
-void CommHelper::onWaveformData(QByteArray& data)
+void CommHelper::onWaveformData(quint8 detId, const QByteArray& data)
 {
     // 保存数据
-    quint8 detId = processor->getIndex();
     if (mDetectFileProcessor[detId]->isOpen()){
         qint64 bytesWritten = mDetectFileProcessor[detId]->write((const char *)data.constData(), data.size());
         // 检查是否需要flush（每10秒或每1MB）
         checkAndFlushDetectFile(detId, bytesWritten);
     }
-
-    data.remove(0, 6);//移除包头
-    data.chop(8);//移除包尾
-
-    //从HDF5加载配置信息
-    HDF5Settings *settings = HDF5Settings::instance();
-    QMap<quint8, DetParameter>& detParameters = settings->detParameters();
-    DetParameter& detParameter = detParameters[detId];
-    quint32 waveLen = detParameter.waveformLength;
-
-    //暂时只取第一个波形出来
-    {
-        // 数据解包
-        QVector<quint16> waveform;
-        waveform.reserve(waveLen-2);//减去包头包尾两个数据
-        for (int i=2; i<(waveLen-1)*2; i+=2){//跨过包头两个字节
-            bool ok;
-            quint16 amplitude = data.mid(i, 2).toHex().toUShort(&ok, 16);
-            waveform.append(amplitude);
-        }
-
-        QMetaObject::invokeMethod(this, "reportWaveformCurveData", Qt::DirectConnection, 
-            Q_ARG(quint8, processor->getIndex()), Q_ARG(QVector<quint16>&, waveform));
-        //emit reportWaveformCurveData(processor->getIndex(), waveform);
-    }
 }
 
-// 处理分包后的粒子数据包
-void CommHelper::onParticleData(QByteArray& data)
+// 处理解析后的粒子数据信息
+void CommHelper::onParticleInfo(quint8 detId, QVector<ParticleData>& particles)
 {
-    //    保存粒子数据
-    quint8 detId = processor->getIndex();
-    {
-        // QMutexLocker locker(&mMutexTriggerTime);
-        // if (mTriggerTime.isEmpty()){
-        //     mTriggerTime = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
-        // }
-
-        // if (!mDetectFileProcessor.contains(detId)){
-        //     QString filePath = QString("%1/%2/%3_%4_粒子.txt").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(detId);
-        //     mDetectFileProcessor[detId] = new QFile(filePath);
-        //     mDetectFileProcessor[detId]->open(QIODevice::WriteOnly | QIODevice::Append); //覆盖式写入
-        //     mDataFileList.push_back(filePath);
-        //     // 写入表头
-        //     QString line = QString("测量时长(s),时间,ADC采样幅度,粒子类型\n");
-        //     qint64 bytesWritten = mDetectFileProcessor[detId]->write((const char *)line.toUtf8());
-        //     // 检查是否需要flush（每10秒或每1MB）
-
-        //     // 初始化flush信息
-        //     {
-        //         QMutexLocker flushLocker(&mMutexFileFlush);
-        //         mFileFlushInfo[detId] = FileFlushInfo();
-        //     }
-
-        //     QFileInfo info(filePath);
-        //     QString absolutePath = info.absoluteFilePath();
-        //     qInfo().nospace() << "谱仪[#"<< detId << "]创建存储文件：" << absolutePath;
-        // }
-    }
-
-    data.remove(0, 6);//移除包头
-    data.chop(8);//移除包尾
-
-    // 解析数据
-    bool ok;
-    quint32 sequence = data.left(4).toHex().toUInt(&ok, 16); // 包序号
-    data.remove(0, 4);//移除序号
-
-    for (int i=0; i<130; ++i)
-    {
-        qDebug() << data.left(8).toHex(' ');
-        bool ok;
-        quint16 utc = data.mid(i*8, 2).toHex().toUInt(&ok, 16); // utc时间戳
-        quint16 msecond = data.mid(i*8+2, 2).toHex().toUInt(&ok, 16)*1000/65536; // 毫秒
-        quint16 deathT = data.mid(i*8+4, 2).toHex().toUShort(&ok, 16); // 死时间
-        quint16 _type = data.mid(i*8+6, 2).toHex().toUShort(&ok, 16); // 粒子类型
-        quint16 typeFlag = (_type & 0x8000) >> 15;// 类型 （0：γ；1：α）
-        quint16 amplitude = _type & 0x7FFF; // 幅度
-
-        // 保存时间、能量、粒子类型
-        // 读取系统当前UTC时间戳（从1900年1月1日00：00：00开始计算，表示至今的整数秒数）
-        QDateTime epoch(QDate(1900, 1, 1), QTime(0, 0, 0), Qt::UTC);
-        quint64 tmUtc = epoch.secsTo(QDateTime::currentDateTimeUtc()); // UTC时间戳（1900）
-        // 获取UTC时间高16bit
-        tmUtc = tmUtc & 0xffffffffffff0000;
-        // 将新的高16位加上去
-        tmUtc = tmUtc | utc; // 合成新的utc时间戳
-        // UTC1900转UTC1970-Unix时间戳，也就是从1970年1月1日00：00：00开始计算的整数秒数
-        quint64 tmUnix = tmUtc - 2208988800; // UTC时间戳（1970）-unix时间戳
-        QDateTime tm = QDateTime::fromMSecsSinceEpoch(tmUnix*1000 + msecond);
-
-        if (mDetectFileProcessor[detId]->isOpen()){
-            QString line = QString("%1,%2,%3,%4\n")
-                            .arg(sequence)
-                            .arg(tm.toString("yyyy-MM-dd HH:mm:ss.zzz"))
-                            .arg(amplitude)
-                            .arg(typeFlag);
+    if (mDetectFileProcessor[detId]->isOpen()){
+        for (const auto& particle : particles)
+        {
+            QString line = QString("%1,%2,%3\n")
+                            .arg(particle.time.toString("yyyy-MM-dd HH:mm:ss.zzz"))
+                            .arg(particle.energy)
+                            .arg(particle.typeFlag);
             QByteArray lineData = line.toUtf8();
             qint64 bytesWritten = mDetectFileProcessor[detId]->write((const char *)lineData.constData(), lineData.size());
             checkAndFlushDetectFile(detId,bytesWritten);
@@ -479,22 +394,8 @@ void CommHelper::onParticleData(QByteArray& data)
     }
     
     // 上报计数
-    emit reportParticleCurveData(index, sequence);
-}
-
-// 处理分包后的触发时间数据包
-void CommHelper::onTriggerTimeData(QByteArray& data)
-{
-    bool ok;
-    quint32 utc = data.mid(6, 4).toHex().toUInt(&ok, 16); // utc时间戳
-    quint32 msecond = data.mid(10, 4).toHex().toUInt(&ok, 16)*1000/65536; // 毫秒
-
-    // UTC转Unix时间戳，也就是从1970年1月1日00：00：00开始计算的整数秒数
-    quint64 tmUnix = utc - 2208988800; // UTC时间戳（1970）-unix时间戳
-    QDateTime tm = QDateTime::fromMSecsSinceEpoch(tmUnix*1000 + msecond);
-
-    // 上报时间戳信息
-    emit reportTimestampe(index, tm);
+    quint32 num = particles.size();
+    emit reportParticle(detId, num);
 }
 
 /**

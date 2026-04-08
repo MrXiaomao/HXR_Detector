@@ -841,7 +841,7 @@ void MainWindow::initUi()
     }, Qt::DirectConnection);
 
     // 接收波形曲线数据
-    connect(commHelper, &CommHelper::reportWaveformCurveData, this, [=](quint8 index, QVector<quint16>& data){
+    connect(commHelper, &CommHelper::reportWaveCurve, this, [=](quint8 index, QVector<quint16>& data){
         return; // 不显示波形
         QCustomPlot *customPlot = getCustomPlot(index);
         if (!customPlot)
@@ -863,7 +863,7 @@ void MainWindow::initUi()
     });
 
     // 接收触发信号时间戳
-    connect(commHelper, &CommHelper::reportTimestampe, this, [=](quint8 index, QDateTime& tm){
+    connect(commHelper, &CommHelper::reportTimestampe, this, [=](QDateTime& tm){
         // 只有启用了外触发才会接收打靶信号的时间戳，并且只在自动测量未激活时更新界面显示
         if (mEnableExtendTrigger && !mAutoMeasureTimerActive)
         {

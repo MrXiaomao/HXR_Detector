@@ -33,6 +33,11 @@ DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
         mDataProcessThread->wait(500);
     });
 
+    connect(this, &CommandAdapter::reportSpectrumData, this, &DataProcessor::mergeSubSpec);
+    connect(this, &CommandAdapter::reportWaveformData, this, &DataProcessor::extractWaveformData);
+    connect(this, &CommandAdapter::reportParticleData, this, &DataProcessor::extractParticleData);
+    connect(this, &CommandAdapter::reportTimestampData, this, &DataProcessor::extractTimestampData);
+
 #if ENABLE_LIBHV
 #else
     if (mTcpSocket)
@@ -92,9 +97,9 @@ void DataProcessor::reallocSocket(const hv::SocketChannelPtr& tcpSocket, DetPara
             QByteArray rawData = QByteArray::fromRawData((const char*)buf->data(), buf->size());
             // 上报原始网络数据
             if (mIsUpgrading)
-                emit reportOTAUpgradeData(rawData);
+                emit reportOTAUpgradeData(mIndex, rawData);
             else
-                emit reportRawNetData(rawData);
+                emit reportRawNetData(mIndex, rawData);
 
             this->appendRawTcpData(rawData);
         };
@@ -304,9 +309,9 @@ void DataProcessor::readyRead()
 
     // 上报原始网络数据
     if (mIsUpgrading)
-        emit reportOTAUpgradeData(rawData);
+        emit reportOTAUpgradeData(mIndex,rawData);
     else
-        emit reportRawNetData(rawData);
+        emit reportRawNetData(mIndex, rawData);
 
     this->appendRawTcpData(rawData);
 
@@ -347,7 +352,7 @@ void DataProcessor::restartTempTimeout() {
  * @param no 探测器通道编号
  * @param data 完整的能谱数据包，传入进来时已经验证了包的完整性
  */
-void DataProcessor::mergeSubSpec(quint8 no, QByteArray& data){
+void DataProcessor::mergeSubSpec(quint8 no, const QByteArray& data){
     // 能谱数据：一个能谱数据包长度为256*32bit，但完整的能谱数据为8192*32bit。
     // 1. 提取数据包数据（256道 quint32 数据）
     quint32 spectrumSeq = 0;
@@ -426,11 +431,6 @@ void DataProcessor::mergeSubSpec(quint8 no, QByteArray& data){
                 mPendingH5Spectrums.append(h5Spectrum);
             }
 
-            //if(spectrumSeq%1000 == 0){
-                // qDebug().nospace() << "谱仪[#" << mIndex << "]" << "Get a full spectrum, SpectrumID:" << spectrumSeq
-                //      << ", specMeasureTime(ms):" << fullSpectrum->measureTime
-                //      << ", deathTime(*10ns):" << fullSpectrum->deathTime;
-            //}
             // m_parseData->mergeSpecTime_online(*fullSpectrum);
 
             // 7. 清理已完成的能谱数据（释放内存，可选：若需保留历史数据可注释）
@@ -474,6 +474,112 @@ void DataProcessor::mergeSubSpec(quint8 no, QByteArray& data){
             // }
         }
     }
+}
+
+// 从波形数据包中提取波形数据
+void DataProcessor::extractWaveformData(quint8 no, const QByteArray& data)
+{
+    // 包结构：包头6字节 + 波形区 + 包尾8字节
+    if (data.size() < 14)
+        return;
+
+    // 从 HDF5 加载配置信息
+    HDF5Settings *settings = HDF5Settings::instance();
+    QMap<quint8, DetParameter>& detParameters = settings->detParameters();
+    DetParameter& detParameter = detParameters[no];
+    quint32 waveLen = detParameter.waveformLength;
+
+    if (waveLen < 2)
+        return;
+
+    const char* raw = data.constData();
+
+    // 跳过整个网络包头 6 字节，再跳过波形内部前 2 字节
+    const int payloadOffset = 6;
+    const int waveformDataOffset = payloadOffset + 2;
+
+    // 需要读取 (waveLen - 2) 个 quint16
+    const int pointCount = static_cast<int>(waveLen) - 2;
+    const int bytesNeeded = waveformDataOffset + pointCount * 2;
+
+    // 末尾还有 8 字节包尾，所以只要总长度足够即可
+    if (data.size() < bytesNeeded + 8)
+        return;
+
+    QVector<quint16> waveform;
+    waveform.reserve(pointCount);
+
+    for (int i = 0; i < pointCount; ++i) {
+        const uchar* p = reinterpret_cast<const uchar*>(raw + waveformDataOffset + i * 2);//获取指针位置
+        quint16 amplitude = qFromBigEndian<quint16>(p); //从指针位置连续读两个字节转化为大端序的quint16
+        waveform.append(amplitude);
+    }
+
+    emit reportWaveCurveInfo(no, waveform);
+}
+
+// 从粒子数据包中提取粒子数据
+void DataProcessor::extractParticleData(quint8 no, const QByteArray& data)
+{
+    // 至少要保证长度够
+    if (data.size() < 6 + 130 * 8 + 8)  return;
+    
+    const uchar* p = reinterpret_cast<const uchar*>(data.constData());
+
+    int offset = 0;
+
+    offset += 6; // 跳过包头
+
+    // ===== 读取包序号 =====
+    quint32 sequence = qFromBigEndian<quint32>(p + offset);
+    offset += 4;
+
+    // ===== 提前计算 UTC 基准（避免循环里重复计算）=====
+    static const QDateTime epoch(QDate(1900, 1, 1), QTime(0, 0, 0), Qt::UTC);
+    quint64 tmUtcBase = epoch.secsTo(QDateTime::currentDateTimeUtc());
+    tmUtcBase &= 0xffffffffffff0000;
+
+    // ===== 循环解析 130 个粒子 =====
+    QVector<ParticleData> particles;
+    for (int i = 0; i < 130; ++i)
+    {
+        const uchar* item = p + offset + i * 8;
+
+        quint16 utc       = qFromBigEndian<quint16>(item + 0);
+        quint16 msecond   = qFromBigEndian<quint16>(item + 2) * 1000 / 65536;
+        quint16 deathT    = qFromBigEndian<quint16>(item + 4);
+        quint16 _type     = qFromBigEndian<quint16>(item + 6);
+
+        quint16 typeFlag  = (_type & 0x8000) >> 15;
+        quint16 amplitude = (_type & 0x7FFF);
+
+        // ===== 时间计算 =====
+        quint64 tmUtc = tmUtcBase | utc;
+        quint64 tmUnix = tmUtc - 2208988800ULL;
+
+        QDateTime tm = QDateTime::fromMSecsSinceEpoch(
+            tmUnix * 1000 + msecond
+        );
+        ParticleData particle{tm, amplitude, typeFlag};
+        particles.push_back(particle);
+    }
+    
+    emit reportParticleInfo(mIndex, particles);
+}
+
+// 解析时间戳数据包
+void DataProcessor::extractTimestampData(quint8 no, const QByteArray& packetData)
+{
+    bool ok;
+    quint32 utc = packetData.mid(6, 4).toHex().toUInt(&ok, 16); // utc时间戳
+    quint32 msecond = packetData.mid(10, 4).toHex().toUInt(&ok, 16)*1000/65536; // 毫秒
+
+    // UTC转Unix时间戳，也就是从1970年1月1日00：00：00开始计算的整数秒数
+    quint64 tmUnix = utc - 2208988800; // UTC时间戳（1970）-unix时间戳
+    QDateTime tm = QDateTime::fromMSecsSinceEpoch(tmUnix*1000 + msecond);
+
+    // 上报时间戳信息
+    emit reportTriggerTimeInfo(no, tm);
 }
 
 /**

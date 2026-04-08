@@ -168,7 +168,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
 
                 qInfo().noquote() << "增益：" << gainStr;
 
-                QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
+                emit reportParamterData(mIndex, cachePool.left(12));
 
                 findNaul = true;
                 cachePool.remove(0, 12);
@@ -183,7 +183,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                     reinterpret_cast<const uchar*>(cachePool.constData() + 8));
                 qInfo().noquote() << "参数查询，死时间/ns：" << deadTime * 10;
 
-                QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
+                emit reportParamterData(mIndex, cachePool.left(12));
 
                 findNaul = true;
                 cachePool.remove(0, 12);
@@ -198,7 +198,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                     reinterpret_cast<const uchar*>(cachePool.constData() + 8));
                 qInfo().noquote() << "参数查询，触发阈值：" << triggerThold;
 
-                QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
+                emit reportParamterData(mIndex, cachePool.left(12));
 
                 findNaul = true;
                 cachePool.remove(0, 12);
@@ -224,7 +224,8 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                     qInfo().noquote() << "参数查询，波形长度：512";
                 else
                     qInfo().noquote() << "参数查询，波形长度：未知值";
-                QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
+
+                emit reportParamterData(mIndex, cachePool.left(12));
 
                 findNaul = true;
                 cachePool.remove(0, 12);
@@ -241,7 +242,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                     reinterpret_cast<const uchar*>(cachePool.constData() + 6));
                 qInfo().noquote() << "参数查询，能谱刷新时间/ms：" << spectrumRefreshTime;
 
-                QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
+                emit reportParamterData(mIndex, cachePool.left(12));
 
                 findNaul = true;
                 cachePool.remove(0, 12);
@@ -261,7 +262,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                 float f2 = (float)d2 / 65536;
                 qInfo().noquote() << "参数查询，梯形成型时间常数，d1=" << f1 << "，d2="<<f2;
 
-                QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
+                emit reportParamterData(mIndex, cachePool.left(12));
 
                 findNaul = true;
                 cachePool.remove(0, 12);
@@ -276,7 +277,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                 quint8 fall = (quint8)cachePool.at(9);
                 qInfo().noquote() << "参数查询，上升沿=" << rise << "，平顶="<<peak<< "，下降沿="<<fall;
 
-                QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
+                emit reportParamterData(mIndex, cachePool.left(12));
 
                 findNaul = true;
                 cachePool.remove(0, 12);
@@ -288,7 +289,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
             if (cachePool.startsWith(kCmdTrapShapeEnableHead)){
                 qInfo().noquote() << "参数查询，梯形成型使能状态：" << ((quint8)cachePool.at(9) == 0x00 ? "关闭" : "打开");
 
-                QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
+                emit reportParamterData(mIndex, cachePool.left(12));
 
                 findNaul = true;
                 cachePool.remove(0, 12);
@@ -319,7 +320,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                 }
                 qInfo().noquote() << "参数查询，工作模式：" << modeStr;
 
-                QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
+                emit reportParamterData(mIndex, cachePool.left(12));
 
                 findNaul = true;
                 cachePool.remove(0, 12);
@@ -335,7 +336,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                 HighVolgateOutLevelEnable highVoltageEnable = (HighVolgateOutLevelEnable)cachePool.at(9);
                 qInfo().noquote() << "参数查询，高压使能状态：" << (highVoltageEnable ? "关闭" : "打开");
 
-                QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
+                emit reportParamterData(mIndex, cachePool.left(12));
 
                 findNaul = true;
                 cachePool.remove(0, 12);
@@ -349,7 +350,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                 double HV = level * 2.5 * 441 / 65536;
                 qInfo().noquote() << "参数查询，高压输出电平值（V）：" << HV;
 
-                QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
+                emit reportParamterData(mIndex, cachePool.left(12));
 
                 findNaul = true;
                 cachePool.remove(0, 12);
@@ -368,7 +369,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
 
             //qInfo().noquote() << "硬件版本号：" << hardVersion;
             //qInfo().noquote() << "是否测试版本：" << (isTest ? "是" : "否");
-            QMetaObject::invokeMethod(this, "reportParamterData", Qt::QueuedConnection, Q_ARG(QByteArray, cachePool.left(12)));
+            emit reportParamterData(mIndex, cachePool.left(12));
 
             findNaul = true;
             cachePool.remove(0, 12);
@@ -442,38 +443,24 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
 
             if (cachePool.size() >= onePkgSize){
                 // 满足数据包长度
-                // QByteArray chunk = cachePool.left(onePkgSize);
                 QByteArray chunk = QByteArray(cachePool.constData(), onePkgSize);
                 //继续检查包尾
                 // 直接用指针判断尾（更安全）
                 const char* p = cachePool.constData();
 
                 if (memcmp(p + onePkgSize - 4, kspecTail.constData(), 4) == 0) {
-                    // chunk = cachePool.left(onePkgSize); // 现在才安全
                     cachePool.remove(0, onePkgSize);
                     mValidDataPkgRef++;
-                // }
-                // else {
-                //     cachePool.remove(0, 1);
-                // }
-
-                // if (chunk.endsWith(kspecTail)){
-                //     mValidDataPkgRef++;
-                //     cachePool.remove(0, onePkgSize);
-
                     if (mIsMeasuring || dataType == dtTimestamp)
                     {
                         if (dataType == dtWaveform)
-                            QMetaObject::invokeMethod(this, "reportWaveformData", Qt::DirectConnection, Q_ARG(QByteArray&, chunk));
+                            emit reportWaveformData(mIndex, chunk);
                         else if (dataType == dtSpectrum)
-                            QMetaObject::invokeMethod(this, "reportSpectrumData", Qt::DirectConnection, Q_ARG(QByteArray&, chunk));
+                            emit reportSpectrumData(mIndex, chunk);
                         else if (dataType == dtParticle)
-                            QMetaObject::invokeMethod(this, "reportParticleData", Qt::DirectConnection, Q_ARG(QByteArray&, chunk));
+                            emit reportParticleData(mIndex, chunk);
                         else if (dataType == dtTimestamp)
-                            QMetaObject::invokeMethod(this, "reportTimestampData", Qt::DirectConnection, Q_ARG(QByteArray&, chunk));
-
-                        //上报有效数据包个数
-                        // QMetaObject::invokeMethod(this, "reportValidDataPkgRef", Qt::DirectConnection, Q_ARG(quint32, mValidDataPkgRef));
+                            emit reportTimestampData(mIndex, chunk);
                     }
                 }
                 else {
