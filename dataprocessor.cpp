@@ -44,7 +44,7 @@ DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
         qWarning().noquote().nospace() << tr("谱仪[#%1]超过%2秒未收到温度数据，触发报警！").arg(mIndex).arg(mTempTimeoutTimer.interval() / 1000);
 
         // 给CommHelper模块上报温度超时报警
-        emit reportTemperatureTimeout();
+        emit reportTemperatureTimeout(mIndex);
     });
 
     // 温度刷新，重启心跳定时器
@@ -89,8 +89,6 @@ void DataProcessor::reallocSocket(const hv::SocketChannelPtr& tcpSocket, DetPara
     if (mTcpSocket){
         tcpSocket->onread = [=](hv::Buffer* buf){
             if(buf->size()==0) return;
-            //打印线程编号
-            // qDebug() << "DataProcessor::reallocSocket(), thread id:" << QThread::currentThreadId();
             QByteArray rawData = QByteArray::fromRawData((const char*)buf->data(), buf->size());
             // 上报原始网络数据
             if (mIsUpgrading)

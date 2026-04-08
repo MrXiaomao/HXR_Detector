@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-11-13 11:36:00
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-04-08 09:46:01
+ * @LastEditTime: 2026-04-08 17:10:58
  * @Description: 处理界面与探测器之间的数据交互，包括网络数据、能谱数据、温度数据等，控制探测器的工作模式、参数设置、数据采集等
  */
 #ifndef DATAPROCESSOR_H
@@ -94,7 +94,7 @@ signals:
     void reportParticleCurveData(quint8, QVector<quint32>& data);
     void reportFullSpectrum(quint8 index, const FullSpectrum& fullSpectrum); // 发送完整的能谱数据
 
-    void reportTemperatureTimeout(); // 温度心跳超时信号
+    void reportTemperatureTimeout(quint8 index); // 温度心跳超时信号
     void reportRawNetData(const QByteArray& data); // 上报原始网络数据
     void reportOTAUpgradeData(const QByteArray& data); // 上报OTA升级数据
 

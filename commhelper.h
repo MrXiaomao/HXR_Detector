@@ -196,6 +196,25 @@ public:
      */
     bool readParamters(quint8 detIndex);
 
+private slots:
+    //网口原始数据
+    void onRawNetData(const QByteArray& data);
+
+    //处理温度数据超时报警
+    void onTemperatureTimeout(quint8 detID);
+
+    // 处理分包后的能谱数据包
+    void onSpectrumData(QByteArray& data);
+
+    // 处理分包后的波形数据包
+    void onWaveformData(QByteArray& data);
+
+    // 处理分包后的粒子数据包
+    void onParticleData(QByteArray& data);
+
+    // 处理分包后的触发时间数据包
+    void onTriggerTimeData(QByteArray& data);
+
 private:
     // 处理探测器断开连接的统一逻辑
     void handleDetectorDisconnection(quint8 index);
@@ -218,9 +237,9 @@ private:
     QString mMeasureStartTime;//测量开始时刻
     bool mMeasuring = false; // 是否正在测量
 
-    QMap<quint8, DataProcessor*> mDetectorDataProcessor;//24路探测器数据处理器
-    QMap<quint8, QFile*> mDetectorFileProcessor;//24路探测器有效数据文件存储句柄
-    QMap<quint8, QFile*> mNetRawFileProcessor;  //24路探测器原始数据文件存储句柄
+    QMap<quint8, DataProcessor*> mDetectorDataProcessor;//32路探测器数据处理器
+    QMap<quint8, QFile*> mDetectFileProcessor;  //32路探测器的测量数据文件句柄，不包含温度数据的数据包，可以是：能谱数据、波形数据、粒子数据。
+    QMap<quint8, QFile*> mNetRawFileProcessor;  //32路探测器原始数据文件存储句柄，包含温度数据
     QString mResMatrixFileName;
 
     //记录手动关闭POE供电的探测器ID
@@ -238,8 +257,11 @@ private:
     QMap<quint8, FileFlushInfo> mFileFlushInfo; // 每个探测器的文件flush信息
     QMutex mMutexFileFlush; // 保护mFileFlushInfo的互斥锁
 
-    // 检查和执行文件flush的辅助函数
-    void checkAndFlushFile(quint8 index, qint64 bytesWritten);
+    // 对测量数据的flush进行检查和执行的辅助函数
+    void checkAndFlushDetectFile(quint8 index, qint64 bytesWritten);
+
+    // 对网口数据的flush进行检查和执行的辅助函数
+    void checkAndFlushNetRawFile(quint8 index, qint64 bytesWritten);
 
     /*
      初始化网络
