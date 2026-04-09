@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-11-13 11:36:00
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-04-08 22:03:22
+ * @LastEditTime: 2026-04-09 10:18:04
  * @Description: 处理界面与探测器之间的数据交互，包括网络数据、能谱数据、温度数据等，控制探测器的工作模式、参数设置、数据采集等
  */
 #ifndef DATAPROCESSOR_H
@@ -14,10 +14,10 @@
 #include <QtEndian>
 #include <QFile>
 #include <QDateTime>
+#include <QTimer>
 
 #include "qlitethread.h"
 #include "commandadapter.h"
-#include "globalsettings.h"
 #include "parsedata.h"
 
 #if ENABLE_LIBHV
@@ -78,8 +78,6 @@ public slots:
     void readyRead();
     // 收到温度时调用
     void restartTempTimeout();   
-    // 定时将缓存的能谱写入HDF5
-    void flushSpectrumBuffer();  
     // 解析能谱数据包，并拼接成完整能谱
     void mergeSubSpec(quint8 no, const QByteArray& data);
     // 解析波形数据包
@@ -133,7 +131,6 @@ private:
     quint8 mChWaveDataValidTag = 0x00;//通道数据是否完整
 
     // 新增成员变量
-    QMutex mSpectrumLocker;
     QHash<quint32, FullSpectrum> mFullSpectrums; // 按能谱序号存储拼接中的能谱
     quint32 mLastSpectrumSeq = 0;
     FullSpectrum mLastFullSpectrum; // 保存上一个全能谱，做缺包补偿用
@@ -142,10 +139,6 @@ private:
     ParseData* m_parseData;
     
     QTimer mTempTimeoutTimer; //心跳检测定时器
-    QTimer mSpectrumWriteTimer; // 能谱定时写入定时器
-
-    // HDF5 能谱写入缓冲（按 10s 周期批量写入）
-    QVector<H5Spectrum> mPendingH5Spectrums;
 
     QFile *mNetDataFile = nullptr;//网络数据保存文件
     bool mIsUpgrading = false; // 是否正在进行OTA升级

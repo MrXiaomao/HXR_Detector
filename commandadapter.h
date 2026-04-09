@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-11-13 11:36:00
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-04-08 22:06:06
+ * @LastEditTime: 2026-04-09 10:22:58
  * @Description: 协议（下行指令 + 上行数据）、拆包（上行流式解析）、发指令 API
  */
 #ifndef COMMANDADAPTER_H
@@ -15,8 +15,8 @@
 #include <QWaitCondition>
 #include <QQueue>
 #include <qlitethread.h>
-#include <QTimer>
-#include <QElapsedTimer>
+// #include <QTimer>
+// #include <QElapsedTimer>
 
 struct CommandItem
 {

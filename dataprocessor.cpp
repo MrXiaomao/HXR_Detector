@@ -1,5 +1,4 @@
 ﻿#include "dataprocessor.h"
-#include <QDebug>
 #include <QTimer>
 
 DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
@@ -33,10 +32,11 @@ DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
         mDataProcessThread->wait(500);
     });
 
-    connect(this, &CommandAdapter::reportSpectrumData, this, &DataProcessor::mergeSubSpec);
-    connect(this, &CommandAdapter::reportWaveformData, this, &DataProcessor::extractWaveformData);
-    connect(this, &CommandAdapter::reportParticleData, this, &DataProcessor::extractParticleData);
-    connect(this, &CommandAdapter::reportTimestampData, this, &DataProcessor::extractTimestampData);
+    // 直接连接，确保能谱数据处理的线程安全性，能谱解析使其处于解析线程，避免与主线程抢资源。
+    connect(this, &CommandAdapter::reportSpectrumData, this, &DataProcessor::mergeSubSpec, Qt::DirectConnection);
+    connect(this, &CommandAdapter::reportWaveformData, this, &DataProcessor::extractWaveformData, Qt::DirectConnection);
+    connect(this, &CommandAdapter::reportParticleData, this, &DataProcessor::extractParticleData, Qt::DirectConnection);
+    connect(this, &CommandAdapter::reportTimestampData, this, &DataProcessor::extractTimestampData, Qt::DirectConnection);
 
 #if ENABLE_LIBHV
 #else
@@ -57,12 +57,6 @@ DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
         restartTempTimeout();
     });
 
-    // 启动能谱定时写入定时器：每隔 10s 将缓存的能谱批量写入 HDF5
-    mSpectrumWriteTimer.setInterval(10000);   // 10 秒
-    mSpectrumWriteTimer.setSingleShot(false);
-    connect(&mSpectrumWriteTimer, &QTimer::timeout,
-            this, &DataProcessor::flushSpectrumBuffer);
-    mSpectrumWriteTimer.start();
 }
 
 
@@ -420,16 +414,9 @@ void DataProcessor::mergeSubSpec(quint8 no, const QByteArray& data){
             }
             memcpy(mCurrentSpec.data(), fullSpectrum->spectrum, 8192*4);
             
-            // 发送完整的 FullSpectrum 数据到 MainWindow
+            // 发送完整的 FullSpectrum 数据到 CommHelper（HDF5 缓冲与写入在 CommHelper 后台线程）
             FullSpectrum fullSpectrumCopy = *fullSpectrum; // 拷贝数据，避免在锁外访问
             emit reportFullSpectrum(mIndex, fullSpectrumCopy);
-
-            // H5 能谱写入改为缓冲，交由定时器每隔一段时间统一写入
-            H5Spectrum h5Spectrum = FullSpectoH5Spec(fullSpectrumCopy);
-            {
-                QMutexLocker spectrumLocker(&mSpectrumLocker);
-                mPendingH5Spectrums.append(h5Spectrum);
-            }
 
             // m_parseData->mergeSpecTime_online(*fullSpectrum);
 
@@ -580,31 +567,6 @@ void DataProcessor::extractTimestampData(quint8 no, const QByteArray& packetData
 
     // 上报时间戳信息
     emit reportTriggerTimeInfo(no, tm);
-}
-
-/**
- * @brief DataProcessor::flushSpectrumBuffer
- * 按固定时间间隔（如 10s）将缓存在内存中的 H5Spectrum 批量写入 HDF5 文件
- */
-void DataProcessor::flushSpectrumBuffer()
-{
-    QVector<H5Spectrum> pending;
-    {
-        QMutexLocker spectrumLocker(&mSpectrumLocker);
-        if (mPendingH5Spectrums.isEmpty()) {
-            return;
-        }
-        pending.swap(mPendingH5Spectrums);
-    }
-
-    HDF5Settings* settings = HDF5Settings::instance();
-
-    //打印线程号
-    qDebug() << "det[" << mIndex << "] writeH5SpectrumBatch thread:" << QThread::currentThreadId()
-             << " bytesWritten:" << pending.size() * sizeof(H5Spectrum);
-
-    // 一次性批量写入，避免逐个扩展数据集带来的开销
-    settings->writeH5SpectrumBatch(mIndex, pending);
 }
 
 /**

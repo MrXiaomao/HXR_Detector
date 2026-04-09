@@ -5,12 +5,16 @@
 #include <QTcpSocket>
 #include <QMutex>
 #include <QFile>
-#include <QElapsedTimer>
+// #include <QElapsedTimer>
 #include <QWaitCondition>
-#include <QTimer>
+// #include <QTimer>
+#include <QThread>
 #include <QEventLoop>
-#include "dataprocessor.h"
 #include "qhuaweiswitcherhelper.h"
+#include "dataprocessor.h"
+
+class SpectrumH5FlushThread;
+class QTimer;
 
 #if ENABLE_LIBHV
 #include <hv/TcpServer.h>
@@ -22,6 +26,7 @@
 class CommHelper : public QObject
 {
     Q_OBJECT
+    friend class SpectrumH5FlushThread;
 public:
     explicit CommHelper(QObject *parent = nullptr);
     ~CommHelper();
@@ -216,6 +221,7 @@ private:
     // 处理探测器断开连接的统一逻辑
     void handleDetectorDisconnection(quint8 index);
 
+    void flushSpectrumH5BuffersOnWorkerThread();
     QMutex mPeersMutex;
 #if ENABLE_LIBHV
     hv::TcpServer *mTcpServer; // libhv服务器实例
@@ -237,7 +243,10 @@ private:
     QMap<quint8, DataProcessor*> mDetectorDataProcessor;//32路探测器数据处理器
     QMap<quint8, QFile*> mDetectFileProcessor;  //32路探测器的测量数据文件句柄，不包含温度数据的数据包，可以是：能谱数据、波形数据、粒子数据。
     QMap<quint8, QFile*> mNetRawFileProcessor;  //32路探测器原始数据文件存储句柄，包含温度数据
-    QString mResMatrixFileName;
+    // 每路探测器独立缓冲完整能谱转 H5 后的数据；后台线程每 10s 批量写入 HDF5
+    QVector<QVector<H5Spectrum>> mPendingH5ByDetector;
+    QMutex mSpectrumH5Mutex;
+    SpectrumH5FlushThread* mSpectrumH5FlushThread = nullptr;
 
     //记录手动关闭POE供电的探测器ID
     QVector<quint8> mManualClosedPOEIDs;

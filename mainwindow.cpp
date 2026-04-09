@@ -1,7 +1,5 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
-#include "qcustomplot.h"
-#include "globalsettings.h"
 #include "switchbutton.h"
 #include <QTimer>
 #include <QDir>
@@ -394,68 +392,7 @@ void MainWindow::initUi()
 
     QTimer* systemClockTimer = new QTimer(this);
     systemClockTimer->setObjectName("systemClockTimer");
-    connect(systemClockTimer, &QTimer::timeout, this, [=](){
-        static uint64_t t = 0;
-
-        // 获取当前时间
-        QDateTime currentDateTime = QDateTime::currentDateTime();
-
-        // 获取星期几的数字（1代表星期日，7代表星期日）
-        int dayOfWeekNumber = currentDateTime.date().dayOfWeek();
-
-        // 星期几的中文名称列表
-        QStringList dayNames = {
-            tr("星期日"), QObject::tr("星期一"), QObject::tr("星期二"), QObject::tr("星期三"), QObject::tr("星期四"), QObject::tr("星期五"), QObject::tr("星期六"), QObject::tr("星期日")
-        };
-
-        // 根据数字获取中文名称
-        QString dayOfWeekString = dayNames.at(dayOfWeekNumber);
-        this->findChild<QLabel*>("label_systemtime")->setText(QString(QObject::tr("系统时间：")) + currentDateTime.toString("yyyy/MM/dd hh:mm:ss ") + dayOfWeekString);
-
-        if (mContinueMeasureTimer && mContinueMeasureTimer->isValid())
-        {
-            ui->edit_measureTime->setText(formatTimeString(mContinueMeasureTimer->elapsed() / 1000));
-        }
-
-        // 时钟刷新2次，温度刷新一次
-        if ((t++%2) == 0){
-            for (int row=0; row<=DET_NUM; ++row){
-                if (m_mapTemperatur.contains(row)){
-                    float temperature = m_mapTemperatur[row].second;
-                    QDateTime tmTrigger = QDateTime::fromMSecsSinceEpoch(m_mapTemperatur[row].first);
-                    bool isTimeout = false;
-                    if (tmTrigger.msecsTo(currentDateTime) >= 2000)
-                        isTimeout = true;
-
-                    QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 3));
-                    if (isTimeout){
-                        // 长时间没收到温度数据了
-                        cell->setEnabled(false);
-                    }
-                    else{
-                        cell->setText(QString::number(temperature, 'f', 1) + " ℃");
-                        if (cell->isEnabled()){
-                            // 判断温度是否达到报警阈值点
-                            if (temperature > 70.0) {
-                                cell->setStyleSheet("color: red;");
-                            } else {
-                                cell->setStyleSheet("color: green;");
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // 能谱刷新需根据刷新时长来决定，最小1s刷新一次
-        if (commHelper->isMeasuring() && (t % m_spectrumRefreshTimelength) == 0){
-            //
-            ui->spectroMeter1_top->replot(QCustomPlot::rpQueuedReplot);
-            ui->spectroMeter1_bottom->replot(QCustomPlot::rpQueuedReplot);
-            ui->spectroMeter2_top->replot(QCustomPlot::rpQueuedReplot);
-            ui->spectroMeter2_bottom->replot(QCustomPlot::rpQueuedReplot);
-        }
-    });
+    connect(systemClockTimer, &QTimer::timeout, this, &MainWindow::onSystemTimer);
     systemClockTimer->start(900);
 
     {
@@ -806,39 +743,7 @@ void MainWindow::initUi()
     }, Qt::QueuedConnection);
 
     // 接收完整的能谱数据
-    connect(commHelper, &CommHelper::reportFullSpectrum, this, [=](quint8 index, const FullSpectrum& fullSpectrum){
-        if (index < 1 || index > DET_NUM) {
-            qWarning() << "Invalid detector ID:" << index;
-            return;
-        }
-
-        DetectorData &data = m_detectorData[index];
-
-        // 累积能谱
-        quint32 currentCount = 0;
-        for (int i = 0; i < 8192; ++i) {
-            currentCount += fullSpectrum.spectrum[i];
-            data.spectrum[i] += fullSpectrum.spectrum[i];
-        }
-
-        //记录累积计数率
-        data.lastAccumulateCount += currentCount;
-
-        // 更新能谱显示
-        updateSpectrumDisplay(index, data.spectrum);
-
-        //最快每秒更新一次计数率,这里不考虑丢包带来的计数率修复
-        quint32 accuTime = (fullSpectrum.sequence - data.lastSpectrumID) * fullSpectrum.measureTime;//单位ms
-        double currenTime = 1.0 * fullSpectrum.sequence * fullSpectrum.measureTime / 1000; //单位s，这里最大数对应2^32/24/3600=49days
-        if(accuTime >= 1000) {
-            double countRate = 1000.0*data.lastAccumulateCount * 1.0 / accuTime; //cps
-            data.lastSpectrumID = fullSpectrum.sequence;
-            data.lastAccumulateCount = 0;
-            data.countRateHistory.append(countRate);
-            // 更新计数率显示
-            updateCountRateDisplay(index, currenTime, countRate);
-        }
-    }, Qt::DirectConnection);
+    connect(commHelper, &CommHelper::reportFullSpectrum, this, &MainWindow::onFullSpectrum, Qt::DirectConnection);
 
     // 接收波形曲线数据
     connect(commHelper, &CommHelper::reportWaveCurve, this, [=](quint8 index, QVector<quint16>& data){
@@ -858,8 +763,6 @@ void MainWindow::initUi()
         getGraph(index)->setData(x, y);
         customPlot->xAxis->rescale(true);
         customPlot->yAxis->rescale(true);
-        //customPlot->yAxis->setRange(0, 10000);
-        //customPlot->replot(QCustomPlot::rpQueuedReplot);
     });
 
     // 接收触发信号时间戳
@@ -879,45 +782,6 @@ void MainWindow::initUi()
             qInfo().noquote().nospace() << "收到打靶信号时间戳：" << tm.toString("yyyy-MM-dd HH:mm:ss") << "，自动测量将在" << coolTimelength << "秒后触发";
         }
     }, Qt::QueuedConnection);
-
-    // QTimer *timer = new QTimer(this);
-    // static QElapsedTimer elapsedTimer;
-    // elapsedTimer.start();
-    // connect(timer, &QTimer::timeout, this, [=](){
-    //     if (elapsedTimer.elapsed() > 10000)
-    //         return;
-
-    //     static quint64 base = 0;
-    //     quint16 waveformLength = 512;
-    //     quint16 period = 128;  //周期
-    //     quint16 amplitude = 10000; // 振幅
-    //     quint16 grain = 1;    //粒度
-    //     QVector<double> x2, y2;
-    //     for(quint64 x=base; x < base + waveformLength; x += grain)
-    //     {
-    //         double angle = (float) x / period * 2 * 3.1415926;
-    //         quint16 data = (double)amplitude * sin(angle) + amplitude;
-
-    //         QByteArray waveformBytes;
-    //         waveformBytes.push_back(quint8((data >> 8) & 0xFF));
-    //         waveformBytes.push_back(quint8(data & 0xFF));
-
-    //         x2 << x - base;
-    //         //y2 << data;
-    //         bool ok;
-    //         y2 << waveformBytes.mid(0, 2).toHex().toUShort(&ok, 16);
-    //     }
-
-    //     base++;
-    //     ui->spectroMeter1_top->graph(0)->setData(x2, y2);
-    //     ui->spectroMeter1_top->xAxis->rescale(true);
-    //     ui->spectroMeter1_top->yAxis->rescale(true);
-    //     //ui->spectroMeter1_top->yAxis->setRange(0, 4100);
-    //     ui->spectroMeter1_top->replot(QCustomPlot::rpQueuedReplot);
-
-    //     qDebug() << "elapsedTimer:" << elapsedTimer.elapsed() << base;
-    // });
-    // timer->start(10);
 }
 
 QPixmap MainWindow::roundPixmap(QSize sz, QColor clrOut)
@@ -1126,6 +990,80 @@ void MainWindow::onAutoMeasureDelayTimeout()
     }
 }
 
+// 系统刷新定时器，暂定于每秒钟刷新1次，刷新内容包括：测量时间、能谱图像、计数率曲线等
+void MainWindow::onSystemTimer()
+{
+    static uint64_t t = 0;
+
+    // 获取当前时间
+    QDateTime currentDateTime = QDateTime::currentDateTime();
+
+    // 获取星期几的数字（1代表星期日，7代表星期日）
+    int dayOfWeekNumber = currentDateTime.date().dayOfWeek();
+
+    // 星期几的中文名称列表
+    QStringList dayNames = {
+        tr("星期日"), QObject::tr("星期一"), QObject::tr("星期二"), QObject::tr("星期三"), QObject::tr("星期四"), QObject::tr("星期五"), QObject::tr("星期六"), QObject::tr("星期日")
+    };
+
+    // 根据数字获取中文名称
+    QString dayOfWeekString = dayNames.at(dayOfWeekNumber);
+    this->findChild<QLabel*>("label_systemtime")->setText(QString(QObject::tr("系统时间：")) + currentDateTime.toString("yyyy/MM/dd hh:mm:ss ") + dayOfWeekString);
+
+    if (mContinueMeasureTimer && mContinueMeasureTimer->isValid())
+    {
+        ui->edit_measureTime->setText(formatTimeString(mContinueMeasureTimer->elapsed() / 1000));
+    }
+
+    // 温度刷新一次，时钟刷新2次，
+    if ((t++%2) == 0){
+        for (int row=0; row<=DET_NUM; ++row){
+            if (m_mapTemperatur.contains(row)){
+                float temperature = m_mapTemperatur[row].second;
+                QDateTime tmTrigger = QDateTime::fromMSecsSinceEpoch(m_mapTemperatur[row].first);
+                bool isTimeout = false;
+                if (tmTrigger.msecsTo(currentDateTime) >= 2000)
+                    isTimeout = true;
+
+                QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 3));
+                if (isTimeout){
+                    // 长时间没收到温度数据了
+                    cell->setEnabled(false);
+                }
+                else{
+                    cell->setText(QString::number(temperature, 'f', 1) + " ℃");
+                    if (cell->isEnabled()){
+                        // 判断温度是否达到报警阈值点
+                        if (temperature > 70.0) {
+                            cell->setStyleSheet("color: red;");
+                        } else {
+                            cell->setStyleSheet("color: green;");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 能谱刷新需根据刷新时长来决定，最小1s刷新一次
+    if (commHelper->isMeasuring() && (t % m_specPlotRefreshTime) == 0){
+        //
+        ui->spectroMeter1_top->replot(QCustomPlot::rpQueuedReplot);
+        ui->spectroMeter2_top->replot(QCustomPlot::rpQueuedReplot);
+
+        //能谱图像 y轴自动缩放
+        ui->spectroMeter1_bottom->YAxis->rescale();
+        ui->spectroMeter1_bottom->yAxis->setRangeUpper(
+            ui->spectroMeter1_bottom->yAxis->range().upper * 1.1); // 留10%余量
+        ui->spectroMeter1_bottom->replot(QCustomPlot::rpQueuedReplot);
+
+        ui->spectroMeter2_bottom->YAxis->rescale();
+        ui->spectroMeter2_bottom->yAxis->setRangeUpper(
+            ui->spectroMeter2_bottom->yAxis->range().upper * 1.1); // 留10%余量
+        ui->spectroMeter2_bottom->replot(QCustomPlot::rpQueuedReplot);
+    }
+}
+
 //交换机登录成功的回调
 void MainWindow::onSwitcherLogged(const QString& ip)
 {
@@ -1219,6 +1157,43 @@ void MainWindow::onPoePowerStatusReport(quint8 index, bool on)
             qInfo().nospace() << "谱仪[#" << index << "]已关机，POE电源状态: 关";
     }
     cell->setChecked(on);
+}
+
+// 处理数据解析后的能谱数据，更新界面相关数据，子线程，而非界面线程
+void MainWindow::onFullSpectrum(int index, const FullSpectrum& fullSpectrum)
+{
+    if (index < 1 || index > DET_NUM) {
+        qWarning() << "Invalid detector ID:" << index;
+        return;
+    }
+
+    DetectorData &data = m_detectorData[index];
+
+    // 累积能谱
+    quint32 currentCount = 0;
+    for (int i = 0; i < 8192; ++i) {
+        currentCount += fullSpectrum.spectrum[i];
+        data.spectrum[i] += fullSpectrum.spectrum[i];
+    }
+
+    // 记录累积计数率
+    data.lastAccumulateCount += currentCount;
+
+    //最快每秒更新一次能谱、计数率,这里不考虑丢包带来的计数率修复
+    quint32 accuTime = (fullSpectrum.sequence - data.lastSpectrumID) * fullSpectrum.measureTime;//单位ms
+    double currenTime = 1.0 * fullSpectrum.sequence * fullSpectrum.measureTime / 1000; //单位s，这里最大数对应2^32/24/3600=49days
+    if(accuTime >= 1000) {
+        double countRate = 1000.0*data.lastAccumulateCount * 1.0 / accuTime; //cps
+        data.lastSpectrumID = fullSpectrum.sequence;
+        data.lastAccumulateCount = 0;
+        data.countRateHistory.append(countRate);
+        
+        // 更新能谱图像数据
+        updateSpecPlotData(index, data.spectrum);
+
+        // 更新计数率图像数据
+        updateCountRatePlotData(index, currenTime, countRate);
+    }
 }
 
 // 将缓存的温度数据写入磁盘，避免丢数据
@@ -1505,7 +1480,7 @@ void MainWindow::on_action_startMeasure_triggered()
 
     mEnableAutoMeasure = ui->cbb_measureMode->currentIndex()==1;
     mEnableExtendTrigger = ui->com_triggerModel->currentIndex()==1;
-    m_spectrumRefreshTimelength = qMax((quint32)1000, (quint32)HDF5Settings::instance()->detParameters()[1].spectrumRefreshTime) / 1000;
+    m_specPlotRefreshTime = qMax((quint32)1000, (quint32)HDF5Settings::instance()->detParameters()[1].spectrumRefreshTime) / 1000;
 
     if (mEnableAutoMeasure)
     {
@@ -1582,6 +1557,7 @@ void MainWindow::on_action_startMeasure_triggered()
 //单通道测量，单独测量某个通道
 void MainWindow::on_pushButton_startMeasure_clicked()
 {
+    m_specPlotRefreshTime = qMax((quint32)1000, (quint32)HDF5Settings::instance()->detParameters()[1].spectrumRefreshTime) / 1000;
     //清空图像中的曲线数据
     clearCustomPlotData();
     updateSpectrumPlotSettings();
@@ -1887,7 +1863,8 @@ void MainWindow::onMeasureCountdownTimeout()
         // 倒计时结束
         mMeasureCountdownTimer->stop();
         // 显示最终测量时长
-        ui->edit_measureTime->setText(formatTimeString(mTotalCountdown));
+        quint32 timeelapsed =  mMeasureCountdownTimer.elapsed() / 1000;
+        ui->edit_measureTime->setText(formatTimeString(timeelapsed));
 
         // 自动更新发次号
         if (ui->checkBox_autoIncrease->isChecked()){
@@ -2210,19 +2187,15 @@ QList<int> MainWindow::getOnlineDetectors() const {
     return m_detectorData.keys();
 }
 
-// 更新能谱、计数率显示
-void MainWindow::updateSpectrumDisplay(int detectorId, const quint32 spectrum[]) {
+// 更新能谱图像数据
+void MainWindow::updateSpecPlotData(int detectorId, const quint32 spectrum[]) {
     // 计算在页面中的索引
     QCustomPlot *customPlot = getCustomPlot(detectorId, true);
     if (!customPlot)
         return;
 
     QVector<double> x, y;
-    double y_min = customPlot->yAxis->range().lower;
-    double y_max = customPlot->yAxis->range().upper;
-    double yMaxOld = y_max;
-
-    // 转换数据格式
+    // 针对能量刻度做处理
     if(mEnScale)
     {
         //压缩多道
@@ -2248,9 +2221,6 @@ void MainWindow::updateSpectrumDisplay(int detectorId, const quint32 spectrum[])
             }
             x << tempX;
             y << mergeCount;
-
-            y_min = qMin(y_min, mergeCount);
-            y_max = qMax(y_max, mergeCount);
         }
     }
     else
@@ -2271,29 +2241,15 @@ void MainWindow::updateSpectrumDisplay(int detectorId, const quint32 spectrum[])
             int newCh = (i+1)/mergebin;
             x << newCh;
             y << mergeCount;
-
-            y_min = qMin(y_min, mergeCount);
-            y_max = qMax(y_max, mergeCount);
         }
     }
 
-    // 更新图表
+    // 更新图像数据
     getGraph(detectorId, true)->setData(x, y);
-
-    // if (customPlot->property("enableAutoScale").toBool())
-    //     customPlot->rescaleAxes(true);
-    // else if (customPlot->property("enableFixedScale").toBool()){
-    //     if (!qFuzzyCompare(y_max, yMaxOld) && (y_max > yMaxOld)){
-    //         y_max = y_min + (y_max - y_min) * 1.1;
-    //         customPlot->yAxis->setRange(y_min - 1, y_max);
-    //     }
-    // }
-
-    //customPlot->replot(QCustomPlot::rpQueuedReplot);
 }
 
 // 添加计数率显示更新函数
-void MainWindow::updateCountRateDisplay(int detectorId, double fpgaTime, double countRate) {
+void MainWindow::updateCountRatePlotData(int detectorId, double fpgaTime, double countRate) {
     // 计算在页面中的索引
     QCustomPlot *customPlot = getCustomPlot(detectorId, false);
     if (!customPlot)
@@ -2306,29 +2262,15 @@ void MainWindow::updateCountRateDisplay(int detectorId, double fpgaTime, double 
     if (!timer.isValid()) {
         timer.start();
     }
-    // double currentTime = timer.elapsed() / 1000.0; // 转换为秒
 
-    // int currentTime = data.countRateHistory.size();
-    // 添加新的数据点
-    // int elapsedSeconds = mTotalCountdown - mRemainingCountdown;
-    // qDebug().nospace()<<"detID="<<detectorId<<", elapsedTime = "<<elapsedSeconds<<", fpgaTime = "<<fpgaTime;
     getGraph(detectorId, false)->addData(fpgaTime, countRate);
 
+    // 根据设置调整坐标轴范围
     if (customPlot->property("enableAutoScale").toBool())
         customPlot->rescaleAxes(true);
     else if (customPlot->property("enableFixedScale").toBool()){
         // 显示最近300秒
         const int WINDOW = customPlot->property("xAxisFixedRange").toUInt();
-
-        // 统计总曲线X轴最大值范围
-        // double x_max = getGraph((detectorId-1)/(DET_NUM/2)*(DET_NUM/2)+1, false)->data()->at(0)->key;
-        // for (int detectorIndex = (detectorId-1)/(DET_NUM/2)*(DET_NUM/2)+1; detectorIndex <= (detectorId-1)/(DET_NUM/2)*(DET_NUM/2)+(DET_NUM/2); ++detectorIndex){
-        //     QCPGraph* tempGraph = getGraph(detectorIndex, false);
-        //     if (tempGraph->dataCount() <= 0)
-        //         continue;
-
-        //     x_max =  qMax(x_max, tempGraph->data()->at(tempGraph->dataCount() - 1)->key);
-        // }
         const int halfDetNum = DET_NUM / 2; // 提取常量，避免重复计算DET_NUM/2
         // 1. 计算组起始索引（原代码中重复3次的部分）
         int groupStart = ((detectorId - 1) / halfDetNum) * halfDetNum + 1;
@@ -2353,7 +2295,6 @@ void MainWindow::updateCountRateDisplay(int detectorId, double fpgaTime, double 
         }
         x_max = qMax(x_max, (double)WINDOW);
         double x_min = qMax(0.0, x_max - WINDOW);
-        //customPlot->xAxis->setRange(qMax(0.0, fpgaTime*1.0 - WINDOW), fpgaTime + 1);
         customPlot->xAxis->setRange(x_min, x_max);
 
         // y轴范围只由最近300秒的y决定
@@ -2372,8 +2313,6 @@ void MainWindow::updateCountRateDisplay(int detectorId, double fpgaTime, double 
         double pad = (y_max - y_min) * 0.1;
         customPlot->yAxis->setRange(y_min - pad, y_max + pad);
     }
-
-    //customPlot->replot(QCustomPlot::rpQueuedReplot);
 }
 
 #include "localsettingwindow.h"

@@ -1,11 +1,28 @@
-﻿#include "commhelper.h"
-#include "globalsettings.h"
-
-#include <QTimer>
+#include "commhelper.h"
 #include <QDataStream>
 #include <QNetworkSession>
 #include <QNetworkConfigurationManager>
-#include <QDateTime>
+
+// 全局类名与 commhelper.h 中 friend 声明一致
+class SpectrumH5FlushThread : public QThread {
+public:
+    explicit SpectrumH5FlushThread(CommHelper* owner)
+        : QThread(owner), mOwner(owner) {}
+
+protected:
+    void run() override
+    {
+        while (!isInterruptionRequested()) {
+            for (int ms = 0; ms < 10000 && !isInterruptionRequested(); ms += 100)
+                QThread::msleep(100);
+            if (!isInterruptionRequested())
+                mOwner->flushSpectrumH5BuffersOnWorkerThread();
+        }
+    }
+
+private:
+    CommHelper* mOwner = nullptr;
+};
 
 CommHelper::CommHelper(QObject *parent)
     : QObject{parent}
@@ -13,9 +30,14 @@ CommHelper::CommHelper(QObject *parent)
     //屏蔽libhv日志输出
     hlog_disable();
 
+    mPendingH5ByDetector.resize(DET_NUM + 1);
+
     /*初始化网络*/
     initSocket();
     initDataProcessor();
+
+    mSpectrumH5FlushThread = new SpectrumH5FlushThread(this);
+    mSpectrumH5FlushThread->start();
 
     connect(this, &CommHelper::settingfinished, this, [=](){        
         //更改了设置，这里需要重新对数据处理器进行关联
@@ -93,6 +115,12 @@ CommHelper::CommHelper(QObject *parent)
 
 CommHelper::~CommHelper()
 {
+    if (mSpectrumH5FlushThread) {
+        mSpectrumH5FlushThread->requestInterruption();
+        mSpectrumH5FlushThread->wait(30000);
+    }
+    // flushSpectrumH5BuffersOnWorkerThread();
+
     this->stopServer();
 
     for (int index = 1; index <= mDetectorDataProcessor.size() + 1; ++index){
@@ -256,7 +284,8 @@ void CommHelper::initSocket()
 
 void CommHelper::initDataProcessor()
 {
-    for (int index = 1; index <= DET_NUM; ++index){
+    // 这里必须是从0开始，0对应的是时间同步模块，1-32对应探测器索引，这样可以通过索引直接访问对应的处理器
+    for (int index = 0; index <= DET_NUM; ++index){
         DataProcessor* processor = new DataProcessor(index, nullptr, this);
         mDetectorDataProcessor[index] = processor;
 
@@ -271,8 +300,14 @@ void CommHelper::initDataProcessor()
 
         // 能谱数据（解析后的完整能谱数据）
         connect(processor, &DataProcessor::reportFullSpectrum, this, [=](quint8 detID, const FullSpectrum& fullSpectrum){
-            emit reportFullSpectrum(detID, fullSpectrum); //通知界面更新能谱数据
-        }, Qt::QueuedConnection);
+            emit reportFullSpectrum(detID, fullSpectrum); // 通知界面更新能谱数据
+
+            if (detID < 1 || detID > DET_NUM)
+                return;
+            H5Spectrum h5Spectrum = FullSpectoH5Spec(fullSpectrum);
+            QMutexLocker lock(&mSpectrumH5Mutex);
+            mPendingH5ByDetector[detID].append(h5Spectrum);
+        }, Qt::DirectConnection);
 
         // 波形数据（解析后的数据）
         connect(processor, &DataProcessor::reportWaveCurveInfo, this, [=](quint8 detID, QVector<quint16>& wave){
@@ -310,6 +345,24 @@ void CommHelper::initDataProcessor()
             // 上报配置参数信息
             emit reportParamterData(detID, data);
         }, Qt::DirectConnection);
+    }
+}
+
+void CommHelper::flushSpectrumH5BuffersOnWorkerThread()
+{
+    if(!mMeasuring) return;
+    HDF5Settings* settings = HDF5Settings::instance();
+    for (int det = 1; det <= DET_NUM; ++det) {
+        QVector<H5Spectrum> pending;
+        {
+            QMutexLocker lock(&mSpectrumH5Mutex);
+            mPendingH5ByDetector[det].swap(pending);
+        }
+        if (pending.isEmpty())
+            continue;
+        settings->writeH5SpectrumBatch(static_cast<quint8>(det), pending);        
+        // qDebug().nospace() << "CommHelper writeH5SpectrumBatch det[" << det << "] count:"
+        //                     << pending.size() << " thread:" << QThread::currentThreadId();
     }
 }
 
@@ -867,6 +920,8 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
 {
     mMeasureStartTime = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
     mMeasuring = true;
+    // 初始化
+    mPendingH5ByDetector.resize(DET_NUM + 1);
 
     if (index == 0){
         mDataFileList.clear();
@@ -995,8 +1050,6 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
 */
 void CommHelper::checkAndFlushDetectFile(quint8 index, qint64 bytesWritten)
 {
-    //打印线程号
-    qDebug() << "det[" << index << "] checkAndFlushDetectFile thread:" << QThread::currentThreadId() << " bytesWritten:" << bytesWritten;
     const qint64 FLUSH_SIZE_THRESHOLD = 5*1024 * 1024; // Bytes
     const qint64 FLUSH_TIME_THRESHOLD_MS = 10000; // 10秒
     bool triggeredBySize = false;
@@ -1033,6 +1086,9 @@ void CommHelper::checkAndFlushDetectFile(quint8 index, qint64 bytesWritten)
         flushInfo.lastFlushTimer.restart();
     } // flushLocker在这里释放锁
     
+    //打印线程号
+    // qDebug() << "det[" << index << "] checkAndFlushDetectFile thread:" 
+    //         << QThread::currentThreadId() << " bytesWritten:" << bytesWritten;
     // 在锁外执行flush操作，避免锁持有时间过长
     // 注意：mDetectorFileProcessor的访问由调用者的mMutexFileFlush锁保护
     if (mDetectFileProcessor.contains(index)) {

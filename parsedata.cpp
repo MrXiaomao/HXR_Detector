@@ -1,7 +1,6 @@
 ﻿#include "parsedata.h"
 #include <QFile>
 #include <QDataStream>
-#include <QDebug>
 #include <QElapsedTimer>
 #include <cmath>
 #include <cstring> // 需要包含memcpy

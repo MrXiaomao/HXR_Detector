@@ -441,7 +441,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                 // dumpParserStats();
             }
 
-            if (cachePool.size() >= onePkgSize){
+            if (cachePool.size() >= static_cast<int>(onePkgSize)){
                 // 满足数据包长度
                 QByteArray chunk = QByteArray(cachePool.constData(), onePkgSize);
                 //继续检查包尾

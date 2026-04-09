@@ -59,7 +59,7 @@ public:
     QList<int> getOnlineDetectors() const;
 
     // 更新能谱显示
-    void updateSpectrumDisplay(int detectorId, const quint32 spectrum[]);
+    void updateSpecPlotData(int detectorId, const quint32 spectrum[]);
 
     /**
      * @brief 计数率显示，最快更新时间间隔不小于1000ms
@@ -67,7 +67,7 @@ public:
      * @param FPGATime FPGA内部时钟，当前的计数率对应的FPGA时钟，单位s，能谱数据中单位是ms，这里采用向下取整
      * @param countRate 计数率，单位cps
      */
-    void updateCountRateDisplay(int detectorId, double FPGATime, double countRate);
+    void updateCountRatePlotData(int detectorId, double FPGATime, double countRate);
 
     // 将秒数转换为 天/时分秒 格式字符串
     QString formatTimeString(int totalSeconds);
@@ -160,6 +160,12 @@ private slots:
 
     // 自定测量定时检查
     void onAutoMeasureDelayTimeout();
+
+    // 处理数据解析后的能谱数据，更新界面相关数据，子线程，而非界面线程
+    void onFullSpectrum(int detID, const FullSpectrum& fullSpectrum);
+
+    // 系统刷新定时器，暂定于每秒钟刷新1次，刷新内容包括：测量时间、能谱图像、计数率曲线等
+    void onSystemTimer();
 
     // 交换机登录状态更新
     void onSwitcherLogged(const QString& ip);
@@ -277,7 +283,7 @@ private:
     QMutex mMutexTemperature; //温度数据缓存锁
     void flushTemperatureCache();
 
-    quint32 m_spectrumRefreshTimelength = 1; // 能谱刷新时长(s)
+    quint32 m_specPlotRefreshTime = 1; // 能谱刷新时长(s)
 
     // 日志内容查找功能相关
     QString mLastSearchText;  // 上次查找的文本
