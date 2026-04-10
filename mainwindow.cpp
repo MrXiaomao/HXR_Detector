@@ -19,25 +19,12 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
 
     commHelper = CommHelper::instance();
 
-    // 温度批量写盘：回调只缓存，定时每60秒统一落盘到
-    // temperature/<yyyy-MM-dd>/<index>.txt（跨午夜按点归档到各自yyyy-MM-dd）
-    m_tempFlushTimer = new QTimer(this);
-    m_tempFlushTimer->setInterval(60 * 1000);
-    connect(m_tempFlushTimer, &QTimer::timeout, this, &MainWindow::flushTemperatureCache);
-    m_tempFlushTimer->start();
-
-    // 连续测量计时器
-    mContinueMeasureTimer = new QElapsedTimer();
+    // 测量计时器
+    mMeasureTimer = new QElapsedTimer();
     // 自动化测量计时器
     mAutoMeasureDelayTimer = new QTimer(this);
     mAutoMeasureDelayTimer->setInterval(1000); // 每秒触发一次
     connect(mAutoMeasureDelayTimer, &QTimer::timeout, this, &MainWindow::onAutoMeasureDelayTimeout);
-
-    // 初始化测量倒计时定时器
-    mMeasureCountdownTimer = new QTimer(this);
-    mMeasureCountdownTimer->setSingleShot(false);
-    mMeasureCountdownTimer->setInterval(1000); // 每秒触发一次
-    connect(mMeasureCountdownTimer, &QTimer::timeout, this, &MainWindow::onMeasureCountdownTimeout);
 
     // 初始化连接按钮禁用定时器
     mConnectButtonDisableTimer = new QTimer(this);
@@ -1010,9 +997,9 @@ void MainWindow::onSystemTimer()
     QString dayOfWeekString = dayNames.at(dayOfWeekNumber);
     this->findChild<QLabel*>("label_systemtime")->setText(QString(QObject::tr("系统时间：")) + currentDateTime.toString("yyyy/MM/dd hh:mm:ss ") + dayOfWeekString);
 
-    if (mContinueMeasureTimer && mContinueMeasureTimer->isValid())
+    if (mMeasureTimer && mMeasureTimer->isValid())
     {
-        ui->edit_measureTime->setText(formatTimeString(mContinueMeasureTimer->elapsed() / 1000));
+        ui->edit_measureTime->setText(formatTimeString(mMeasureTimer->elapsed() / 1000));
     }
 
     // 温度刷新一次，时钟刷新2次，
@@ -1045,6 +1032,9 @@ void MainWindow::onSystemTimer()
         }
     }
 
+    // 每10s刷新一次温度缓存到文件，避免频繁IO
+    if(t%10==0) flushTemperatureCache();
+
     // 能谱刷新需根据刷新时长来决定，最小1s刷新一次
     if (commHelper->isMeasuring() && (t % m_specPlotRefreshTime) == 0){
         //
@@ -1052,15 +1042,21 @@ void MainWindow::onSystemTimer()
         ui->spectroMeter2_top->replot(QCustomPlot::rpQueuedReplot);
 
         //能谱图像 y轴自动缩放
-        ui->spectroMeter1_bottom->YAxis->rescale();
+        ui->spectroMeter1_bottom->yAxis->rescale();
         ui->spectroMeter1_bottom->yAxis->setRangeUpper(
             ui->spectroMeter1_bottom->yAxis->range().upper * 1.1); // 留10%余量
         ui->spectroMeter1_bottom->replot(QCustomPlot::rpQueuedReplot);
 
-        ui->spectroMeter2_bottom->YAxis->rescale();
+        ui->spectroMeter2_bottom->yAxis->rescale();
         ui->spectroMeter2_bottom->yAxis->setRangeUpper(
             ui->spectroMeter2_bottom->yAxis->range().upper * 1.1); // 留10%余量
         ui->spectroMeter2_bottom->replot(QCustomPlot::rpQueuedReplot);
+    }
+
+    // 定时测量模式下，检测是否时长已满
+    if(misTimedMeasure)
+    {
+        onMeasureCountdownTimeout();
     }
 }
 
@@ -1263,24 +1259,12 @@ void MainWindow::closeEvent(QCloseEvent *event) {
         return;
     }
 
-    // if (mIsMeasuring){
-    //     QMessageBox::information(this, tr("系统退出提示"), tr("测量中禁止退出软件系统！"),
-    //                                          QMessageBox::Ok, QMessageBox::Ok);
-    //     event->ignore();
-    // }
-    // else
-    // {
-        // 断开网络
-        if (m_tempFlushTimer)
-            m_tempFlushTimer->stop();
+    // 关闭前把缓存的温度点写入磁盘，避免丢数据
+    flushTemperatureCache();
 
-        // 关闭前把缓存的温度点写入磁盘，避免丢数据
-        flushTemperatureCache();
-
-        commHelper->stopMeasure();
-        commHelper->stopServer();
-        event->accept();
-    // }
+    commHelper->stopMeasure();
+    commHelper->stopServer();
+    event->accept();
 }
 
 bool MainWindow::checkStatusTipEvent(QEvent * event) {
@@ -1425,7 +1409,7 @@ void MainWindow::on_action_stopServer_triggered()
     QLabel* label_LocalServer = this->findChild<QLabel*>("label_LocalServer");
     label_LocalServer->setStyleSheet("color:#ff0000;");
     label_LocalServer->setText(tr("本地网络服务：断开"));
-    mMeasureCountdownTimer->stop();
+    misTimedMeasure = false;
 }
 
 //视图
@@ -1663,8 +1647,8 @@ void MainWindow::on_pushButton_startMeasure_clicked()
             if (mOnlineDetectors.contains(index))
             {
                 // 启动连续测量计时器
-                if (!mContinueMeasureTimer->isValid())
-                    mContinueMeasureTimer->start();
+                if (!mMeasureTimer->isValid())
+                    mMeasureTimer->start();
 
                 qInfo().noquote().nospace() << QStringLiteral("谱仪[#%1]开始测量，波形测量模式").arg(index);
                 commHelper->startMeasure(QDateTime::currentDateTime(), CommandAdapter::MeasureMode::mmManual, CommandAdapter::WorkMode::wmWaveform, index);
@@ -1689,13 +1673,16 @@ void MainWindow::on_pushButton_startMeasure_clicked()
             // 再发送开始测量指令
             if (mOnlineDetectors.contains(index))
             {
+                // 启动测量计时器
+                if (!mMeasureTimer->isValid())
+                    mMeasureTimer->start();
                 // 判断是否连续测量
                 if (ui->checkBox_continueMeasure->isChecked())
                 {
+                    misTimedMeasure = false;
                     // 初始化测量时长显示为 00:00:00
                     ui->edit_measureTime->setText("00:00:00");
-                    // 启动连续测量计时器
-                    mContinueMeasureTimer->start();
+                    
                     qInfo().noquote().nospace() << QString("谱仪[#%1]开始测量，连续测量模式").arg(index);
                 }
                 else
@@ -1703,9 +1690,8 @@ void MainWindow::on_pushButton_startMeasure_clicked()
                     // 读取倒计时时间（秒）
                     int countdownSeconds = ui->spinBox_measureTime->value();
                     if (countdownSeconds > 0) {
-                        mRemainingCountdown = countdownSeconds;
                         mTotalCountdown = countdownSeconds;
-                        mMeasureCountdownTimer->start();
+                        misTimedMeasure = true;
                         // 初始化测量时长显示为 00:00:00
                         ui->edit_measureTime->setText("00:00:00");
                         qInfo().noquote().nospace() << QString("谱仪[#%1]开始测量，倒计时：%2 秒").arg(index).arg(countdownSeconds);
@@ -1731,20 +1717,18 @@ void MainWindow::on_pushButton_startMeasure_clicked()
 //（自定义通道）停止测量，停止测量已选中的通道
 void MainWindow::on_pushButton_stopMeasure_clicked()
 {
-    // 停止倒计时定时器
-    if (mMeasureCountdownTimer && mMeasureCountdownTimer->isActive()) {
-        mMeasureCountdownTimer->stop();
-        // 显示最终测量时长
-        int elapsedSeconds = mTotalCountdown - mRemainingCountdown;
-        ui->edit_measureTime->setText(formatTimeString(elapsedSeconds));
-        qInfo() << "手动测量倒计时已停止";
-    } else if (mContinueMeasureTimer && mContinueMeasureTimer->isValid()){
-        mContinueMeasureTimer->invalidate();
-        qInfo() << "自动化测量倒计时已停止";
-    } else {
-        // 如果没有倒计时，清空显示
-        ui->edit_measureTime->setText("00:00:00");
+    if(mEnableAutoMeasure){
+        qInfo().noquote() << "自动化测量已停止";
     }
+    else{
+        qInfo().noquote() << "手动测量已停止";
+    }
+
+    // 显示最终测量时长
+    int elapsedSeconds = mMeasureTimer->elapsed() / 1000;
+    ui->edit_measureTime->setText(formatTimeString(elapsedSeconds));
+    mMeasureTimer->invalidate();
+    misTimedMeasure = false;
 
     // 获取所选通道
     // 再发开始测量指令
@@ -1849,23 +1833,11 @@ void MainWindow::on_action_stopMeasure_triggered()
 
 void MainWindow::onMeasureCountdownTimeout()
 {
-    mRemainingCountdown--;
+    // 计算已测量时长s（总时长 - 剩余倒计时）
+    int mRemainingCountdown = mTotalCountdown - mMeasureTimer->elapsed() / 1000; 
 
-    // 计算已测量时长（总时长 - 剩余倒计时）
-    int elapsedSeconds = mTotalCountdown - mRemainingCountdown;
-    // 更新测量时长显示
-    ui->edit_measureTime->setText(formatTimeString(elapsedSeconds));
-
-    if (mRemainingCountdown > 0) {
-        // 倒计时进行中，可以在这里更新UI显示剩余时间
-        // qInfo().nospace() << QString("测量倒计时剩余：%1 秒").arg(mRemainingCountdown);
-    } else {
-        // 倒计时结束
-        mMeasureCountdownTimer->stop();
-        // 显示最终测量时长
-        quint32 timeelapsed =  mMeasureCountdownTimer.elapsed() / 1000;
-        ui->edit_measureTime->setText(formatTimeString(timeelapsed));
-
+    if (mRemainingCountdown <= 0) {
+        misTimedMeasure = false;
         // 自动更新发次号
         if (ui->checkBox_autoIncrease->isChecked()){
             ui->lineEdit_shotNum->setText(increaseShotNumSuffix(ui->lineEdit_shotNum->text().trimmed()));
@@ -1879,7 +1851,6 @@ void MainWindow::onMeasureCountdownTimeout()
 
             // 停止所有测量
             commHelper->stopMeasure();
-
 
             //记录下关闭的电源通道号
             foreach (quint8 index, mOnlineDetectors)
@@ -2635,24 +2606,22 @@ void MainWindow::startMeasure()
 
     commHelper->setShotInformation(shotDir, shotNumStr);
 
+    // 启动测量计时器
+    mMeasureTimer->start();
+    // 初始化测量时长显示为 00:00:00
+    ui->edit_measureTime->setText("00:00:00");
+
     // 判断是否连续测量
     if (ui->checkBox_continueMeasure->isChecked())
     {
-        // 初始化测量时长显示为 00:00:00
-        ui->edit_measureTime->setText("00:00:00");
-        // 启动连续测量计时器
-        mContinueMeasureTimer->start();
+        misTimedMeasure = false;
     }
-    else
-    {
+    else{
+        misTimedMeasure = true;
         // 读取倒计时时间（秒）
         int countdownSeconds = ui->spinBox_measureTime->value();
         if (countdownSeconds > 0) {
-            mRemainingCountdown = countdownSeconds;
             mTotalCountdown = countdownSeconds;
-            mMeasureCountdownTimer->start();
-            // 初始化测量时长显示为 00:00:00
-            ui->edit_measureTime->setText("00:00:00");
             qInfo().noquote().nospace() << QString("开始测量，倒计时：%1 秒").arg(countdownSeconds);
         }
     }
@@ -2676,20 +2645,18 @@ void MainWindow::startMeasure()
 
 void MainWindow::stopMeasure()
 {
-    // 停止倒计时定时器
-    if (mMeasureCountdownTimer && mMeasureCountdownTimer->isActive()) {
-        mMeasureCountdownTimer->stop();
-        // 显示最终测量时长
-        int elapsedSeconds = mTotalCountdown - mRemainingCountdown;
-        ui->edit_measureTime->setText(formatTimeString(elapsedSeconds));
-        qInfo() << "手动测量倒计时已停止";
-    } else if (mContinueMeasureTimer && mContinueMeasureTimer->isValid()){
-        mContinueMeasureTimer->invalidate();
-        qInfo() << "自动化测量倒计时已停止";
-    } else {
-        // 如果没有倒计时，清空显示
-        ui->edit_measureTime->setText("00:00:00");
+    if(mEnableAutoMeasure){
+        qInfo().noquote() << "自动化测量已停止";
     }
+    else{
+        qInfo().noquote() << "手动测量已停止";
+    }
+
+    // 显示最终测量时长
+    int elapsedSeconds = mMeasureTimer->elapsed() / 1000;
+    ui->edit_measureTime->setText(formatTimeString(elapsedSeconds));
+    mMeasureTimer->invalidate();
+    misTimedMeasure = false;
 
     // 自动更新发次号
     if (ui->checkBox_autoIncrease->isChecked()){

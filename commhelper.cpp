@@ -13,10 +13,30 @@ protected:
     void run() override
     {
         while (!isInterruptionRequested()) {
-            for (int ms = 0; ms < 10000 && !isInterruptionRequested(); ms += 100)
+            for (int ms = 0; ms < 1000 && !isInterruptionRequested(); ms += 100)
                 QThread::msleep(100);
             if (!isInterruptionRequested())
                 mOwner->flushSpectrumH5BuffersOnWorkerThread();
+        }
+    }
+
+private:
+    CommHelper* mOwner = nullptr;
+};
+
+class SpectrumRawFlushThread : public QThread {
+public:
+    explicit SpectrumRawFlushThread(CommHelper* owner)
+        : QThread(owner), mOwner(owner) {}
+
+protected:
+    void run() override
+    {
+        while (!isInterruptionRequested()) {
+            for (int ms = 0; ms < 1000 && !isInterruptionRequested(); ms += 100)
+                QThread::msleep(100);
+            if (!isInterruptionRequested())
+                mOwner->flushSpectrumRawBuffersOnWorkerThread(false);
         }
     }
 
@@ -31,6 +51,7 @@ CommHelper::CommHelper(QObject *parent)
     hlog_disable();
 
     mPendingH5ByDetector.resize(DET_NUM + 1);
+    mPendingSpectrumRawByDetector.resize(DET_NUM + 1);
 
     /*初始化网络*/
     initSocket();
@@ -38,6 +59,8 @@ CommHelper::CommHelper(QObject *parent)
 
     mSpectrumH5FlushThread = new SpectrumH5FlushThread(this);
     mSpectrumH5FlushThread->start();
+    mSpectrumRawFlushThread = new SpectrumRawFlushThread(this);
+    mSpectrumRawFlushThread->start();
 
     connect(this, &CommHelper::settingfinished, this, [=](){        
         //更改了设置，这里需要重新对数据处理器进行关联
@@ -115,6 +138,12 @@ CommHelper::CommHelper(QObject *parent)
 
 CommHelper::~CommHelper()
 {
+    if (mSpectrumRawFlushThread) {
+        mSpectrumRawFlushThread->requestInterruption();
+        mSpectrumRawFlushThread->wait(30000);
+    }
+    flushSpectrumRawBuffersOnWorkerThread(true);
+
     if (mSpectrumH5FlushThread) {
         mSpectrumH5FlushThread->requestInterruption();
         mSpectrumH5FlushThread->wait(30000);
@@ -366,6 +395,31 @@ void CommHelper::flushSpectrumH5BuffersOnWorkerThread()
     }
 }
 
+void CommHelper::flushSpectrumRawBuffersOnWorkerThread(bool forceFlushAll)
+{
+    if (!mMeasuring && !forceFlushAll)
+        return;
+
+    for (int det = 1; det <= DET_NUM; ++det) {
+        QByteArray pendingRaw;
+        {
+            QMutexLocker lock(&mSpectrumRawMutex);
+            mPendingSpectrumRawByDetector[det].swap(pendingRaw);
+        }
+        if (pendingRaw.isEmpty())
+            continue;
+
+        if (!mDetectFileProcessor.contains(det))
+            continue;
+        QFile* file = mDetectFileProcessor[det];
+        if (!file || !file->isOpen())
+            continue;
+
+        file->write(pendingRaw.constData(), pendingRaw.size());
+        file->flush(); // 后台线程按 10s 周期落盘
+    }
+}
+
 // 网口原始数据
 void CommHelper::onRawNetData(quint8 detID, const QByteArray& data)
 {
@@ -411,12 +465,12 @@ void CommHelper::onTemperatureTimeout(quint8 detID)
 // 处理分包后的能谱数据包
 void CommHelper::onSpectrumData(quint8 detId, const QByteArray& data)
 {
-    // 保存数据
-    if (mDetectFileProcessor[detId]->isOpen()){
-        qint64 bytesWritten = mDetectFileProcessor[detId]->write((const char *)data.constData(), data.size());
-        // 检查是否需要flush（每10秒或每1MB）
-        checkAndFlushDetectFile(detId, bytesWritten);
-    }
+    // 主线程汇总能谱分包，后台线程每10s批量写入文件
+    if (!mMeasuring || detId < 1 || detId > DET_NUM || data.isEmpty())
+        return;
+
+    QMutexLocker lock(&mSpectrumRawMutex);
+    mPendingSpectrumRawByDetector[detId].append(data);
 }
 
 // 处理分包后的波形数据包
@@ -922,6 +976,12 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
     mMeasuring = true;
     // 初始化
     mPendingH5ByDetector.resize(DET_NUM + 1);
+    {
+        QMutexLocker lock(&mSpectrumRawMutex);
+        mPendingSpectrumRawByDetector.resize(DET_NUM + 1);
+        for (int i = 1; i <= DET_NUM; ++i)
+            mPendingSpectrumRawByDetector[i].clear();
+    }
 
     if (index == 0){
         mDataFileList.clear();
@@ -1155,6 +1215,9 @@ void CommHelper::checkAndFlushNetRawFile(quint8 index, qint64 bytesWritten)
 */
 void CommHelper::stopMeasure(quint8 index/* = 0*/)
 {
+    // 停止前先将能谱原始缓存落盘，避免尾包丢失
+    flushSpectrumRawBuffersOnWorkerThread(true);
+
     //默认情况所有通道直接一次性停止测量
     if (index == 0){
         for (index = 1; index <= DET_NUM; ++index){
@@ -1207,6 +1270,11 @@ void CommHelper::stopMeasure(quint8 index/* = 0*/)
         HDF5Settings::instance()->closeH5Spectrum();
     }
     else if (index >= 1 && index <= DET_NUM){ //关闭单个通道
+        {
+            QMutexLocker lock(&mSpectrumRawMutex);
+            if (index < mPendingSpectrumRawByDetector.size())
+                mPendingSpectrumRawByDetector[index].clear();
+        }
         DataProcessor* detectorDataProcessor = mDetectorDataProcessor[index];
         if (!detectorDataProcessor->isFreeSocket()){
             detectorDataProcessor->stopMeasure();

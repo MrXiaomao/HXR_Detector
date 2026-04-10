@@ -233,16 +233,15 @@ private:
     CommHelper *commHelper = nullptr;
     
     // 测量倒计时定时器
-    QTimer *mMeasureCountdownTimer = nullptr;
-    int mRemainingCountdown = 0;  // 剩余倒计时（秒）
     int mTotalCountdown = 0;  // 总倒计时时间（秒），用于计算已测量时长
-    //bool mContinueMeasure = false; // 是否继续测量模式
+    bool misTimedMeasure = false; // 是否继续测量模式
 
     // 自动化测量定时器
     QTimer *mAutoMeasureDelayTimer = nullptr;
     bool mAutoMeasureTimerActive = false; // 自动测量定时器是否正在倒计时
+    
     // 连续测量计时器
-    QElapsedTimer *mContinueMeasureTimer = nullptr;
+    QElapsedTimer *mMeasureTimer = nullptr;
 
     // 交换机连接状态管理
     bool mSwitcherLogged = false;  // 交换机是否已登录
@@ -279,7 +278,6 @@ private:
         float temperature;
     };
     QHash<quint8, QHash<QString, QVector<TempPoint>>> m_tempPointCache; // index -> day(yyyy-MM-dd) -> points
-    QTimer* m_tempFlushTimer = nullptr; // 每10秒flush一次
     QMutex mMutexTemperature; //温度数据缓存锁
     void flushTemperatureCache();
 

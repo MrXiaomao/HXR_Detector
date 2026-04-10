@@ -5,15 +5,15 @@
 #include <QTcpSocket>
 #include <QMutex>
 #include <QFile>
-// #include <QElapsedTimer>
+#include <QElapsedTimer>
 #include <QWaitCondition>
-// #include <QTimer>
 #include <QThread>
 #include <QEventLoop>
 #include "qhuaweiswitcherhelper.h"
 #include "dataprocessor.h"
 
 class SpectrumH5FlushThread;
+class SpectrumRawFlushThread;
 class QTimer;
 
 #if ENABLE_LIBHV
@@ -27,6 +27,7 @@ class CommHelper : public QObject
 {
     Q_OBJECT
     friend class SpectrumH5FlushThread;
+    friend class SpectrumRawFlushThread;
 public:
     explicit CommHelper(QObject *parent = nullptr);
     ~CommHelper();
@@ -222,6 +223,7 @@ private:
     void handleDetectorDisconnection(quint8 index);
 
     void flushSpectrumH5BuffersOnWorkerThread();
+    void flushSpectrumRawBuffersOnWorkerThread(bool forceFlushAll = false);
     QMutex mPeersMutex;
 #if ENABLE_LIBHV
     hv::TcpServer *mTcpServer; // libhv服务器实例
@@ -247,6 +249,10 @@ private:
     QVector<QVector<H5Spectrum>> mPendingH5ByDetector;
     QMutex mSpectrumH5Mutex;
     SpectrumH5FlushThread* mSpectrumH5FlushThread = nullptr;
+    // 每路探测器原始能谱分包缓存；后台线程每 10s 批量写入 *.dat
+    QVector<QByteArray> mPendingSpectrumRawByDetector;
+    QMutex mSpectrumRawMutex;
+    SpectrumRawFlushThread* mSpectrumRawFlushThread = nullptr;
 
     //记录手动关闭POE供电的探测器ID
     QVector<quint8> mManualClosedPOEIDs;
