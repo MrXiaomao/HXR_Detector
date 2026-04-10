@@ -207,8 +207,6 @@ void DataProcessor::startMeasure(CommandAdapter::WorkMode workMode)
     requestParserResetOnDataThread();
     mAccumulateSpec.clear();
     mAccumulateSpec.resize(8192);
-    mCurrentSpec.clear();
-    mCurrentSpec.resize(8192);
     mFullSpectrums.clear();
     mLastSpectrumSeq = 0;
 
@@ -242,8 +240,6 @@ void DataProcessor::startAutoMeasure(QDateTime tmStart, CommandAdapter::WorkMode
     requestParserResetOnDataThread();
     mAccumulateSpec.clear();
     mAccumulateSpec.resize(8192);
-    mCurrentSpec.clear();
-    mCurrentSpec.resize(8192);
     mFullSpectrums.clear();
     mLastSpectrumSeq = 0;
 
@@ -392,10 +388,8 @@ void DataProcessor::mergeSubSpec(quint8 no, const QByteArray& data){
             // 不存在，创建新能谱并插入
             FullSpectrum newSpectrum = {}; // 初始化所有成员为默认值（0/false/空）
             newSpectrum.sequence = spectrumSeq;
-            newSpectrum.isComplete = false;
 
             // 5. 提取元数据（测量时间、死时间）- 从当前子包提取（确保数据完整性）
-            const int kMetaDateMinLen = 18; // 测量时间(10-13) + 死时间(14-17)，需至少18字节
             newSpectrum.timeUTCs = subSpecPackket.timeUTCs;
             newSpectrum.timeUTCms = subSpecPackket.timeUTCms;
             newSpectrum.measureTime = subSpecPackket.measureTime;
@@ -426,17 +420,14 @@ void DataProcessor::mergeSubSpec(quint8 no, const QByteArray& data){
 
         if (fullSpectrum->receivedMask == 0xFFFFFFFFu) {
             fullSpectrum->isComplete = true;
-            fullSpectrum->completeTime = QDateTime::currentDateTime();
+            // fullSpectrum->completeTime = QDateTime::currentDateTime(); //用于调试，暂时不用
 
             // 5. 提取元数据（测量时间、死时间）- 从当前子包提取（确保数据完整性）
-
-            // 6. 发送完整能谱信号（使用 QueuedConnection 避免线程阻塞）
-            // 注意：QVector 拷贝完整数据，避免多线程访问冲突
             for (int i = 0; i < 8192; ++i) {
                 mAccumulateSpec[i] += fullSpectrum->spectrum[i];
             }
-            memcpy(mCurrentSpec.data(), fullSpectrum->spectrum, 8192*4);
             
+            // 6. 发送完整能谱信号（使用 QueuedConnection 避免线程阻塞）
             // 发送完整的 FullSpectrum 数据到 CommHelper（HDF5 缓冲与写入在 CommHelper 后台线程）
             FullSpectrum fullSpectrumCopy = *fullSpectrum; // 拷贝数据，避免在锁外访问
             emit reportFullSpectrum(mIndex, fullSpectrumCopy);
@@ -449,39 +440,38 @@ void DataProcessor::mergeSubSpec(quint8 no, const QByteArray& data){
         }
         else {
             // 当前包序号跟上一次的包序号不一致
-            // if (mLastSpectrumSeq!=0 && spectrumSeq != mLastSpectrumSeq){
-            //     // 数据包不完整，存在丢包问题
-            //     FullSpectrum lastSpectrum = mFullSpectrums.take(mLastSpectrumSeq);
-            //     lastSpectrum.isComplete = true;
-            //     lastSpectrum.completeTime = QDateTime::currentDateTime();
+            /*if (mLastSpectrumSeq!=0 && spectrumSeq != mLastSpectrumSeq){
+                // 数据包不完整，存在丢包问题
+                FullSpectrum lastSpectrum = mFullSpectrums.take(mLastSpectrumSeq);
+                lastSpectrum.isComplete = true;
+                lastSpectrum.completeTime = QDateTime::currentDateTime();
 
-            //     // 5. 提取元数据（测量时间、死时间）- 从当前子包提取（确保数据完整性）
+                // 5. 提取元数据（测量时间、死时间）- 从当前子包提取（确保数据完整性）
 
-            //     // 6. 发送完整能谱信号（使用 QueuedConnection 避免线程阻塞）
-            //     // 注意：QVector 拷贝完整数据，避免多线程访问冲突
-            //     for (int i = 0; i < 8192; ++i) {
-            //         mAccumulateSpec[i] += lastSpectrum.spectrum[i];
-            //     }
-            //     memcpy(mCurrentSpec.data(), lastSpectrum.spectrum, 8192*4);
+                // 6. 发送完整能谱信号（使用 QueuedConnection 避免线程阻塞）
+                // 注意：QVector 拷贝完整数据，避免多线程访问冲突
+                for (int i = 0; i < 8192; ++i) {
+                    mAccumulateSpec[i] += lastSpectrum.spectrum[i];
+                }
 
-            //     // 发送完整的 FullSpectrum 数据到 MainWindow
-            //     FullSpectrum fullSpectrumCopy = lastSpectrum; // 拷贝数据，避免在锁外访问
-            //     emit reportFullSpectrum(mIndex, fullSpectrumCopy);
+                // 发送完整的 FullSpectrum 数据到 MainWindow
+                FullSpectrum fullSpectrumCopy = lastSpectrum; // 拷贝数据，避免在锁外访问
+                emit reportFullSpectrum(mIndex, fullSpectrumCopy);
 
-            //     // H5能谱文件写入
-            //     H5Spectrum h5Spectrum = FullSpectoH5Spec(fullSpectrumCopy);
-            //     HDF5Settings::instance()->writeH5Spectrum(mIndex, h5Spectrum);
+                // H5能谱文件写入
+                H5Spectrum h5Spectrum = FullSpectoH5Spec(fullSpectrumCopy);
+                HDF5Settings::instance()->writeH5Spectrum(mIndex, h5Spectrum);
 
-            //     //if(spectrumSeq%1000 == 0){
-            //     // qDebug().nospace() << "谱仪[#" << mIndex << "]" << "Get a full spectrum, SpectrumID:" << spectrumSeq
-            //     //      << ", specMeasureTime(ms):" << fullSpectrum->measureTime
-            //     //      << ", deathTime(*10ns):" << fullSpectrum->deathTime;
-            //     //}
-            //     // m_parseData->mergeSpecTime_online(*fullSpectrum);
+                //if(spectrumSeq%1000 == 0){
+                // qDebug().nospace() << "谱仪[#" << mIndex << "]" << "Get a full spectrum, SpectrumID:" << spectrumSeq
+                //      << ", specMeasureTime(ms):" << fullSpectrum->measureTime
+                //      << ", deathTime(*10ns):" << fullSpectrum->deathTime;
+                //}
+                // m_parseData->mergeSpecTime_online(*fullSpectrum);
 
-            //     // 7. 清理已完成的能谱数据（释放内存，可选：若需保留历史数据可注释）
-            //     mFullSpectrums.remove(mLastSpectrumSeq);
-            // }
+                // 7. 清理已完成的能谱数据（释放内存，可选：若需保留历史数据可注释）
+                mFullSpectrums.remove(mLastSpectrumSeq);
+            }*/
         }
     }
 }

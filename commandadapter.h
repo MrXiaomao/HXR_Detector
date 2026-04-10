@@ -218,7 +218,6 @@ private:
     QVector<CommandItem> cmdPool;//发送指令等候区
 
     quint16 mWaveformLength = 512;//波形或能谱长度
-    quint32 mValidDataPkgRef = 0;//有效数据包个数
 
     QMutex mCmdMutex;
     bool mTerminatedThread = false;//线程退出标识

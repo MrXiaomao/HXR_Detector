@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-11-13 11:36:00
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-04-10 14:58:33
+ * @LastEditTime: 2026-04-10 19:13:07
  * @Description: 处理界面与探测器之间的数据交互，包括网络数据、能谱数据、温度数据等，控制探测器的工作模式、参数设置、数据采集等
  */
 #ifndef DATAPROCESSOR_H
@@ -99,10 +99,6 @@ signals:
     // 上报分包数据
     void reportRawNetData(quint8 index, const QByteArray& data); // 上报原始网络数据
     void reportOTAUpgradeData(quint8 index, const QByteArray& data); // 上报OTA升级数据
-    // void reportSpectrumData(quint8 index, const QByteArray& data); // 发送能谱数据包（分包数据）
-    // void reportWaveformData(quint8 index, const QByteArray& data); // 发送波形数据包（分包数据）
-    // void reportParticleData(quint8 index, const QByteArray& data); // 发送粒子数据包（分包数据）
-    // void reportTimestampData(quint8 index, const QByteArray& data); // 发送时间戳数据包（分包数据）
 
     // 上传解析后的数据
     void reportFullSpectrum(quint8 index, const FullSpectrum& fullSpectrum); // 发送完整的能谱数据
@@ -142,7 +138,6 @@ private:
     quint32 mLastSpectrumSeq = 0;
     FullSpectrum mLastFullSpectrum; // 保存上一个全能谱，做缺包补偿用
     QVector<quint32> mAccumulateSpec;
-    QVector<quint32> mCurrentSpec;
     ParseData* m_parseData;
     
     QTimer mTempTimeoutTimer; //心跳检测定时器

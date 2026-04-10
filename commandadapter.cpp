@@ -130,6 +130,96 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
             QMetaObject::invokeMethod(this, "reportTemperatureData", Qt::DirectConnection, Q_ARG(float, temperature));
         }
 
+        // 能谱、波形、粒子、时间戳数据包
+        if (cachePool.startsWith(kspecHead)){
+            findNaul = true;
+
+            //有效数据包长度
+            quint32 onePkgSize = 0;
+
+            //数据类型
+            bool ok;
+            quint16 type = qFromBigEndian<quint16>(
+                reinterpret_cast<const uchar*>(cachePool.constData() + 4));
+            DataType dataType = (DataType)type;
+            if (dataType == dtWaveform){
+                //波形
+                //包头0xFFFFAAB1 + 数据类型（0x00D1）+ 波形数据（波形长度*16bit） + 保留位（32bit）+ 包尾0xFFFFCCD1
+                onePkgSize = 4 + 2 + 512*2 + 4 + 4;
+            }
+            else if (dataType == dtSpectrum){
+                //能谱
+                //包头0xFFFFAAB1 + 数据类型（0x00D2）+ 能谱序号（32bit） + 测量时间（32bit） + 死时间（32bit）+ 能谱编号（16bit）+ 能谱数据（256*32bit）+分秒-毫秒（32bit）+ 保留位（64bit） + 包尾0xFFFFCCD1
+                onePkgSize = 4 + 2 + 4 + 4 + 4 + 2 + 256*4 + 4 + 8 + 4;
+            }
+            else if (dataType == dtParticle){
+                //粒子
+                //包头0xFFFFAAB1 + 数据类型（0x00D3）+ 能谱序号（32bit） + 粒子数据（130*64bit） + 保留位（32bit） + 包尾0xFFFFCCD1
+                onePkgSize = 4 + 2 + 4 + 130*8 + 4 + 4;
+            }
+            else if (dataType == dtTimestamp){
+                //触发时间戳
+                //包头0xFFFFAAB1 + 数据类型（0x00D4）+ 分秒-毫秒（64bit）+ 保留位（32bit） + 包尾0xFFFFCCD1
+                onePkgSize = 4 + 2 + 8 + 4 + 4;
+            }
+            else{
+                /*异常数据，一定要注意！！！！！！！！！！！！！！！！！*/
+                findNaul = false;
+                ++mTypeErrorCount;
+                mResyncDropBytes += 4;
+
+                qDebug() << "数据包类型错误：" << cachePool.mid(4, 2).toHex(' ');
+
+                //重新开始寻找包头
+                cachePool.remove(0, 4);
+                // dumpParserStats();
+            }
+
+            if (cachePool.size() >= static_cast<int>(onePkgSize)){
+                // 满足数据包长度
+                QByteArray chunk = QByteArray(cachePool.constData(), onePkgSize);
+                //继续检查包尾
+                // 直接用指针判断尾（更安全）
+                const char* p = cachePool.constData();
+
+                if (memcmp(p + onePkgSize - 4, kspecTail.constData(), 4) == 0) {
+                    cachePool.remove(0, onePkgSize);
+                    if (mIsMeasuring || dataType == dtTimestamp)
+                    {
+                        if (dataType == dtWaveform)
+                            emit reportWaveformData(mIndex, chunk);
+                        else if (dataType == dtSpectrum)
+                            emit reportSpectrumData(mIndex, chunk);
+                        else if (dataType == dtParticle)
+                            emit reportParticleData(mIndex, chunk);
+                        else if (dataType == dtTimestamp)
+                            emit reportTimestampData(mIndex, chunk);
+                    }
+                }
+                else {
+                    /*异常数据，一定要注意！！！！！！！！！！！！！！！！！*/
+                    findNaul = false;
+                    ++mTailErrorCount;
+                    mResyncDropBytes += 4;
+
+                    if (isFirstError) {
+                        qWarning().nospace().noquote() << "谱仪[#" << mIndex << "]数据包尾部错误，后续相似错误将不再提示";
+                        isFirstError = false;
+                        qDebug().nospace().noquote() << "谱仪[#" << mIndex << "]数据包尾部错误[" << chunk.size() << "]：" << chunk.toHex(' ');
+                    }
+
+                    // 包头/包尾数据不对称 重新开始寻找包头
+                    cachePool.remove(0, 4);
+                    // dumpParserStats();
+                    continue;
+                }
+            }
+            else{
+                //数据不足
+                break;
+            }
+        }
+        
         //增益指令
         {
             if (cachePool.startsWith(kCmdGainHead)){
@@ -397,96 +487,6 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
             findNaul = false;
         }
 
-        if (cachePool.startsWith(kspecHead)){
-            findNaul = true;
-
-            //有效数据包长度
-            quint32 onePkgSize = 0;
-
-            //数据类型
-            bool ok;
-            quint16 type = qFromBigEndian<quint16>(
-                reinterpret_cast<const uchar*>(cachePool.constData() + 4));
-            DataType dataType = (DataType)type;
-            if (dataType == dtWaveform){
-                //波形
-                //包头0xFFFFAAB1 + 数据类型（0x00D1）+ 波形数据（波形长度*16bit） + 保留位（32bit）+ 包尾0xFFFFCCD1
-                onePkgSize = 4 + 2 + 512*2 + 4 + 4;
-            }
-            else if (dataType == dtSpectrum){
-                //能谱
-                //包头0xFFFFAAB1 + 数据类型（0x00D2）+ 能谱序号（32bit） + 测量时间（32bit） + 死时间（32bit）+ 能谱编号（16bit）+ 能谱数据（256*32bit）+分秒-毫秒（32bit）+ 保留位（64bit） + 包尾0xFFFFCCD1
-                onePkgSize = 4 + 2 + 4 + 4 + 4 + 2 + 256*4 + 4 + 8 + 4;
-            }
-            else if (dataType == dtParticle){
-                //粒子
-                //包头0xFFFFAAB1 + 数据类型（0x00D3）+ 能谱序号（32bit） + 粒子数据（130*64bit） + 保留位（32bit） + 包尾0xFFFFCCD1
-                onePkgSize = 4 + 2 + 4 + 130*8 + 4 + 4;
-            }
-            else if (dataType == dtTimestamp){
-                //触发时间戳
-                //包头0xFFFFAAB1 + 数据类型（0x00D4）+ 分秒-毫秒（64bit）+ 保留位（32bit） + 包尾0xFFFFCCD1
-                onePkgSize = 4 + 2 + 8 + 4 + 4;
-            }
-            else{
-                /*异常数据，一定要注意！！！！！！！！！！！！！！！！！*/
-                findNaul = false;
-                ++mTypeErrorCount;
-                mResyncDropBytes += 4;
-
-                qDebug() << "数据包类型错误：" << cachePool.mid(4, 2).toHex(' ');
-
-                //重新开始寻找包头
-                cachePool.remove(0, 4);
-                // dumpParserStats();
-            }
-
-            if (cachePool.size() >= static_cast<int>(onePkgSize)){
-                // 满足数据包长度
-                QByteArray chunk = QByteArray(cachePool.constData(), onePkgSize);
-                //继续检查包尾
-                // 直接用指针判断尾（更安全）
-                const char* p = cachePool.constData();
-
-                if (memcmp(p + onePkgSize - 4, kspecTail.constData(), 4) == 0) {
-                    cachePool.remove(0, onePkgSize);
-                    mValidDataPkgRef++;
-                    if (mIsMeasuring || dataType == dtTimestamp)
-                    {
-                        if (dataType == dtWaveform)
-                            emit reportWaveformData(mIndex, chunk);
-                        else if (dataType == dtSpectrum)
-                            emit reportSpectrumData(mIndex, chunk);
-                        else if (dataType == dtParticle)
-                            emit reportParticleData(mIndex, chunk);
-                        else if (dataType == dtTimestamp)
-                            emit reportTimestampData(mIndex, chunk);
-                    }
-                }
-                else {
-                    /*异常数据，一定要注意！！！！！！！！！！！！！！！！！*/
-                    findNaul = false;
-                    ++mTailErrorCount;
-                    mResyncDropBytes += 4;
-
-                    if (isFirstError) {
-                        qWarning().nospace().noquote() << "谱仪[#" << mIndex << "]数据包尾部错误，后续相似错误将不再提示";
-                        isFirstError = false;
-                        qDebug().nospace().noquote() << "谱仪[#" << mIndex << "]数据包尾部错误[" << chunk.size() << "]：" << chunk.toHex(' ');
-                    }
-
-                    // 包头/包尾数据不对称 重新开始寻找包头
-                    cachePool.remove(0, 4);
-                    // dumpParserStats();
-                    continue;
-                }
-            }
-            else{
-                //数据不足
-                break;
-            }
-        }
-        
         if (findNaul){
             //已经处理过完整的数据包
 
@@ -772,7 +772,6 @@ void CommandAdapter::sendWorkMode(bool isRead, WorkMode workMode){
 //开始测量 波形测量/能谱测量共用一个开始
 void CommandAdapter::sendStartMeasure(CommandAdapter::MeasureMode measureMode){
     isFirstError = true;
-    mValidDataPkgRef = 0;
     mAskStopMeasure = false;
     QByteArray askCurrentCmd = QByteArray::fromHex(QString("12 34 00 0F EA 10 00 00 00 01 AB CD").toUtf8());
     if (measureMode == mmAuto)
