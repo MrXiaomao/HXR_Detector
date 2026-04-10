@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-11-13 11:36:00
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-04-10 19:13:07
+ * @LastEditTime: 2026-04-10 21:52:49
  * @Description: 处理界面与探测器之间的数据交互，包括网络数据、能谱数据、温度数据等，控制探测器的工作模式、参数设置、数据采集等
  */
 #ifndef DATAPROCESSOR_H
@@ -15,6 +15,8 @@
 #include <QFile>
 #include <QDateTime>
 #include <QTimer>
+#include <QElapsedTimer>
+#include <atomic>
 
 #include "qlitethread.h"
 #include "commandadapter.h"
@@ -119,8 +121,9 @@ private:
     QByteArray mRawData; // 存储网络原始数据
     quint64 mRawDataPeak = 0; // mRawData历史峰值（字节）
     QByteArray mCachePool; // 缓存数据，数据处理之前，先转移到二级缓存池
-    bool mTerminatedDataThread = false;
-    QMutex mDataLocker;
+    std::atomic_bool mTerminatedDataThread {false};
+    QMutex mRawDataLocker;
+    // QMutex mSpectrumLocker;
     QWaitCondition mDataCondition;
     
     QWaitCondition mParserResetCondition;
@@ -137,8 +140,12 @@ private:
     QHash<quint32, FullSpectrum> mFullSpectrums; // 按能谱序号存储拼接中的能谱
     quint32 mLastSpectrumSeq = 0;
     FullSpectrum mLastFullSpectrum; // 保存上一个全能谱，做缺包补偿用
-    QVector<quint32> mAccumulateSpec;
     ParseData* m_parseData;
+    std::atomic<quint64> mMergeSubSpecPacketCount {0};   // mergeSubSpec_Thread解包总个数
+    std::atomic<quint64> mMergeSubSpecTotalCostNs {0};   // mergeSubSpec_Thread累计耗时(ns)
+    QElapsedTimer mMergeSubSpecWallTimer;                // start~stop统计窗口
+    std::atomic<quint64> mAnalyzeCommandsCallCount {0};  // analyzeCommands调用次数
+    std::atomic<quint64> mAnalyzeCommandsTotalCostNs {0}; // analyzeCommands累计耗时(ns)
     
     QTimer mTempTimeoutTimer; //心跳检测定时器
 

@@ -99,93 +99,61 @@ void CommandAdapter::clear()
 
 void CommandAdapter::analyzeCommands(QByteArray &cachePool)
 {
-    // auto dumpParserStats = [&]() {
-    //     if (mParserStatTimer.elapsed() >= 5000) {
-    //         qDebug().noquote().nospace()
-    //             << "谱仪[#"<< mIndex << "]解析统计: tailErr=" << mTailErrorCount
-    //             << ", typeErr=" << mTypeErrorCount
-    //             << ", removeBytes(resync4)=" << mResyncDropBytes
-    //             << ", removeBytes(scan1)=" << mHeaderScanDropBytes
-    //             << ", ts=" << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz");
-    //         mParserStatTimer.restart();
-    //     }
-    // };
+    const int kCmdLen = 12;
+    int pos = 0;
 
-    while(1){
-        //判断缓存数据大小是否小于指令集长度最小单位
-        if (cachePool.size() < 12)
-            break;
-        bool findNaul = false;
+    auto hasHeadAt = [&](int at, const QByteArray& head) -> bool {
+        return (cachePool.size() - at >= head.size()) &&
+               (memcmp(cachePool.constData() + at, head.constData(), static_cast<size_t>(head.size())) == 0);
+    };
 
-        //温度监测（心跳检测）
-        if (cachePool.startsWith(kCmdTempHead)){
-            qint32 t = qFromBigEndian<qint32>(cachePool.constData()+6); // 从第7个字节位置读取32位大端数据
-            float temperature = t * 0.0001;// 换算系数
-            // qDebug().noquote() << "temp：" << temperature;
+    auto paramChunkAt = [&](int at) -> QByteArray {
+        return QByteArray(cachePool.constData() + at, kCmdLen);
+    };
 
-            findNaul = true;
-            cachePool.remove(0, 12);
+    while (cachePool.size() - pos >= kCmdLen) {
+        bool handled = false;
+        bool needNotifyNextCmd = false;
 
-            //上传温度数据
+        // 温度监测（心跳检测）
+        if (hasHeadAt(pos, kCmdTempHead)) {
+            qint32 t = qFromBigEndian<qint32>(cachePool.constData() + pos + 6);
+            float temperature = t * 0.0001f;
             QMetaObject::invokeMethod(this, "reportTemperatureData", Qt::DirectConnection, Q_ARG(float, temperature));
+            pos += kCmdLen;
+            handled = true;
+            needNotifyNextCmd = true;
         }
 
         // 能谱、波形、粒子、时间戳数据包
-        if (cachePool.startsWith(kspecHead)){
-            findNaul = true;
-
-            //有效数据包长度
+        if (!handled && hasHeadAt(pos, kspecHead)) {
             quint32 onePkgSize = 0;
-
-            //数据类型
-            bool ok;
-            quint16 type = qFromBigEndian<quint16>(
-                reinterpret_cast<const uchar*>(cachePool.constData() + 4));
-            DataType dataType = (DataType)type;
-            if (dataType == dtWaveform){
-                //波形
-                //包头0xFFFFAAB1 + 数据类型（0x00D1）+ 波形数据（波形长度*16bit） + 保留位（32bit）+ 包尾0xFFFFCCD1
+            quint16 type = qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(cachePool.constData() + pos + 4));
+            DataType dataType = static_cast<DataType>(type);
+            if (dataType == dtWaveform)
                 onePkgSize = 4 + 2 + 512*2 + 4 + 4;
-            }
-            else if (dataType == dtSpectrum){
-                //能谱
-                //包头0xFFFFAAB1 + 数据类型（0x00D2）+ 能谱序号（32bit） + 测量时间（32bit） + 死时间（32bit）+ 能谱编号（16bit）+ 能谱数据（256*32bit）+分秒-毫秒（32bit）+ 保留位（64bit） + 包尾0xFFFFCCD1
+            else if (dataType == dtSpectrum)
                 onePkgSize = 4 + 2 + 4 + 4 + 4 + 2 + 256*4 + 4 + 8 + 4;
-            }
-            else if (dataType == dtParticle){
-                //粒子
-                //包头0xFFFFAAB1 + 数据类型（0x00D3）+ 能谱序号（32bit） + 粒子数据（130*64bit） + 保留位（32bit） + 包尾0xFFFFCCD1
+            else if (dataType == dtParticle)
                 onePkgSize = 4 + 2 + 4 + 130*8 + 4 + 4;
-            }
-            else if (dataType == dtTimestamp){
-                //触发时间戳
-                //包头0xFFFFAAB1 + 数据类型（0x00D4）+ 分秒-毫秒（64bit）+ 保留位（32bit） + 包尾0xFFFFCCD1
+            else if (dataType == dtTimestamp)
                 onePkgSize = 4 + 2 + 8 + 4 + 4;
-            }
-            else{
-                /*异常数据，一定要注意！！！！！！！！！！！！！！！！！*/
-                findNaul = false;
+            else {
                 ++mTypeErrorCount;
                 mResyncDropBytes += 4;
-
-                qDebug() << "数据包类型错误：" << cachePool.mid(4, 2).toHex(' ');
-
-                //重新开始寻找包头
-                cachePool.remove(0, 4);
-                // dumpParserStats();
+                qDebug() << "数据包类型错误：" << cachePool.mid(pos + 4, 2).toHex(' ');
+                pos += 4;
+                handled = true;
             }
 
-            if (cachePool.size() >= static_cast<int>(onePkgSize)){
-                // 满足数据包长度
-                QByteArray chunk = QByteArray(cachePool.constData(), onePkgSize);
-                //继续检查包尾
-                // 直接用指针判断尾（更安全）
-                const char* p = cachePool.constData();
+            if (!handled) {
+                if (cachePool.size() - pos < static_cast<int>(onePkgSize))
+                    break; // 数据不足，等待下一批
 
+                const char* p = cachePool.constData() + pos;
                 if (memcmp(p + onePkgSize - 4, kspecTail.constData(), 4) == 0) {
-                    cachePool.remove(0, onePkgSize);
-                    if (mIsMeasuring || dataType == dtTimestamp)
-                    {
+                    QByteArray chunk(p, onePkgSize);
+                    if (mIsMeasuring || dataType == dtTimestamp) {
                         if (dataType == dtWaveform)
                             emit reportWaveformData(mIndex, chunk);
                         else if (dataType == dtSpectrum)
@@ -195,320 +163,189 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                         else if (dataType == dtTimestamp)
                             emit reportTimestampData(mIndex, chunk);
                     }
-                }
-                else {
-                    /*异常数据，一定要注意！！！！！！！！！！！！！！！！！*/
-                    findNaul = false;
+                    pos += static_cast<int>(onePkgSize);
+                } else {
                     ++mTailErrorCount;
                     mResyncDropBytes += 4;
-
                     if (isFirstError) {
-                        qWarning().nospace().noquote() << "谱仪[#" << mIndex << "]数据包尾部错误，后续相似错误将不再提示";
                         isFirstError = false;
-                        qDebug().nospace().noquote() << "谱仪[#" << mIndex << "]数据包尾部错误[" << chunk.size() << "]：" << chunk.toHex(' ');
+                        qWarning().nospace().noquote() << "谱仪[#" << mIndex << "]数据包尾部错误，后续相似错误将不再提示";
+                        qDebug().nospace().noquote() << "谱仪[#" << mIndex << "]数据包尾部错误[" << onePkgSize << "]";
                     }
-
-                    // 包头/包尾数据不对称 重新开始寻找包头
-                    cachePool.remove(0, 4);
-                    // dumpParserStats();
-                    continue;
+                    pos += 4;
                 }
-            }
-            else{
-                //数据不足
-                break;
-            }
-        }
-        
-        //增益指令
-        {
-            if (cachePool.startsWith(kCmdGainHead)){
-                quint16 gainData = qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(cachePool.constData() + 8));
-                QString gainStr;
-                switch (gainData)
-                {
-                case 0x01:
-                    gainStr = "0.08";
-                    break;
-                case 0x02:
-                    gainStr = "0.16";
-                    break;
-                case 0x03:
-                    gainStr = "0.32";
-                    break;
-                case 0x04:
-                    gainStr = "0.63";
-                    break;
-                case 0x05:
-                    gainStr = "1.26";
-                    break;
-                case 0x06:
-                    gainStr = "2.52";
-                    break;
-                case 0x07:
-                    gainStr = "5.01";
-                    break;
-                case 0x08:
-                    gainStr = "10.0";
-                    break;
-                default:
-                    gainStr = "未知值";
-                    break;
-                }
-
-                qInfo().noquote() << "增益：" << gainStr;
-
-                emit reportParamterData(mIndex, cachePool.left(12));
-
-                findNaul = true;
-                cachePool.remove(0, 12);
+                handled = true;
             }
         }
 
-        //死时间配置(ns)
-        {
-            if (cachePool.startsWith(kCmdDeadHead)){
-                // 从第9个字节位置读取16位大端数据
-                quint16 deadTime = qFromBigEndian<quint16>(
-                    reinterpret_cast<const uchar*>(cachePool.constData() + 8));
-                qInfo().noquote() << "参数查询，死时间/ns：" << deadTime * 10;
-
-                emit reportParamterData(mIndex, cachePool.left(12));
-
-                findNaul = true;
-                cachePool.remove(0, 12);
+        // 增益
+        if (!handled && hasHeadAt(pos, kCmdGainHead)) {
+            quint16 gainData = qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(cachePool.constData() + pos + 8));
+            QString gainStr;
+            switch (gainData) {
+            case 0x01: gainStr = "0.08"; break;
+            case 0x02: gainStr = "0.16"; break;
+            case 0x03: gainStr = "0.32"; break;
+            case 0x04: gainStr = "0.63"; break;
+            case 0x05: gainStr = "1.26"; break;
+            case 0x06: gainStr = "2.52"; break;
+            case 0x07: gainStr = "5.01"; break;
+            case 0x08: gainStr = "10.0"; break;
+            default: gainStr = "未知值"; break;
             }
+            qInfo().noquote() << "增益：" << gainStr;
+            emit reportParamterData(mIndex, paramChunkAt(pos));
+            pos += kCmdLen;
+            handled = true;
+            needNotifyNextCmd = true;
         }
 
-        //触发阈值
-        {
-            if (cachePool.startsWith(kCmdThresHead)){
-                // 从第9个字节位置读取16位大端数据
-                quint16 triggerThold = qFromBigEndian<quint16>(
-                    reinterpret_cast<const uchar*>(cachePool.constData() + 8));
-                qInfo().noquote() << "参数查询，触发阈值：" << triggerThold;
+        // 死时间
+        if (!handled && hasHeadAt(pos, kCmdDeadHead)) {
+            quint16 deadTime = qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(cachePool.constData() + pos + 8));
+            qInfo().noquote() << "参数查询，死时间/ns：" << deadTime * 10;
+            emit reportParamterData(mIndex, paramChunkAt(pos));
+            pos += kCmdLen;
+            handled = true;
+            needNotifyNextCmd = true;
+        }
 
-                emit reportParamterData(mIndex, cachePool.left(12));
+        // 触发阈值
+        if (!handled && hasHeadAt(pos, kCmdThresHead)) {
+            quint16 triggerThold = qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(cachePool.constData() + pos + 8));
+            qInfo().noquote() << "参数查询，触发阈值：" << triggerThold;
+            emit reportParamterData(mIndex, paramChunkAt(pos));
+            pos += kCmdLen;
+            handled = true;
+            needNotifyNextCmd = true;
+        }
 
-                findNaul = true;
-                cachePool.remove(0, 12);
+        // 波形基本配置
+        if (!handled && hasHeadAt(pos, kCmdWaveformLengthHead)) {
+            quint8 triggerMode = static_cast<quint8>(cachePool.at(pos + 7));
+            qInfo().noquote() << "参数查询，触发模式：" << (triggerMode == tmTimer ? "定时触发" : "正常触发模式");
+            quint8 lenType = static_cast<quint8>(cachePool.at(pos + 8));
+            WaveformLength waveformLength = static_cast<WaveformLength>(lenType);
+            if (waveformLength == wl64) qInfo().noquote() << "参数查询，波形长度：64";
+            else if (waveformLength == wl128) qInfo().noquote() << "参数查询，波形长度：128";
+            else if (waveformLength == wl256) qInfo().noquote() << "参数查询，波形长度：256";
+            else if (waveformLength == wl512) qInfo().noquote() << "参数查询，波形长度：512";
+            else qInfo().noquote() << "参数查询，波形长度：未知值";
+            emit reportParamterData(mIndex, paramChunkAt(pos));
+            pos += kCmdLen;
+            handled = true;
+            needNotifyNextCmd = true;
+        }
+
+        // 能谱刷新时间
+        if (!handled && hasHeadAt(pos, kCmdSpectrumRefreshTimeHead)) {
+            quint32 spectrumRefreshTime = qFromBigEndian<quint32>(reinterpret_cast<const uchar*>(cachePool.constData() + pos + 6));
+            qInfo().noquote() << "参数查询，能谱刷新时间/ms：" << spectrumRefreshTime;
+            emit reportParamterData(mIndex, paramChunkAt(pos));
+            pos += kCmdLen;
+            handled = true;
+            needNotifyNextCmd = true;
+        }
+
+        // 梯形成型时间常数
+        if (!handled && hasHeadAt(pos, kCmdTrapezoidTimeConstantHead)) {
+            quint16 d1 = qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(cachePool.constData() + pos + 6));
+            quint16 d2 = qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(cachePool.constData() + pos + 8));
+            qInfo().noquote() << "参数查询，梯形成型时间常数，d1=" << (float)d1 / 65536 << "，d2=" << (float)d2 / 65536;
+            emit reportParamterData(mIndex, paramChunkAt(pos));
+            pos += kCmdLen;
+            handled = true;
+            needNotifyNextCmd = true;
+        }
+
+        // 上升沿/平顶/下降沿
+        if (!handled && hasHeadAt(pos, kCmdTrapezoidLengthHead)) {
+            quint8 rise = static_cast<quint8>(cachePool.at(pos + 7));
+            quint8 peak = static_cast<quint8>(cachePool.at(pos + 8));
+            quint8 fall = static_cast<quint8>(cachePool.at(pos + 9));
+            qInfo().noquote() << "参数查询，上升沿=" << rise << "，平顶=" << peak << "，下降沿=" << fall;
+            emit reportParamterData(mIndex, paramChunkAt(pos));
+            pos += kCmdLen;
+            handled = true;
+            needNotifyNextCmd = true;
+        }
+
+        // 梯形成型使能
+        if (!handled && hasHeadAt(pos, kCmdTrapShapeEnableHead)) {
+            qInfo().noquote() << "参数查询，梯形成型使能状态：" << (static_cast<quint8>(cachePool.at(pos + 9)) == 0x00 ? "关闭" : "打开");
+            emit reportParamterData(mIndex, paramChunkAt(pos));
+            pos += kCmdLen;
+            handled = true;
+            needNotifyNextCmd = true;
+        }
+
+        // 工作模式
+        if (!handled && hasHeadAt(pos, kCmdWorkModeHead)) {
+            WorkMode workMode = static_cast<WorkMode>(cachePool.at(pos + 9));
+            QString modeStr;
+            switch(workMode) {
+            case wmWaveform: modeStr = "波形模式"; break;
+            case wmSpectrum: modeStr = "能谱模式"; break;
+            case wmParticle: modeStr = "粒子模式"; break;
+            default: modeStr = "未知模式"; break;
             }
+            qInfo().noquote() << "参数查询，工作模式：" << modeStr;
+            emit reportParamterData(mIndex, paramChunkAt(pos));
+            pos += kCmdLen;
+            handled = true;
+            needNotifyNextCmd = true;
         }
 
-        /*********************************************************
-         波形基本配置
-        ***********************************************************/
-        {
-            if (cachePool.startsWith(kCmdWaveformLengthHead)){
-                quint8 triggerMode = cachePool.at(7);
-                qInfo().noquote() << "参数查询，触发模式：" << (triggerMode == tmTimer ? "定时触发" : "正常触发模式");
-                quint8 lenType = cachePool.at(8);
-                WaveformLength waveformLength = (WaveformLength)lenType;
-                if (waveformLength == wl64)
-                    qInfo().noquote() << "参数查询，波形长度：64";
-                else if (waveformLength == wl128)
-                    qInfo().noquote() << "参数查询，波形长度：128";
-                else if (waveformLength == wl256)
-                    qInfo().noquote() << "参数查询，波形长度：256";
-                else if (waveformLength == wl512)
-                    qInfo().noquote() << "参数查询，波形长度：512";
-                else
-                    qInfo().noquote() << "参数查询，波形长度：未知值";
-
-                emit reportParamterData(mIndex, cachePool.left(12));
-
-                findNaul = true;
-                cachePool.remove(0, 12);
-            }
+        // 高压使能
+        if (!handled && hasHeadAt(pos, kCmdHVEnableHead)) {
+            HighVolgateOutLevelEnable highVoltageEnable = static_cast<HighVolgateOutLevelEnable>(cachePool.at(pos + 9));
+            qInfo().noquote() << "参数查询，高压使能状态：" << (highVoltageEnable ? "关闭" : "打开");
+            emit reportParamterData(mIndex, paramChunkAt(pos));
+            pos += kCmdLen;
+            handled = true;
+            needNotifyNextCmd = true;
         }
 
-        /*********************************************************
-         能谱基本配置
-        ***********************************************************/
-        //能谱刷新时间/ms
-        {
-            if (cachePool.startsWith(kCmdSpectrumRefreshTimeHead)){
-                quint32 spectrumRefreshTime = qFromBigEndian<quint32>(
-                    reinterpret_cast<const uchar*>(cachePool.constData() + 6));
-                qInfo().noquote() << "参数查询，能谱刷新时间/ms：" << spectrumRefreshTime;
-
-                emit reportParamterData(mIndex, cachePool.left(12));
-
-                findNaul = true;
-                cachePool.remove(0, 12);
-            }
+        // 高压输出
+        if (!handled && hasHeadAt(pos, kCmdHVOutputHead)) {
+            quint16 level = qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(cachePool.constData() + pos + 8));
+            double HV = level * 2.5 * 441 / 65536;
+            qInfo().noquote() << "参数查询，高压输出电平值（V）：" << HV;
+            emit reportParamterData(mIndex, paramChunkAt(pos));
+            pos += kCmdLen;
+            handled = true;
+            needNotifyNextCmd = true;
         }
 
-        /*********************************************************
-         梯形成型基本配置
-        ***********************************************************/
-        //梯形成型时间常数配置
-        {
-            if (cachePool.startsWith(kCmdTrapezoidTimeConstantHead)){
-
-                quint16 d1 = qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(cachePool.constData() + 6));
-                quint16 d2 = qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(cachePool.constData() + 8));
-                float f1 = (float)d1 / 65536;
-                float f2 = (float)d2 / 65536;
-                qInfo().noquote() << "参数查询，梯形成型时间常数，d1=" << f1 << "，d2="<<f2;
-
-                emit reportParamterData(mIndex, cachePool.left(12));
-
-                findNaul = true;
-                cachePool.remove(0, 12);
-            }
+        // FPGA版本
+        if (!handled && hasHeadAt(pos, kCmdFPGAVersionHead)) {
+            emit reportParamterData(mIndex, paramChunkAt(pos));
+            pos += kCmdLen;
+            handled = true;
+            needNotifyNextCmd = true;
         }
 
-        //上升沿、平顶、下降沿长度配置
-        {
-            if (cachePool.startsWith(kCmdTrapezoidLengthHead)){
-                quint8 rise = (quint8)cachePool.at(7);
-                quint8 peak = (quint8)cachePool.at(8);
-                quint8 fall = (quint8)cachePool.at(9);
-                qInfo().noquote() << "参数查询，上升沿=" << rise << "，平顶="<<peak<< "，下降沿="<<fall;
-
-                emit reportParamterData(mIndex, cachePool.left(12));
-
-                findNaul = true;
-                cachePool.remove(0, 12);
-            }
-        }
-
-        //梯形成型使能配置
-        {
-            if (cachePool.startsWith(kCmdTrapShapeEnableHead)){
-                qInfo().noquote() << "参数查询，梯形成型使能状态：" << ((quint8)cachePool.at(9) == 0x00 ? "关闭" : "打开");
-
-                emit reportParamterData(mIndex, cachePool.left(12));
-
-                findNaul = true;
-                cachePool.remove(0, 12);
-            }
-        }
-
-        /*********************************************************
-         工作模式配置
-        ***********************************************************/
-        {
-            if (cachePool.startsWith(kCmdWorkModeHead)){
-                WorkMode workMode = (WorkMode)cachePool.at(9);
-                QString modeStr;
-                switch(workMode)
-                {
-                case wmWaveform:
-                    modeStr = "波形模式";
-                    break;
-                case wmSpectrum:
-                    modeStr = "能谱模式";
-                    break;
-                case wmParticle:
-                    modeStr = "粒子模式";
-                    break;
-                default:
-                    modeStr = "未知模式";
-                    break;
-                }
-                qInfo().noquote() << "参数查询，工作模式：" << modeStr;
-
-                emit reportParamterData(mIndex, cachePool.left(12));
-
-                findNaul = true;
-                cachePool.remove(0, 12);
-            }
-        }
-
-        /*********************************************************
-         高压电源配置
-        ***********************************************************/
-        //高压使能配置
-        {
-            if (cachePool.startsWith(kCmdHVEnableHead)){
-                HighVolgateOutLevelEnable highVoltageEnable = (HighVolgateOutLevelEnable)cachePool.at(9);
-                qInfo().noquote() << "参数查询，高压使能状态：" << (highVoltageEnable ? "关闭" : "打开");
-
-                emit reportParamterData(mIndex, cachePool.left(12));
-
-                findNaul = true;
-                cachePool.remove(0, 12);
-            }
-        }
-
-        //DAC模拟电平配置，用来控制高压电源输出电压值
-        {
-            if (cachePool.startsWith(kCmdHVOutputHead)){
-                quint16 level = qFromBigEndian<quint16>(cachePool.constData() + 8);
-                double HV = level * 2.5 * 441 / 65536;
-                qInfo().noquote() << "参数查询，高压输出电平值（V）：" << HV;
-
-                emit reportParamterData(mIndex, cachePool.left(12));
-
-                findNaul = true;
-                cachePool.remove(0, 12);
-            }
-        }
-
-        /*********************************************************
-         应答类指令
-        ***********************************************************/
-        //程序版本号查询
-        if (cachePool.startsWith(kCmdFPGAVersionHead)){
-            //硬件版本号
-            QString hardVersion = QString("%1.%2.%3").arg(cachePool.at(6)).arg(cachePool.at(7)).arg(cachePool.at(8));
-            //测试版本标志位
-            bool isTest = cachePool.at(9) == 0x01;
-
-            //qInfo().noquote() << "硬件版本号：" << hardVersion;
-            //qInfo().noquote() << "是否测试版本：" << (isTest ? "是" : "否");
-            emit reportParamterData(mIndex, cachePool.left(12));
-
-            findNaul = true;
-            cachePool.remove(0, 12);
-        }
-
-        /*********************************************************
-         OTA更新指令
-        ***********************************************************/
-        //Flash地址设置
-        //OTA更新数据传输指令
-
-        //重加载FPGA程序
-        if (cachePool.startsWith(kCmdReloadFPGAHead)){
+        // 重加载FPGA应答
+        if (!handled && hasHeadAt(pos, kCmdReloadFPGAHead)) {
             qInfo().noquote() << "下发指令返回：停止测量";
-
-            findNaul = true;
-            cachePool.remove(0, 12);
-
-            //上报重加载FPGA程序状态
+            pos += kCmdLen;
+            handled = true;
+            needNotifyNextCmd = true;
             QMetaObject::invokeMethod(this, "reportRetHostProgramSuccess", Qt::QueuedConnection);
         }
 
-        if (findNaul){
+        if (needNotifyNextCmd)
             notifySendNextCmd();
-            findNaul = false;
-        }
 
-        if (findNaul){
-            //已经处理过完整的数据包
-
-            //继续判断剩下的数据包
-            if (cachePool.size() > 12)
-                continue;
-            else
-                break;
-        }
-        else if (cachePool.size() >= 12){
-            //没有找到有效包头
-
-            /*继续寻找包头,删除包头继续寻找*/
-            cachePool.remove(0, 1);
+        if (!handled) {
+            // 没有找到有效包头，删除1字节继续找
             ++mHeaderScanDropBytes;
-            // dumpParserStats();
-            continue;
-        }
-        else{
-            break;
+            ++pos;
         }
     }
+
+    if (pos > 0)
+        cachePool.remove(0, pos);
 }
 
 //增益指令01~08

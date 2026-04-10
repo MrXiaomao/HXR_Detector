@@ -5,18 +5,17 @@ DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
     : CommandAdapter(index, parent)
 {
     m_parseData = nullptr;
-    mAccumulateSpec.resize(8192);
     mDataProcessThread = new QLiteThread(this);
     mDataProcessThread->setWorkThreadProc([=](){
-        while (!mTerminatedDataThread)
+        while (!mTerminatedDataThread.load())
         {
             QByteArray localRaw;
             {
-                QMutexLocker locker(&mDataLocker);
-                while (!mTerminatedDataThread && mRawData.isEmpty() && !mParserResetRequested) {
-                    mDataCondition.wait(&mDataLocker);
+                QMutexLocker locker(&mRawDataLocker);
+                while (!mTerminatedDataThread.load() && mRawData.isEmpty() && !mParserResetRequested) {
+                    mDataCondition.wait(&mRawDataLocker);
                 }
-                if (mTerminatedDataThread)
+                if (mTerminatedDataThread.load())
                     break;
 
                 if (mParserResetRequested) {
@@ -33,8 +32,15 @@ DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
             }
 
             mCachePool.append(localRaw);
-            if (!mTerminatedDataThread)
+            if (!mTerminatedDataThread.load()) {
+                QElapsedTimer analyzeTimer;
+                analyzeTimer.start();
                 analyzeCommands(mCachePool);
+                mAnalyzeCommandsCallCount.fetch_add(1, std::memory_order_relaxed);
+                mAnalyzeCommandsTotalCostNs.fetch_add(
+                    static_cast<quint64>(analyzeTimer.nsecsElapsed()),
+                    std::memory_order_relaxed);
+            }
         }
     });
     mDataProcessThread->start();
@@ -75,7 +81,7 @@ DataProcessor::~DataProcessor()
 {
     if (mDataProcessThread){
         // 终止线程
-        mTerminatedDataThread = true;
+        mTerminatedDataThread.store(true);
         mParserResetCondition.wakeAll();
         mDataCondition.wakeOne();
         mDataProcessThread->wait();
@@ -205,10 +211,16 @@ void DataProcessor::startMeasure(CommandAdapter::WorkMode workMode)
 {
     /*开始测量之前清空解析缓存，防止野数据存在*/
     requestParserResetOnDataThread();
-    mAccumulateSpec.clear();
-    mAccumulateSpec.resize(8192);
-    mFullSpectrums.clear();
-    mLastSpectrumSeq = 0;
+    mMergeSubSpecPacketCount.store(0, std::memory_order_relaxed);
+    mMergeSubSpecTotalCostNs.store(0, std::memory_order_relaxed);
+    mAnalyzeCommandsCallCount.store(0, std::memory_order_relaxed);
+    mAnalyzeCommandsTotalCostNs.store(0, std::memory_order_relaxed);
+    mMergeSubSpecWallTimer.restart();
+    {
+        // QMutexLocker locker(&mSpectrumLocker);
+        mFullSpectrums.clear();
+        mLastSpectrumSeq = 0;
+    }
 
     if (m_parseData) {
         delete m_parseData;
@@ -238,10 +250,16 @@ void DataProcessor::startAutoMeasure(QDateTime tmStart, CommandAdapter::WorkMode
 {
     /*开始测量之前清空解析缓存，防止野数据存在*/
     requestParserResetOnDataThread();
-    mAccumulateSpec.clear();
-    mAccumulateSpec.resize(8192);
-    mFullSpectrums.clear();
-    mLastSpectrumSeq = 0;
+    mMergeSubSpecPacketCount.store(0, std::memory_order_relaxed);
+    mMergeSubSpecTotalCostNs.store(0, std::memory_order_relaxed);
+    mAnalyzeCommandsCallCount.store(0, std::memory_order_relaxed);
+    mAnalyzeCommandsTotalCostNs.store(0, std::memory_order_relaxed);
+    mMergeSubSpecWallTimer.restart();
+    {
+        // QMutexLocker locker(&mSpectrumLocker);
+        mFullSpectrums.clear();
+        mLastSpectrumSeq = 0;
+    }
 
     if (m_parseData) {
         delete m_parseData;
@@ -271,6 +289,32 @@ void DataProcessor::stopMeasure()
 {
     //#16 停止测量=1|0|26|1234000FEA1000000000ABCD
     this->sendStopMeasure();
+
+    const quint64 packetCount = mMergeSubSpecPacketCount.exchange(0, std::memory_order_relaxed);
+    const quint64 totalCostNs = mMergeSubSpecTotalCostNs.exchange(0, std::memory_order_relaxed);
+    const qint64 wallMs = mMergeSubSpecWallTimer.isValid() ? mMergeSubSpecWallTimer.elapsed() : 0;
+    const double totalCostMs = static_cast<double>(totalCostNs) / 1000000.0;
+    const double avgCostUs = (packetCount > 0)
+                                 ? (static_cast<double>(totalCostNs) / 1000.0 / static_cast<double>(packetCount))
+                                 : 0.0;
+    qInfo().nospace().noquote()
+        << "谱仪[#"<< mIndex << "] mergeSubSpec统计: window=" << wallMs
+        << "ms, packets=" << packetCount
+        << ", totalCost=" << totalCostMs << "ms"
+        << ", avg=" << avgCostUs << "us/packet";
+
+    const quint64 analyzeCalls = mAnalyzeCommandsCallCount.exchange(0, std::memory_order_relaxed);
+    const quint64 analyzeCostNs = mAnalyzeCommandsTotalCostNs.exchange(0, std::memory_order_relaxed);
+    const double analyzeTotalMs = static_cast<double>(analyzeCostNs) / 1000000.0;
+    const double analyzeAvgUs = (packetCount > 0)
+                                    ? (static_cast<double>(analyzeCostNs) / 1000.0 / static_cast<double>(packetCount/32))
+                                    : 0.0;
+    qInfo().nospace().noquote()
+        << "谱仪[#"<< mIndex << "] analyzeCommands统计: fullSpec=" << packetCount/32
+        << ", totalCost=" << analyzeTotalMs << "ms"
+        << ", avg=" << analyzeAvgUs << "us/call";
+
+    mMergeSubSpecWallTimer.invalidate();
 
     mTempTimeoutTimer.stop();
 }
@@ -316,21 +360,15 @@ void DataProcessor::readyRead()
         emit reportRawNetData(mIndex, rawData);
 
     this->appendRawTcpData(rawData);
-
-    mDataCondition.wakeOne();
 }
 
 void DataProcessor::appendRawTcpData(const QByteArray& data)
 {
-    QMutexLocker locker(&mDataLocker);
+    QMutexLocker locker(&mRawDataLocker);
     mRawData.append(data);
     const quint64 currentSize = static_cast<quint64>(mRawData.size());
     if (currentSize > mRawDataPeak) {
         mRawDataPeak = currentSize;
-        // qDebug().noquote().nospace()
-        //     << "谱仪[#"<< mIndex << "] mRawData峰值更新(appendRawTcpData): "
-        //     << mRawDataPeak << " bytes, ts="
-        //     << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz");
     }
 
     mDataCondition.wakeOne();
@@ -338,12 +376,12 @@ void DataProcessor::appendRawTcpData(const QByteArray& data)
 
 void DataProcessor::requestParserResetOnDataThread()
 {
-    QMutexLocker locker(&mDataLocker);
+    QMutexLocker locker(&mRawDataLocker);
     mParserResetRequested = true;
     mParserResetDone = false;
     mDataCondition.wakeOne();
-    while (!mTerminatedDataThread && !mParserResetDone) {
-        mParserResetCondition.wait(&mDataLocker);
+    while (!mTerminatedDataThread.load() && !mParserResetDone) {
+        mParserResetCondition.wait(&mRawDataLocker);
     }
 }
 
@@ -366,6 +404,16 @@ void DataProcessor::restartTempTimeout() {
  * @param data 完整的能谱数据包，传入进来时已经验证了包的完整性
  */
 void DataProcessor::mergeSubSpec_Thread(quint8 no, const QByteArray& data){
+    QElapsedTimer perfTimer;
+    perfTimer.start();
+    auto commitStat = [&](bool countPacket) {
+        mMergeSubSpecTotalCostNs.fetch_add(static_cast<quint64>(perfTimer.nsecsElapsed()), std::memory_order_relaxed);
+        if (countPacket) {
+            mMergeSubSpecPacketCount.fetch_add(1, std::memory_order_relaxed);
+        }
+    };
+    commitStat(true);
+    return;
     // 能谱数据：一个能谱数据包长度为256*32bit，但完整的能谱数据为8192*32bit。
     // 1. 提取数据包数据（256道 quint32 数据）
     quint32 spectrumSeq = 0;
@@ -373,6 +421,7 @@ void DataProcessor::mergeSubSpec_Thread(quint8 no, const QByteArray& data){
     if (!extractSpectrumData(data, subSpecPackket)) {
         qWarning() << "Extract sub-spectrum data failed, seq:" << spectrumSeq
                    << ", DetID:" << static_cast<int>(no);
+        commitStat(false);
         return;
     }
     spectrumSeq = subSpecPackket.spectrumSeq;
@@ -382,14 +431,14 @@ void DataProcessor::mergeSubSpec_Thread(quint8 no, const QByteArray& data){
     if (part < 1 || part > 32) {
         qWarning() << "Invalid sub-spectrum part, seq:" << spectrumSeq
                    << ", part:" << static_cast<int>(part);
+        commitStat(true);
         return;
     }
 
     FullSpectrum fullSpectrumCopy;
     bool hasFullSpectrum = false;
     {
-        QMutexLocker locker(&mDataLocker);
-
+        // QMutexLocker locker(&mSpectrumLocker);
         // 查找/创建对应序号的完整能谱（单次加锁完成）
         auto it = mFullSpectrums.find(spectrumSeq);
         if (it == mFullSpectrums.end()) {
@@ -409,6 +458,7 @@ void DataProcessor::mergeSubSpec_Thread(quint8 no, const QByteArray& data){
         {
             qCritical() << "Duplicate sub-spectrum packet, seq:" << spectrumSeq
                         << ", part:" << static_cast<int>(part) << "(ignored)";
+            commitStat(true);
             return;
         }
 
@@ -418,13 +468,6 @@ void DataProcessor::mergeSubSpec_Thread(quint8 no, const QByteArray& data){
 
         if (fullSpectrum.receivedMask == 0xFFFFFFFFu) {
             fullSpectrum.isComplete = true;
-
-            // 使用指针循环加速累加（更利于编译器向量化）
-            quint32* acc = mAccumulateSpec.data();
-            const quint32* src = fullSpectrum.spectrum;
-            for (int i = 0; i < 8192; ++i) {
-                acc[i] += src[i];
-            }
 
             fullSpectrumCopy = fullSpectrum; // 拷贝数据，避免锁外访问共享对象
             hasFullSpectrum = true;
@@ -437,6 +480,7 @@ void DataProcessor::mergeSubSpec_Thread(quint8 no, const QByteArray& data){
         // 锁外发送，降低锁持有时长
         emit reportFullSpectrum(mIndex, fullSpectrumCopy);
     }
+    commitStat(true);
 }
 
 // 从波形数据包中提取波形数据
