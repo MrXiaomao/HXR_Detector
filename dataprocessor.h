@@ -79,7 +79,7 @@ public slots:
     // 收到温度时调用
     void restartTempTimeout();   
     // 解析能谱数据包，并拼接成完整能谱
-    void mergeSubSpec(quint8 no, const QByteArray& data);
+    void mergeSubSpec_Thread(quint8 no, const QByteArray& data);
     // 解析波形数据包
     void extractWaveformData(quint8 no, const QByteArray& packetData);
     // 解析粒子数据包
