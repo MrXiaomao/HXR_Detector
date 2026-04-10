@@ -13,11 +13,22 @@ DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
             QByteArray localRaw;
             {
                 QMutexLocker locker(&mDataLocker);
-                while (!mTerminatedDataThread && mRawData.isEmpty()) {
+                while (!mTerminatedDataThread && mRawData.isEmpty() && !mParserResetRequested) {
                     mDataCondition.wait(&mDataLocker);
                 }
                 if (mTerminatedDataThread)
                     break;
+
+                if (mParserResetRequested) {
+                    // 清空动作固定在数据线程执行，避免与解析并发访问 mCachePool
+                    mRawData.clear();
+                    mCachePool.clear();
+                    mParserResetRequested = false;
+                    mParserResetDone = true;
+                    mParserResetCondition.wakeAll();
+                    continue;
+                }
+
                 localRaw.swap(mRawData);
             }
 
@@ -65,6 +76,7 @@ DataProcessor::~DataProcessor()
     if (mDataProcessThread){
         // 终止线程
         mTerminatedDataThread = true;
+        mParserResetCondition.wakeAll();
         mDataCondition.wakeOne();
         mDataProcessThread->wait();
     }
@@ -191,8 +203,8 @@ bool DataProcessor::isFreeSocket()
 
 void DataProcessor::startMeasure(CommandAdapter::WorkMode workMode)
 {
-    /*开始测量之前清空所有数据，防止野数据存在*/
-    mCachePool.clear();
+    /*开始测量之前清空解析缓存，防止野数据存在*/
+    requestParserResetOnDataThread();
     mAccumulateSpec.clear();
     mAccumulateSpec.resize(8192);
     mCurrentSpec.clear();
@@ -226,8 +238,8 @@ void DataProcessor::startMeasure(CommandAdapter::WorkMode workMode)
 
 void DataProcessor::startAutoMeasure(QDateTime tmStart, CommandAdapter::WorkMode workMode)
 {
-    /*开始测量之前清空所有数据，防止野数据存在*/
-    mCachePool.clear();
+    /*开始测量之前清空解析缓存，防止野数据存在*/
+    requestParserResetOnDataThread();
     mAccumulateSpec.clear();
     mAccumulateSpec.resize(8192);
     mCurrentSpec.clear();
@@ -326,6 +338,17 @@ void DataProcessor::appendRawTcpData(const QByteArray& data)
     }
 
     mDataCondition.wakeOne();
+}
+
+void DataProcessor::requestParserResetOnDataThread()
+{
+    QMutexLocker locker(&mDataLocker);
+    mParserResetRequested = true;
+    mParserResetDone = false;
+    mDataCondition.wakeOne();
+    while (!mTerminatedDataThread && !mParserResetDone) {
+        mParserResetCondition.wait(&mDataLocker);
+    }
 }
 
 

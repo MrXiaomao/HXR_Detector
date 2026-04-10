@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-11-13 11:36:00
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-04-09 10:18:04
+ * @LastEditTime: 2026-04-10 14:58:33
  * @Description: 处理界面与探测器之间的数据交互，包括网络数据、能谱数据、温度数据等，控制探测器的工作模式、参数设置、数据采集等
  */
 #ifndef DATAPROCESSOR_H
@@ -112,6 +112,8 @@ signals:
     void reportTemperatureTimeout(quint8 index); // 温度心跳超时信号
 
 private:
+    void requestParserResetOnDataThread();
+
 #if ENABLE_LIBHV
     hv::SocketChannelPtr mTcpSocket;
 #else
@@ -124,6 +126,11 @@ private:
     bool mTerminatedDataThread = false;
     QMutex mDataLocker;
     QWaitCondition mDataCondition;
+    
+    QWaitCondition mParserResetCondition;
+    bool mParserResetRequested = false;
+    bool mParserResetDone = false;
+
     QLiteThread* mDataProcessThread = nullptr;// 处理线程
     bool mWaveMeasuring = false;     //波形测量中
     quint8 mTransferMode = 0x00;//传输模式
