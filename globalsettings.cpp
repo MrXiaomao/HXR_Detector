@@ -808,7 +808,6 @@ void HDF5Settings::writeH5Spectrum(quint8 index, const H5Spectrum& data)
  */
 void HDF5Settings::writeH5SpectrumBatch(quint8 index, const QVector<H5Spectrum>& data)
 {
-    const qint64 SLOW_BATCH_THRESHOLD_MS = 20;
     QElapsedTimer costTimer;
     costTimer.start();
     if (data.isEmpty())

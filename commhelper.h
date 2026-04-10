@@ -222,7 +222,7 @@ private:
     // 处理探测器断开连接的统一逻辑
     void handleDetectorDisconnection(quint8 index);
 
-    void flushSpectrumH5BuffersOnWorkerThread();
+    void flushSpectrumH5BuffersOnWorkerThread(bool forceFlushAll = false);
     void flushSpectrumRawBuffersOnWorkerThread(bool forceFlushAll = false);
     QMutex mPeersMutex;
 #if ENABLE_LIBHV

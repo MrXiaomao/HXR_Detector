@@ -377,9 +377,10 @@ void CommHelper::initDataProcessor()
     }
 }
 
-void CommHelper::flushSpectrumH5BuffersOnWorkerThread()
+void CommHelper::flushSpectrumH5BuffersOnWorkerThread(bool forceFlushAll)
 {
-    if(!mMeasuring) return;
+    if (!mMeasuring && !forceFlushAll)
+        return;
     HDF5Settings* settings = HDF5Settings::instance();
     for (int det = 1; det <= DET_NUM; ++det) {
         QVector<H5Spectrum> pending;
@@ -389,7 +390,7 @@ void CommHelper::flushSpectrumH5BuffersOnWorkerThread()
         }
         if (pending.isEmpty())
             continue;
-        settings->writeH5SpectrumBatch(static_cast<quint8>(det), pending);        
+       settings->writeH5SpectrumBatch(static_cast<quint8>(det), pending);        
         // qDebug().nospace() << "CommHelper writeH5SpectrumBatch det[" << det << "] count:"
         //                     << pending.size() << " thread:" << QThread::currentThreadId();
     }
@@ -975,7 +976,12 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
     mMeasureStartTime = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
     mMeasuring = true;
     // 初始化
-    mPendingH5ByDetector.resize(DET_NUM + 1);
+    {
+        QMutexLocker lock(&mSpectrumH5Mutex);
+        mPendingH5ByDetector.resize(DET_NUM + 1);
+        for (int i = 1; i <= DET_NUM; ++i)
+            mPendingH5ByDetector[i].clear();
+    }
     {
         QMutexLocker lock(&mSpectrumRawMutex);
         mPendingSpectrumRawByDetector.resize(DET_NUM + 1);
@@ -1215,6 +1221,8 @@ void CommHelper::checkAndFlushNetRawFile(quint8 index, qint64 bytesWritten)
 */
 void CommHelper::stopMeasure(quint8 index/* = 0*/)
 {
+    // 停止前先将 H5 缓存落盘，避免累计在内存中
+    flushSpectrumH5BuffersOnWorkerThread(true);
     // 停止前先将能谱原始缓存落盘，避免尾包丢失
     flushSpectrumRawBuffersOnWorkerThread(true);
 

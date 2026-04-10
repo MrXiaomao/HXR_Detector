@@ -44,7 +44,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     restoreSettings();
     applyColorTheme();
 
-    connect(this, SIGNAL(sigWriteLog(const QString&,QtMsgType)), this, SLOT(slotWriteLog(const QString&,QtMsgType)));
+    connect(this, &MainWindow::sigWriteLog, this, &MainWindow::slotWriteLog);
 
     ui->groupBox_3->setVisible(false); //隐藏统计结果，暂时没有在线中子产额统计结果
     ui->action_startServer->setEnabled(true);
@@ -984,6 +984,15 @@ void MainWindow::onSystemTimer()
 
     // 获取当前时间
     QDateTime currentDateTime = QDateTime::currentDateTime();
+    if (!mPendingLogs.isEmpty()) {
+        const qint64 currentSec = currentDateTime.toMSecsSinceEpoch() / 1000;
+        if (mLastLogFlushSecond < 0)
+            mLastLogFlushSecond = currentSec;
+        if (currentSec != mLastLogFlushSecond) {
+            flushPendingLogs();
+            mLastLogFlushSecond = currentSec;
+        }
+    }
 
     // 获取星期几的数字（1代表星期日，7代表星期日）
     int dayOfWeekNumber = currentDateTime.date().dayOfWeek();
@@ -1301,42 +1310,49 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event){
 
 void MainWindow::slotWriteLog(const QString &msg, QtMsgType msgType)
 {
-    // 创建一个 QTextCursor
+    PendingLogEntry item;
+    item.timeText = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz");
+    item.msg = msg;
+    item.msgType = msgType;
+    mPendingLogs.push_back(item);
+}
+
+void MainWindow::flushPendingLogs()
+{
+    if (mPendingLogs.isEmpty())
+        return;
+
     QTextCursor cursor = ui->textEdit_log->textCursor();
-    // 将光标移动到文本末尾
     cursor.movePosition(QTextCursor::End);
 
-    // 先插入时间
-    QString color = "black";
+    QString normalColor = "black";
     if (mIsDarkTheme)
-        color = "white";
-    cursor.insertHtml(QString("<span style='color:%1;'>%2</span>").arg(color, QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz >> ")));
-    // 再插入文本
-    if (msgType == QtDebugMsg || msgType == QtInfoMsg)
-        cursor.insertHtml(QString("<span style='color:%1;'>%2</span>").arg(color, msg));
-    else if (msgType == QtCriticalMsg || msgType == QtFatalMsg)
-        cursor.insertHtml(QString("<span style='color:#FF0000;'>%1</span>").arg(msg));
-    else
-        cursor.insertHtml(QString("<span style='color:#0000F0;'>%1</span>").arg(msg));
+        normalColor = "white";
 
-    // 最后插入换行符
-    cursor.insertHtml("<br>");
+    for (const PendingLogEntry& item : qAsConst(mPendingLogs)) {
+        cursor.insertHtml(QString("<span style='color:%1;'>%2</span>").arg(normalColor, item.timeText + " >> "));
+        if (item.msgType == QtDebugMsg || item.msgType == QtInfoMsg)
+            cursor.insertHtml(QString("<span style='color:%1;'>%2</span>").arg(normalColor, item.msg));
+        else if (item.msgType == QtCriticalMsg || item.msgType == QtFatalMsg)
+            cursor.insertHtml(QString("<span style='color:#FF0000;'>%1</span>").arg(item.msg));
+        else
+            cursor.insertHtml(QString("<span style='color:#0000F0;'>%1</span>").arg(item.msg));
+        cursor.insertHtml("<br>");
+    }
+    mPendingLogs.clear();
 
-    // 确保 QTextEdit 显示了光标的新位置
     ui->textEdit_log->setTextCursor(cursor);
 
-    //限制行数
-    QTextDocument *document = ui->textEdit_log->document(); // 获取文档对象，想象成打开了一个TXT文件
-    int rowCount = document->blockCount(); // 获取输出区的行数
-    int maxRowNumber = 2000;//设定最大行
-    if(rowCount > maxRowNumber){//超过最大行则开始删除
-        QTextCursor cursor = QTextCursor(document); // 创建光标对象
-        cursor.movePosition(QTextCursor::Start); //移动到开头，就是TXT文件开头
-
-        for (int var = 0; var < rowCount - maxRowNumber; ++var) {
-            cursor.movePosition(QTextCursor::Down, QTextCursor::KeepAnchor); // 向下移动并选中当前行
+    QTextDocument *document = ui->textEdit_log->document();
+    int rowCount = document->blockCount();
+    int maxRowNumber = 2000;
+    if (rowCount > maxRowNumber) {
+        QTextCursor trimCursor(document);
+        trimCursor.movePosition(QTextCursor::Start);
+        for (int i = 0; i < rowCount - maxRowNumber; ++i) {
+            trimCursor.movePosition(QTextCursor::Down, QTextCursor::KeepAnchor);
         }
-        cursor.removeSelectedText();//删除选择的文本
+        trimCursor.removeSelectedText();
     }
 }
 
@@ -1869,6 +1885,8 @@ void MainWindow::onMeasureCountdownTimeout()
             commHelper->stopMeasure();
         }
 
+        //停止测量定时器
+        mMeasureTimer->invalidate();
         //清空温度超时报警的探测器ID
         mTemperatureTimeoutDetectors.clear();
         //清空探测器正在测量记录
@@ -2362,6 +2380,7 @@ void MainWindow::updateConnectButtonState(bool connected)
 void MainWindow::on_bt_clearLog_clicked()
 {
     ui->textEdit_log->clear();
+    mPendingLogs.clear();
     clearHighlights();
     mLastSearchText.clear();
     mCurrentSearchPosition = 0;

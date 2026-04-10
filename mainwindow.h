@@ -205,9 +205,16 @@ private slots:
     void on_actionstatusBar_triggered();
 
 private:
+    struct PendingLogEntry {
+        QString timeText;   // yyyy-MM-dd hh:mm:ss.zzz
+        QString msg;
+        QtMsgType msgType = QtDebugMsg;
+    };
+
     QString increaseShotNumSuffix(QString shotNumStr);
     QCustomPlot* getCustomPlot(int detectorId, bool isSpectrum = true);
     QCPGraph* getGraph(int detectorId, bool isSpectrum = true);
+    void flushPendingLogs();
 
 private:
     Ui::MainWindow *ui;
@@ -296,6 +303,8 @@ private:
 
     bool mEnableAutoMeasure = false; // 开始自动测量模式
     bool mEnableExtendTrigger = false; // 启用外触发
+    QVector<PendingLogEntry> mPendingLogs; // 待批量输出的日志缓存
+    qint64 mLastLogFlushSecond = -1; // 上次刷日志的秒级时间戳
     void startMeasure();
     void stopMeasure();
 };
