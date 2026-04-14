@@ -232,12 +232,6 @@ void DataProcessor::startMeasure(CommandAdapter::WorkMode workMode)
 
     QString mMeasureStartTime = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
 
-    //测量前下发配置
-    //HDF5Settings *settings = HDF5Settings::instance();
-    //QMap<quint8, DetParameter>& detParameters = settings->detParameters();
-    //DetParameter& detParameter = detParameters[mIndex];
-    //this->updateSetting(detParameter); 参数设置在上线时候已经发过了，这里就不用重复发送了
-
     //#12 波形工作模式=1|0|22|1234000FFF1000000000ABCD
     //#13 能谱工作模式=1|0|23|1234000FFF1000000001ABCD
     //#14 粒子工作模式=1|0|24|1234000FFF1000000002ABCD
@@ -477,6 +471,7 @@ void DataProcessor::mergeSubSpec_Thread(quint8 no, const QByteArray& data){
 
     if (hasFullSpectrum) {
         // 锁外发送，降低锁持有时长
+        fullSpectrumCopy.spectrum[8191]=0; //将最后一道置零
         emit reportFullSpectrum(mIndex, fullSpectrumCopy);
     }
     commitStat(true);

@@ -117,8 +117,6 @@ CommHelper::CommHelper(QObject *parent)
 
                     // 3. 取消数据处理器关联
                     freeDataProcessor(connection);
-
-                    //qInfo().nospace() << "谱仪[#" << index << "]下线，已执行断开连接处理";
                     connection->setProperty("detectorIndex", QVariant());
                     allocDataProcessor(connection);
                     index = connection->property("detectorIndex").toInt();

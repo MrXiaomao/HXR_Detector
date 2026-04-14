@@ -115,7 +115,9 @@ private slots:
     void on_action_cfgParam_triggered();
     // 退出程序
     void on_action_exit_triggered();
-    // 触发模式
+    // 测量模式选择：手动测量/继续测量
+    void onMeasureModeChanged(int index);
+    // 触发模式选择：软件触发/外触发
     void onTriggerModelChanged(int index);
     // 全通道开始测量
     void on_action_startMeasure_triggered();

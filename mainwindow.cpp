@@ -265,23 +265,32 @@ void MainWindow::initUi()
         systemSettings.beginGroup("mainWindow");
 
         // 测量模式
-        ui->cbb_measureMode->setCurrentIndex(systemSettings.value("MeasureMode", 0).toInt());
+        int measureMode = systemSettings.value("MeasureMode", 0).toInt();
+        ui->cbb_measureMode->setCurrentIndex(measureMode);
+        onMeasureModeChanged(measureMode);
+
         // 测量发次号是否自动增加
         bool flag = systemSettings.value("ShotNumIsAutoIncrease", true).toBool();
-        ui->checkBox_autoIncrease->setChecked(systemSettings.value("ShotNumIsAutoIncrease", true).toBool());
+        ui->checkBox_autoIncrease->setChecked(flag);
+        
         // 发次号
         ui->lineEdit_shotNum->setText(systemSettings.value("ShotNumStr", "000").toString());
+
         // 数据保存路径
         ui->lineEdit_filePath->setText(systemSettings.value("SavePath", "./cache").toString());
         if (!QDir(ui->lineEdit_filePath->text()).exists())
             ui->lineEdit_filePath->setText("./cache");
         ui->spinBox_measureTime->setValue(systemSettings.value("MeasureTime", 10).toInt());
+
         // 触发模式
         int triggerMode = systemSettings.value("TriggerMode", 0).toInt();
         ui->com_triggerModel->setCurrentIndex(triggerMode); // 或者从配置文件中读取
         onTriggerModelChanged(triggerMode);
         systemSettings.endGroup();
     }
+
+    connect(ui->cbb_measureMode, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &MainWindow::onMeasureModeChanged);
 
     connect(ui->com_triggerModel, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onTriggerModelChanged);
@@ -1447,25 +1456,38 @@ void MainWindow::on_actionstatusBar_triggered()
     ui->statusbar->setVisible(!ui->statusbar->isVisible());
 }
 
+// 测量模式选择：手动测量/继续测量
+void MainWindow::onMeasureModeChanged(int index)
+{
+    //手动测量模式，只允许软件触发，自动测量既可以软件触发也可以外触发
+    if(index==0){
+        ui->com_triggerModel->setCurrentIndex(0);
+        ui->com_triggerModel->setEnabled(false);
+    }
+    else{
+        ui->com_triggerModel->setEnabled(true);
+    }
+}
+
 /**
- * @brief MainWindow::onTriggerModelChanged 触发模式选择：软件触发/外触发
+ * @brief 触发模式选择：软件触发/外触发
  * @param index 下拉框序号，触发类型
  */
 void MainWindow::onTriggerModelChanged(int index)
 {
-    //if (ui->cbb_measureMode->currentIndex() ==  0)
-    {
-        // 手动测量，软件触发才允许设置打靶时间，外触发才允许设置冷却时间
-        ui->dateTime_shotTime->setEnabled(index == 0); // 软件触发才允许设置打靶时间
-        ui->spinBox_coolTimeLength->setEnabled(index != 0);// 软件触发不允许设置冷却时间
+    if(index==0){
+        if(ui->cbb_measureMode->currentIndex() ==  0){ 
+            ui->spinBox_coolTimeLength->setEnabled(false);// 手动测量下，软件触发不允许设置冷却时间
+        }
+        //软件触发
+        ui->dateTime_shotTime->setEnabled(true); // 软件触发才允许设置打靶时间
     }
-    // else
-    // {
-    //     // 自动化测量
-    //     ui->dateTime_shotTime->setEnabled(false);   // 外触发不允许设置打靶时间
-    //     ui->spinBox_coolTimeLength->setEnabled(index == 0); // 外触发才允许设置冷却时间
-    // }
-
+    else
+    {
+        //外触发
+        ui->dateTime_shotTime->setEnabled(false);   // 外触发不允许设置打靶时间
+        ui->spinBox_coolTimeLength->setEnabled(true); // 外触发才允许设置冷却时间
+    }
     // 实时保存触发模式
     GlobalSettings settings;
     settings.setValue("mainWindow/TriggerMode", index);
@@ -2653,7 +2675,8 @@ void MainWindow::startMeasure()
         }
     }
 
-    CommandAdapter::MeasureMode measureMode = ui->cbb_measureMode->currentIndex() == 0 ? CommandAdapter::MeasureMode::mmManual : CommandAdapter::MeasureMode::mmAuto;
+    CommandAdapter::MeasureMode measureMode = ui->cbb_measureMode->currentIndex() == 0 ? \
+        CommandAdapter::MeasureMode::mmManual : CommandAdapter::MeasureMode::mmAuto;
     QDateTime tmStart = QDateTime::currentDateTime();
     if (ui->cbb_measureMode->currentIndex() == 1)
     {
