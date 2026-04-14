@@ -25,9 +25,10 @@ struct DetectorData {
     quint32 spectrum[8192];              // 累积能谱 (固定长度8192)
     quint32 lastSpectrumID;              // 上次测量累积时间的能谱序号
     quint32 lastAccumulateCount;         // 上次测量累积时间的计数率,暂时不考虑丢包带来的计数率修复
+    double lastAccuCountFixed;     // 上次测量累积时间的计数率，考虑死时间修复后的值
     // QDateTime lastUpdate;
 
-    DetectorData() : lastSpectrumID(0), lastAccumulateCount(0) {
+    DetectorData() : lastSpectrumID(0), lastAccumulateCount(0), lastAccuCountFixed(0.0) {
         countRateHistory.clear();
         for(int i=0; i<8192; i++) spectrum[i] = 0;// 初始化能谱为全0
     }

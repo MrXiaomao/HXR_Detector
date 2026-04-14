@@ -958,7 +958,7 @@ void MainWindow::onAutoMeasureDelayTimeout()
     }
     else{
         // 自动化测量模式
-        QDateTime tmStart = ui->dateTimeEdit_startTime->dateTime().addSecs(-30);// 提前30秒做好准备工作
+        QDateTime tmStart = ui->dateTimeEdit_startTime->dateTime().addSecs(-180);// 提前180秒做好准备工作
         if (now >= tmStart)
         {
             ui->lineEdit_triggerflag->setText("已经触发");
@@ -1013,6 +1013,7 @@ void MainWindow::onSystemTimer()
 
     // 温度刷新一次，时钟刷新2次，
     if ((t++%2) == 0){
+        ui->tableWidget_detector->setUpdatesEnabled(false);
         for (int row=0; row<=DET_NUM; ++row){
             if (m_mapTemperatur.contains(row)){
                 float temperature = m_mapTemperatur[row].second;
@@ -1039,6 +1040,7 @@ void MainWindow::onSystemTimer()
                 }
             }
         }
+        ui->tableWidget_detector->setUpdatesEnabled(true);
     }
 
     // 每10s刷新一次温度缓存到文件，避免频繁IO
@@ -1183,21 +1185,25 @@ void MainWindow::onFullSpectrum(int index, const FullSpectrum& fullSpectrum)
 
     // 记录累积计数率
     data.lastAccumulateCount += currentCount;
+    data.lastAccuCountFixed += currentCount * 1.0 * fullSpectrum.measureTime *1e6 
+        / (fullSpectrum.measureTime *1e6 - fullSpectrum.deathTime*10); // 死时间修正，注意测量时间单位ms，死时间单位*10ns
 
     //最快每秒更新一次能谱、计数率,这里不考虑丢包带来的计数率修复
     quint32 accuTime = (fullSpectrum.sequence - data.lastSpectrumID) * fullSpectrum.measureTime;//单位ms
     double currenTime = 1.0 * fullSpectrum.sequence * fullSpectrum.measureTime / 1000; //单位s，这里最大数对应2^32/24/3600=49days
     if(accuTime >= 1000) {
         double countRate = 1000.0*data.lastAccumulateCount * 1.0 / accuTime; //cps
+        double fixedCountRate = 1000.0*data.lastAccuCountFixed * 1.0 / accuTime; //修正后的cps
         data.lastSpectrumID = fullSpectrum.sequence;
         data.lastAccumulateCount = 0;
+        data.lastAccuCountFixed = 0;
         data.countRateHistory.append(countRate);
         
         // 更新能谱图像数据
         updateSpecPlotData(index, data.spectrum);
 
         // 更新计数率图像数据
-        updateCountRatePlotData(index, currenTime, countRate);
+        updateCountRatePlotData(index, currenTime, fixedCountRate);
     }
 }
 
@@ -1322,6 +1328,7 @@ void MainWindow::flushPendingLogs()
     if (mPendingLogs.isEmpty())
         return;
 
+    ui->textEdit_log->setUpdatesEnabled(false);
     QTextCursor cursor = ui->textEdit_log->textCursor();
     cursor.movePosition(QTextCursor::End);
 
@@ -1354,6 +1361,7 @@ void MainWindow::flushPendingLogs()
         }
         trimCursor.removeSelectedText();
     }
+    ui->textEdit_log->setUpdatesEnabled(true);
 }
 
 
@@ -1486,6 +1494,12 @@ void MainWindow::on_action_startMeasure_triggered()
     {
         qInfo().nospace().noquote() << tr("开启自动化测量");
         mAutoMeasureTimerActive = false; // 等到触发信号后，再置为true
+        //确保测量时刻距离当前时间大于240s，给自动测量模式预留足够的准备时间
+        QDateTime tmStart = ui->dateTimeEdit_startTime->dateTime();
+        QDateTime now = QDateTime::currentDateTime();
+        if (now.secsTo(tmStart) < 240){
+            QMessageBox::information(this, QStringLiteral("提示"), "请确保测量起始时间距离当前时间至少4分钟，以便自动测量模式有足够的准备时间！");
+        }
     }
     else
     {
@@ -1525,23 +1539,17 @@ void MainWindow::on_action_startMeasure_triggered()
     // 启用外触发模式，界面上显示未触发，等待时间戳信号触发测量
     if (mEnableExtendTrigger){
         ui->lineEdit_triggerflag->setText("等待触发");
-
         ui->dateTimeEdit_startTime->setDateTime(QDateTime::fromString("2026-01-01 00:00:00"));
         ui->dateTime_shotTime->setDateTime(QDateTime::fromString("2026-01-01 00:00:00"));
     }
-    else{
-        ui->lineEdit_triggerflag->setText("未触发");
-    }
-
-    // 软件触发模式，开始时间=当前时间，外触发模式，开始时间=打靶时间+冷却时间
-    if (!mEnableExtendTrigger)
-    {
+    else{ // 软件触发模式，开始时间=当前时间，外触发模式，开始时间=打靶时间+冷却时间
+        ui->lineEdit_triggerflag->setText("手动触发");
         QDateTime now = QDateTime::currentDateTime();
         ui->dateTimeEdit_startTime->setDateTime(now);
         ui->spinBox_coolTimeLength->setValue(ui->dateTime_shotTime->dateTime().secsTo(now));
     }
 
-    if (!mEnableExtendTrigger)
+    if (!mEnableAutoMeasure)
     {
         ui->lineEdit_triggerflag->setText("已经触发");
         mAutoMeasureDelayTimer->stop();

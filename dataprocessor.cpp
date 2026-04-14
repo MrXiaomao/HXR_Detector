@@ -324,23 +324,21 @@ void DataProcessor::sendCmdToSocket(CommandItem cmdItem) const
 #if ENABLE_LIBHV
     if (mTcpSocket->isOpened()){
         mTcpSocket->write(cmdItem.data.constData(), cmdItem.data.size());
-        ::QThread::msleep(5);// 每条指令发送完成暂停5毫秒
-
         qDebug().noquote()<< QString("[%1]Send HEX: %2 [%3]")
                                   .arg(mIndex)
                                   .arg(QString(cmdItem.data.toHex(' ')))
                                   .arg(cmdItem.name);
+        ::QThread::msleep(5);// 每条指令发送完成暂停5毫秒
     }
 #else
     if (mTcpSocket && mTcpSocket->isOpen()){
         mTcpSocket->write(cmdItem.data);
-        mTcpSocket->waitForBytesWritten();
-        ::QThread::msleep(5);// 每条指令发送完成暂停5毫秒
-
         qDebug().noquote()<< QString("[%1]Send HEX: %2 [%3]")
                                   .arg(mIndex)
                                   .arg(QString(cmdItem.data.toHex(' ')))
                                   .arg(cmdItem.name);
+        mTcpSocket->waitForBytesWritten();
+        ::QThread::msleep(5);// 每条指令发送完成暂停5毫秒
     }
 #endif //ENABLE_LIBHV
 }

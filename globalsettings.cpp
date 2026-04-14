@@ -827,7 +827,7 @@ void HDF5Settings::writeH5SpectrumBatch(quint8 index, const QVector<H5Spectrum>&
 
         // 写入前预测大小，若超过 16GB，则整批丢弃、关闭文件
         if (!mSpectrumFilePath.isEmpty()) {
-            const qint64 maxBytes = 16LL * 1024 * 1024 * 1024; // 16GB
+            const qint64 maxBytes = 512LL * 1024 * 1024 * 1024; // 512GB
             QFileInfo info(mSpectrumFilePath);
             if (info.exists()) {
                 const qint64 currentSize  = info.size();
