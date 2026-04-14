@@ -180,12 +180,13 @@ void DataProcessor::updateSetting(DetParameter* detParameter, bool isRead/* = fa
         //#05 能谱刷新时间=1|0|9|1234000FFD1000000000ABCD
         this->sendSprectnumRefreshTimelength(isRead, detParameter->spectrumRefreshTime);
 
-        if (detParameter->trapShapeEnable || isRead){
+        //暂时不再使用梯形成型相关配置，FPGA内部有默认参数
+        /*if (detParameter->trapShapeEnable || isRead){
             //#07 梯形成型常数=1|0|13|1234000FFE1000000000ABCD
             this->sendTrapTimeConst(isRead, detParameter->trapShapeTimeConstD1, detParameter->trapShapeTimeConstD2);
             //#08 上升沿参数=1|0|15|1234000FFE1100000000ABCD
             this->sendRisePeakFallPoints(isRead, detParameter->trapShapeRisePoint, detParameter->trapShapePeakPoint, detParameter->trapShapeFallPoint);
-        }
+        }*/
 
         //#09 梯形成型使能=1|0|17|1234000FFE1200000000ABCD
         this->sendTrapShapeEnable(isRead, (TrapShapeEnable)detParameter->trapShapeEnable);
@@ -328,7 +329,7 @@ void DataProcessor::sendCmdToSocket(CommandItem cmdItem) const
                                   .arg(mIndex)
                                   .arg(QString(cmdItem.data.toHex(' ')))
                                   .arg(cmdItem.name);
-        ::QThread::msleep(5);// 每条指令发送完成暂停5毫秒
+        ::QThread::msleep(10);// 每条指令发送完成暂停10毫秒
     }
 #else
     if (mTcpSocket && mTcpSocket->isOpen()){
@@ -338,7 +339,7 @@ void DataProcessor::sendCmdToSocket(CommandItem cmdItem) const
                                   .arg(QString(cmdItem.data.toHex(' ')))
                                   .arg(cmdItem.name);
         mTcpSocket->waitForBytesWritten();
-        ::QThread::msleep(5);// 每条指令发送完成暂停5毫秒
+        ::QThread::msleep(10);// 每条指令发送完成暂停10毫秒
     }
 #endif //ENABLE_LIBHV
 }

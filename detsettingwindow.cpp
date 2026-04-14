@@ -257,12 +257,9 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
             if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FE 10"))){
                 quint16 d1 = cachePool.mid(6, 2).toHex().toUShort(&ok, 16);
                 quint16 d2 = cachePool.mid(8, 2).toHex().toUShort(&ok, 16);
-                float f1 = (float)d1 / 65536;
-                float f2 = (float)d2 / 65536;
-                qInfo().noquote() << "梯形成型时间常数，d1=" << f1 << "，d2="<<f2;
-                ui->doubleSpinBox_trapShapeTimeConstD1->setValue(f1);
-                ui->doubleSpinBox_trapShapeTimeConstD2->setValue(f2);
-
+                qInfo().noquote() << "梯形成型时间常数，d1=" << d1 << "，d2="<<d2;
+                ui->sb_trapShapeTimeConstD1->setValue(d1);
+                ui->sb_trapShapeTimeConstD2->setValue(d2);
                 if (queryMsg.isEmpty() && (qAbs(d1-detParameter.trapShapeTimeConstD1)>=5 || qAbs(d2-detParameter.trapShapeTimeConstD2)>=5)){
                     queryMsg = "梯形成型时间常数与本地设置不一致。";
                 }
@@ -407,8 +404,8 @@ void DetSettingWindow::updateSelectAllState()
 
 void DetSettingWindow::on_pushButton_save_clicked()
 {
-    double d1 = ui->doubleSpinBox_trapShapeTimeConstD1->value();
-    double d2 = ui->doubleSpinBox_trapShapeTimeConstD2->value();
+    quint16 d1 = ui->sb_trapShapeTimeConstD1->value();
+    quint16 d2 = ui->sb_trapShapeTimeConstD2->value();
     if (ui->trapShapeEnable->isChecked() && d1 >= d2){
         QMessageBox::warning(this, tr("保存参数设置"), tr("梯形成型常量错误，d1必须小于d2"));
         return;
@@ -515,15 +512,7 @@ void DetSettingWindow::saveAt(quint8 detId)
         detParameter.latitude = lat;
     }
 
-    //基本设置
-    //增益，获取文本转double
-    //detParameter.gain = ui->comboBox_gain->currentText().toDouble();
-    //死时间
-    //detParameter.deathTime = static_cast<quint8>(ui->spinBox_deathTime->value());
-    //触发阈值
-    //detParameter.triggerThold = static_cast<quint16>(ui->spinBox_triggerThold->value());
-
-    // //网络设置
+    // 网络设置
     //IP地址
     QAbstractItemModel *model = ui->tableWidget->model();
     memset(detParameter.det_Ip_port, 0, IP_LENGTH);
@@ -561,22 +550,15 @@ void DetSettingWindow::saveAt(quint8 detId)
     //是否启用
     detParameter.trapShapeEnable = ui->trapShapeEnable->isChecked();
     //时间常数D1
-    detParameter.trapShapeTimeConstD1 = static_cast<quint16>(ui->doubleSpinBox_trapShapeTimeConstD1->value()*65536);
+    detParameter.trapShapeTimeConstD1 = static_cast<quint16>(ui->sb_trapShapeTimeConstD1->value());
     //时间常数D2
-    detParameter.trapShapeTimeConstD2 = static_cast<quint16>(ui->doubleSpinBox_trapShapeTimeConstD2->value()*65536);
+    detParameter.trapShapeTimeConstD2 = static_cast<quint16>(ui->sb_trapShapeTimeConstD2->value());
     //上升沿
     detParameter.trapShapeRisePoint = static_cast<quint8>(ui->spinBox_trapShapeRisePoint->value());
     //平顶
     detParameter.trapShapePeakPoint = static_cast<quint8>(ui->spinBox_trapShapePeakPoint->value());
     //下降沿
     detParameter.trapShapeFallPoint = static_cast<quint8>(ui->spinBox_trapShapeFallPoint->value());
-    // //高压电源
-    // //是否启用
-    // detParameter.highVoltageEnable = ui->highVoltageEnable->isChecked();
-    // //输出高压，单位：V
-    // detParameter.highVoltageOutLevel = static_cast<quint16>(ui->spinBox_highVoltageOutLevel->value());
-
-    //settings->setDetParameter(detId, detParameter);
     settings->sync();
 }
 
@@ -631,9 +613,9 @@ void DetSettingWindow::loadAt(quint8 detId)
     //是否启用
     ui->trapShapeEnable->setChecked(detParameter.trapShapeEnable);
     //时间常数D1
-    ui->doubleSpinBox_trapShapeTimeConstD1->setValue((double)detParameter.trapShapeTimeConstD1 / 65536.0);
+    ui->sb_trapShapeTimeConstD1->setValue(detParameter.trapShapeTimeConstD1);
     //时间常数D2
-    ui->doubleSpinBox_trapShapeTimeConstD2->setValue((double)detParameter.trapShapeTimeConstD2 / 65536.0);
+    ui->sb_trapShapeTimeConstD2->setValue(detParameter.trapShapeTimeConstD2);
     //上升沿
     ui->spinBox_trapShapeRisePoint->setValue(detParameter.trapShapeRisePoint);
     //平顶
