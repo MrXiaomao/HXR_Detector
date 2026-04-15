@@ -512,9 +512,15 @@ void MainWindow::initUi()
                     {
                         // 时间同步模块
                         if (!cell->getChecked())
+                        {
                             commHelper->openSwitcherExtendPOEPower();
+                            qInfo().nospace() << "时间同步触发模块手动打开POE供电";
+                        }
                         else
+                        {
                             commHelper->closeSwitcherExtendPOEPower();
+                            qInfo().nospace() << "时间同步触发模块手动关闭POE供电";
+                        }
                     }
                     else
                     {
@@ -1083,9 +1089,6 @@ void MainWindow::onSystemTimer()
 //交换机登录成功的回调
 void MainWindow::onSwitcherLogged(const QString& ip)
 {
-    // QLabel* label_Connected = this->findChild<QLabel*>("label_Connected");
-    // label_Connected->setStyleSheet("color:#00ff00;");
-    // label_Connected->setText(tr("交换机[%1]已连通").arg(ip));
     mSwitcherLogged = true;
     updateConnectButtonState(true);
     ui->action_powerOn->setEnabled(true);
@@ -1123,7 +1126,13 @@ void MainWindow::onDetectorOnline(quint8 index)
 
     //记录联网的探测器ID
     mOnlineDetectors.append(index);
-    qInfo().nospace() << "谱仪[#" << index << "]上线";
+    if(index==0){
+        qInfo().nospace() << "时间同步触发模块上线";
+    } 
+    else
+    {
+        qInfo().nospace() << "谱仪[#" << index << "]上线"; 
+    }
     //如果该探测器在温度超时报警列表中，则删除
     if (mTemperatureTimeoutDetectors.contains(index)){
         mTemperatureTimeoutDetectors.removeOne(index);
@@ -1418,6 +1427,8 @@ void MainWindow::on_action_startServer_triggered()
         QLabel* label_LocalServer = this->findChild<QLabel*>("label_LocalServer");
         label_LocalServer->setStyleSheet("color:#00ff00;");
         label_LocalServer->setText(tr("本地网络服务：已开启"));
+        //打印日志
+        qInfo().noquote() << tr("本地网络服务已开启，等待探测器连接...");
     }
     else{
         QMessageBox::information(this, tr("提示"), tr("服务开启失败，请检测本地主机地址！"));
@@ -1456,6 +1467,7 @@ void MainWindow::on_action_stopServer_triggered()
     QLabel* label_LocalServer = this->findChild<QLabel*>("label_LocalServer");
     label_LocalServer->setStyleSheet("color:#ff0000;");
     label_LocalServer->setText(tr("本地网络服务：断开"));
+    qInfo().noquote() << tr("本地网络服务已断开");
     misTimedMeasure = false;
 }
 

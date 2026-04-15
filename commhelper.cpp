@@ -50,9 +50,6 @@ CommHelper::CommHelper(QObject *parent)
     //屏蔽libhv日志输出
     hlog_disable();
 
-    mPendingH5ByDetector.resize(DET_NUM + 1);
-    mPendingNetRawByDetector.resize(DET_NUM + 1);
-
     /*初始化网络*/
     initSocket();
     initDataProcessor();
@@ -419,7 +416,6 @@ void CommHelper::flushNetRawBuffersOnWorkerThread(bool forceFlushAll)
 // 网口原始数据
 void CommHelper::onRawNetData(quint8 detID, const QByteArray& data)
 {
-    return;
     // 主线程汇总测量数据，后台线程每1s批量写入文件
     if (!mMeasuring || detID < 1 || detID > DET_NUM || data.isEmpty())
         return;
@@ -967,20 +963,21 @@ void CommHelper::setShotInformation(const QString shotDir, const QString shotNum
  */
 void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode measureMode, CommandAdapter::WorkMode workMode, quint8 index/* = 0*/)
 {
+    constexpr int kReserveH5PerDetector = 60; // 每路探测器预留60个能谱数据
+    constexpr int kReserveRawBytesPerDetector = 1024 * 1024; // 每路探测器预留1MB网口原始数据，50ms能谱刷新频率下0.625MB/s
+
     mMeasureStartTime = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
     mMeasuring = true;
     // 初始化
-    {
-        mPendingH5ByDetector.resize(DET_NUM + 1);
-        for (int i = 1; i <= DET_NUM; ++i) {
-            QMutexLocker lock(&mSpectrumH5MutexByDetector[i]);
-            mPendingH5ByDetector[i].clear();
-        }
+    for (int i = 1; i <= DET_NUM; ++i) {
+        QMutexLocker lock(&mSpectrumH5MutexByDetector[i]);
+        mPendingH5ByDetector[i].clear();
+        mPendingH5ByDetector[i].reserve(kReserveH5PerDetector);
     }
-    mPendingNetRawByDetector.resize(DET_NUM + 1);
     for (int i = 1; i <= DET_NUM; ++i) {
         QMutexLocker lock(&mSpectrumRawMutexByDetector[i]);
         mPendingNetRawByDetector[i].clear();
+        mPendingNetRawByDetector[i].reserve(kReserveRawBytesPerDetector);
     }
 
     if (index == 0){
