@@ -9,6 +9,7 @@
 #include <QWaitCondition>
 #include <QThread>
 #include <QEventLoop>
+#include <array>
 #include "qhuaweiswitcherhelper.h"
 #include "dataprocessor.h"
 
@@ -247,7 +248,7 @@ private:
 
     // 每路探测器独立缓冲完整能谱转 H5 后的数据；后台线程每 10s 批量写入 HDF5
     QVector<QVector<H5Spectrum>> mPendingH5ByDetector;
-    QMutex mSpectrumH5Mutex;
+    std::array<QMutex, DET_NUM + 1> mSpectrumH5MutexByDetector;
     SpectrumH5FlushThread* mSpectrumH5FlushThread = nullptr;
     
     // 每路探测器原始能谱分包缓存；后台线程每 10s 批量写入 *.dat

@@ -405,8 +405,8 @@ void DataProcessor::mergeSubSpec_Thread(quint8 no, const QByteArray& data){
             mMergeSubSpecPacketCount.fetch_add(1, std::memory_order_relaxed);
         }
     };
-    commitStat(true);
-    return;
+    // commitStat(true);
+    // return;
     // 能谱数据：一个能谱数据包长度为256*32bit，但完整的能谱数据为8192*32bit。
     // 1. 提取数据包数据（256道 quint32 数据）
     quint32 spectrumSeq = 0;

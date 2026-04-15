@@ -87,7 +87,6 @@ CommHelper::CommHelper(QObject *parent)
                     // 3. 取消数据处理器关联
                     freeDataProcessor(connection);
 
-                    //qInfo().nospace() << "谱仪[#" << index << "]下线，已执行断开连接处理";
                     connection->setContext((void*)(intptr_t)index);
                     allocDataProcessor(connection);
                     index =  (qint8)(intptr_t)(connection->context());
@@ -332,7 +331,7 @@ void CommHelper::initDataProcessor()
             if (detID < 1 || detID > DET_NUM)
                 return;
             H5Spectrum h5Spectrum = FullSpectoH5Spec(fullSpectrum);
-            QMutexLocker lock(&mSpectrumH5Mutex);
+            QMutexLocker lock(&mSpectrumH5MutexByDetector[detID]);
             mPendingH5ByDetector[detID].append(h5Spectrum);
         }, Qt::DirectConnection);
 
@@ -383,14 +382,12 @@ void CommHelper::flushSpectrumH5BuffersOnWorkerThread(bool forceFlushAll)
     for (int det = 1; det <= DET_NUM; ++det) {
         QVector<H5Spectrum> pending;
         {
-            QMutexLocker lock(&mSpectrumH5Mutex);
+            QMutexLocker lock(&mSpectrumH5MutexByDetector[det]);
             mPendingH5ByDetector[det].swap(pending);
         }
         if (pending.isEmpty())
             continue;
-       settings->writeH5SpectrumBatch(static_cast<quint8>(det), pending);        
-        // qDebug().nospace() << "CommHelper writeH5SpectrumBatch det[" << det << "] count:"
-        //                     << pending.size() << " thread:" << QThread::currentThreadId();
+       settings->writeH5SpectrumBatch(static_cast<quint8>(det), pending);
     }
 }
 
@@ -422,6 +419,7 @@ void CommHelper::flushSpectrumRawBuffersOnWorkerThread(bool forceFlushAll)
 // 网口原始数据
 void CommHelper::onRawNetData(quint8 detID, const QByteArray& data)
 {
+    return;
     // 主线程汇总测量数据，后台线程每1s批量写入文件
     if (!mMeasuring || detID < 1 || detID > DET_NUM || data.isEmpty())
         return;
@@ -973,10 +971,11 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
     mMeasuring = true;
     // 初始化
     {
-        QMutexLocker lock(&mSpectrumH5Mutex);
         mPendingH5ByDetector.resize(DET_NUM + 1);
-        for (int i = 1; i <= DET_NUM; ++i)
+        for (int i = 1; i <= DET_NUM; ++i) {
+            QMutexLocker lock(&mSpectrumH5MutexByDetector[i]);
             mPendingH5ByDetector[i].clear();
+        }
     }
     {
         QMutexLocker lock(&mSpectrumRawMutex);
