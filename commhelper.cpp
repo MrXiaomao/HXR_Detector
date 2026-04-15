@@ -360,12 +360,12 @@ void CommHelper::initDataProcessor()
             &CommHelper::onRawNetData, Qt::DirectConnection);
 
         // 能谱数据
-        connect(processor, &DataProcessor::reportSpectrumData, this,
+        /*connect(processor, &DataProcessor::reportSpectrumData, this,
             &CommHelper::onSpectrumData, Qt::DirectConnection);
 
         // 波形数据包
         connect(processor, &DataProcessor::reportWaveformData, this, 
-            &CommHelper::onWaveformData, Qt::DirectConnection);
+            &CommHelper::onWaveformData, Qt::DirectConnection);*/
         
         // 配置参数数据包
         connect(processor, &DataProcessor::reportParamterData, this, [=](quint8 detID, const QByteArray& data){
@@ -422,14 +422,12 @@ void CommHelper::flushSpectrumRawBuffersOnWorkerThread(bool forceFlushAll)
 // 网口原始数据
 void CommHelper::onRawNetData(quint8 detID, const QByteArray& data)
 {
-    return; // 暂时屏蔽原始网络数据的保存，避免性能问题
-  
-    // 保存数据
-    if (mNetRawFileProcessor.contains(detID) && mNetRawFileProcessor[detID]->isOpen()){
-        qint64 bytesWritten = mNetRawFileProcessor[detID]->write((const char *)data.constData(), data.size());
-        // 每10秒或每1MB执行一次flush（改为每10秒），避免每次写入都flush影响性能
-        checkAndFlushNetRawFile(detID, bytesWritten);
-    }
+    // 主线程汇总测量数据，后台线程每1s批量写入文件
+    if (!mMeasuring || detID < 1 || detID > DET_NUM || data.isEmpty())
+        return;
+
+    QMutexLocker lock(&mSpectrumRawMutex);
+    mPendingSpectrumRawByDetector[detID].append(data);
 }
 
 // 处理温度数据超时报警
@@ -462,31 +460,31 @@ void CommHelper::onTemperatureTimeout(quint8 detID)
 }
 
 // 处理分包后的能谱数据包
-void CommHelper::onSpectrumData(quint8 detId, const QByteArray& data)
+void CommHelper::onSpectrumData(quint8 detID, const QByteArray& data)
 {
     // 主线程汇总能谱分包，后台线程每10s批量写入文件
-    if (!mMeasuring || detId < 1 || detId > DET_NUM || data.isEmpty())
+    if (!mMeasuring || detID < 1 || detID > DET_NUM || data.isEmpty())
         return;
 
     QMutexLocker lock(&mSpectrumRawMutex);
-    mPendingSpectrumRawByDetector[detId].append(data);
+    mPendingSpectrumRawByDetector[detID].append(data);
 }
 
 // 处理分包后的波形数据包
-void CommHelper::onWaveformData(quint8 detId, const QByteArray& data)
+void CommHelper::onWaveformData(quint8 detID, const QByteArray& data)
 {
     // 保存数据
-    if (mDetectFileProcessor[detId]->isOpen()){
-        qint64 bytesWritten = mDetectFileProcessor[detId]->write((const char *)data.constData(), data.size());
+    if (mDetectFileProcessor[detID]->isOpen()){
+        qint64 bytesWritten = mDetectFileProcessor[detID]->write((const char *)data.constData(), data.size());
         // 检查是否需要flush（每10秒或每1MB）
-        checkAndFlushDetectFile(detId, bytesWritten);
+        checkAndFlushDetectFile(detID, bytesWritten);
     }
 }
 
 // 处理解析后的粒子数据信息
-void CommHelper::onParticleInfo(quint8 detId, QVector<ParticleData>& particles)
+void CommHelper::onParticleInfo(quint8 detID, QVector<ParticleData>& particles)
 {
-    if (mDetectFileProcessor[detId]->isOpen()){
+    if (mDetectFileProcessor[detID]->isOpen()){
         for (const auto& particle : particles)
         {
             QString line = QString("%1,%2,%3\n")
@@ -494,14 +492,14 @@ void CommHelper::onParticleInfo(quint8 detId, QVector<ParticleData>& particles)
                             .arg(particle.energy)
                             .arg(particle.typeFlag);
             QByteArray lineData = line.toUtf8();
-            qint64 bytesWritten = mDetectFileProcessor[detId]->write((const char *)lineData.constData(), lineData.size());
-            checkAndFlushDetectFile(detId,bytesWritten);
+            qint64 bytesWritten = mDetectFileProcessor[detID]->write((const char *)lineData.constData(), lineData.size());
+            checkAndFlushDetectFile(detID,bytesWritten);
         }
     }
     
     // 上报计数
     quint32 num = particles.size();
-    emit reportParticle(detId, num);
+    emit reportParticle(detID, num);
 }
 
 /**
@@ -1057,24 +1055,6 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
 
         DataProcessor* detectorDataProcessor = mDetectorDataProcessor[index];
         if (!detectorDataProcessor->isFreeSocket()){
-            //创建网口数据文件存储
-            // if (!mNetRawFileProcessor.contains(index)){
-            //     QString filePath = QString("%1/%2/%3_%4_Net.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(index);
-            //     mNetRawFileProcessor[index] = new QFile(filePath);
-            //     mNetRawFileProcessor[index]->open(QIODevice::WriteOnly | QIODevice::Append); //覆盖式写入
-            //     mDataFileList.push_back(filePath);
-
-            //     // 初始化flush信息
-            //     {
-            //         QMutexLocker flushLocker(&mMutexFileFlush);
-            //         mFileFlushInfo[index] = FileFlushInfo();
-            //     }
-
-            //     QFileInfo info(filePath);
-            //     QString absolutePath = info.absoluteFilePath();
-            //     qDebug().nospace() << "谱仪[#"<< index << "]创建存储文件：" << absolutePath;
-            // }
-
             //创建有效网络数据文件存储
             if (!mDetectFileProcessor.contains(index)){
                 QString filePath = QString("%1/%2/%3_%4_能谱.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(index);
@@ -1163,57 +1143,6 @@ void CommHelper::checkAndFlushDetectFile(quint8 index, qint64 bytesWritten)
     }
 }
 
-// 对网口数据的flush进行检查和执行的辅助函数
-void CommHelper::checkAndFlushNetRawFile(quint8 index, qint64 bytesWritten)
-{
-    //打印线程号
-    qDebug() << "det[" << index << "] checkAndFlushDetectFile thread:" << QThread::currentThreadId() << " bytesWritten:" << bytesWritten;
-    const qint64 FLUSH_SIZE_THRESHOLD = 5*1024 * 1024; // Bytes
-    const qint64 FLUSH_TIME_THRESHOLD_MS = 10000; // 10秒
-    bool triggeredBySize = false;
-    bool triggeredByTime = false;
-    bool needFlush = false;
-    
-    // 快速检查：如果写入的数据很小，且还没有初始化flush信息，可能不需要检查
-    // 但这需要在锁内检查，所以我们还是需要加锁
-    
-    // 使用独立的锁来保护flush信息，尽量缩短锁的持有时间
-    {
-        QMutexLocker flushLocker(&mMutexFileFlush);
-        
-        // 初始化或更新flush信息（文件创建时已初始化，这里只是确保存在）
-        if (!mFileFlushInfo.contains(index)) {
-            mFileFlushInfo[index] = FileFlushInfo();
-        }
-        
-        FileFlushInfo& flushInfo = mFileFlushInfo[index];
-        flushInfo.bytesSinceLastFlush += bytesWritten;
-        
-        // 检查是否达到阈值
-        triggeredBySize = (flushInfo.bytesSinceLastFlush >= FLUSH_SIZE_THRESHOLD);
-        triggeredByTime = (flushInfo.lastFlushTimer.elapsed() >= FLUSH_TIME_THRESHOLD_MS);
-        needFlush = triggeredBySize || triggeredByTime;
-        
-        if (!needFlush) {
-            // 不需要flush，直接返回（锁在作用域结束时自动释放）
-            return;
-        }
-        
-        // 需要flush，重置计数器（锁仍持有）
-        flushInfo.bytesSinceLastFlush = 0;
-        flushInfo.lastFlushTimer.restart();
-    } // flushLocker在这里释放锁
-    
-    // 在锁外执行flush操作，避免锁持有时间过长
-    // 注意：mNetRawFileProcessor的访问由调用者的mMutexFileFlush锁保护
-    if (mNetRawFileProcessor.contains(index)) {
-        QFile* file = mNetRawFileProcessor[index];
-        if (file && file->isOpen()) {
-            file->flush();
-        }
-    }
-}
-
 /*
  停止测量
 */
@@ -1261,15 +1190,6 @@ void CommHelper::stopMeasure(quint8 index/* = 0*/)
                     });
                 }
             }
-
-            //关闭网络存储文件
-            if (mNetRawFileProcessor.contains(index)){
-                QFile* file = mNetRawFileProcessor[index];
-                file->flush();
-                file->close();
-                file->deleteLater();
-                mNetRawFileProcessor.remove(index);
-            }
         }
 
         mMeasuring = false;
@@ -1312,18 +1232,9 @@ void CommHelper::stopMeasure(quint8 index/* = 0*/)
                     mFileFlushInfo.remove(detIndex);
                 }
             });
-
-            //关闭网络存储文件
-            if (mNetRawFileProcessor.contains(index)){
-                QFile* file = mNetRawFileProcessor[index];
-                file->flush();
-                file->close();
-                file->deleteLater();
-                mNetRawFileProcessor.remove(index);
-            }
-
+            
             //关闭能谱文件
-            if (mNetRawFileProcessor.isEmpty()){
+            if (mDetectFileProcessor.isEmpty()){
                 mMeasuring = false;
                 HDF5Settings::instance()->closeH5Spectrum();
             }

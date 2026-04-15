@@ -272,7 +272,7 @@ void MainWindow::initUi()
         // 测量发次号是否自动增加
         bool flag = systemSettings.value("ShotNumIsAutoIncrease", true).toBool();
         ui->checkBox_autoIncrease->setChecked(flag);
-        
+
         // 发次号
         ui->lineEdit_shotNum->setText(systemSettings.value("ShotNumStr", "000").toString());
 
@@ -717,7 +717,7 @@ void MainWindow::initUi()
 
     //更新温度状态
     connect(commHelper, &CommHelper::reportDetectorTemperature, this, [=](quint8 index, float temperature){
-        if (index < 1 || index > DET_NUM)
+        if (index < 0 || index > DET_NUM) //注意，index=0对应时间触发模块
             return;
 
         // 仅缓存数据：回调里不做文件 IO，由QTimer每10秒统一写盘
@@ -1336,41 +1336,55 @@ void MainWindow::flushPendingLogs()
 {
     if (mPendingLogs.isEmpty())
         return;
+    
+    QPlainTextEdit* edit = ui->plainTextEdit_log;
 
-    ui->textEdit_log->setUpdatesEnabled(false);
-    QTextCursor cursor = ui->textEdit_log->textCursor();
+    edit->setUpdatesEnabled(false);   // 减少重绘
+
+    QTextCursor cursor = edit->textCursor();
     cursor.movePosition(QTextCursor::End);
 
-    QString normalColor = "black";
-    if (mIsDarkTheme)
-        normalColor = "white";
+    QTextCharFormat fmtNormal;
+    fmtNormal.setForeground(mIsDarkTheme ? Qt::white : Qt::black);
 
+    QTextCharFormat fmtError;
+    fmtError.setForeground(Qt::red);
+
+    QTextCharFormat fmtWarning;
+    fmtWarning.setForeground(Qt::blue);
+
+    // 批量插入（关键）
     for (const PendingLogEntry& item : qAsConst(mPendingLogs)) {
-        cursor.insertHtml(QString("<span style='color:%1;'>%2</span>").arg(normalColor, item.timeText + " >> "));
-        if (item.msgType == QtDebugMsg || item.msgType == QtInfoMsg)
-            cursor.insertHtml(QString("<span style='color:%1;'>%2</span>").arg(normalColor, item.msg));
-        else if (item.msgType == QtCriticalMsg || item.msgType == QtFatalMsg)
-            cursor.insertHtml(QString("<span style='color:#FF0000;'>%1</span>").arg(item.msg));
-        else
-            cursor.insertHtml(QString("<span style='color:#0000F0;'>%1</span>").arg(item.msg));
-        cursor.insertHtml("<br>");
+
+        // 时间部分（普通颜色）
+        cursor.setCharFormat(fmtNormal);
+        cursor.insertText(item.timeText);
+        cursor.insertText(" >> ");
+
+        // 内容部分（按类型着色）
+        if (item.msgType == QtCriticalMsg || item.msgType == QtFatalMsg) {
+            cursor.setCharFormat(fmtError);
+        }
+        else if (item.msgType == QtWarningMsg) {
+            cursor.setCharFormat(fmtWarning);
+        }
+        else {
+            cursor.setCharFormat(fmtNormal);
+        }
+
+        cursor.insertText(item.msg);
+        cursor.insertText("\n");
     }
+
     mPendingLogs.clear();
 
-    ui->textEdit_log->setTextCursor(cursor);
+    edit->setTextCursor(cursor);
 
-    QTextDocument *document = ui->textEdit_log->document();
-    int rowCount = document->blockCount();
-    int maxRowNumber = 2000;
-    if (rowCount > maxRowNumber) {
-        QTextCursor trimCursor(document);
-        trimCursor.movePosition(QTextCursor::Start);
-        for (int i = 0; i < rowCount - maxRowNumber; ++i) {
-            trimCursor.movePosition(QTextCursor::Down, QTextCursor::KeepAnchor);
-        }
-        trimCursor.removeSelectedText();
-    }
-    ui->textEdit_log->setUpdatesEnabled(true);
+    // 自动滚动到底部
+    edit->verticalScrollBar()->setValue(edit->verticalScrollBar()->maximum());
+    ui->plainTextEdit_log->document()->setMaximumBlockCount(2000);
+    
+    edit->setUpdatesEnabled(true);
 }
 
 
@@ -2061,12 +2075,8 @@ void MainWindow::applyColorTheme()
                 darkStyle.polish(palette);
             }
 
-            // 创建一个 QTextCursor
-            QTextCursor cursor = ui->textEdit_log->textCursor();
-            QTextDocument *document = cursor.document();
-            QString html = document->toHtml();
-            html = html.replace("color:#000000", "color:#ffffff");
-            document->setHtml(html);
+            ui->plainTextEdit_log->setStyleSheet(
+            "QPlainTextEdit { background-color: black; color: white; }");
         }
         else
         {
@@ -2081,11 +2091,8 @@ void MainWindow::applyColorTheme()
                 lightStyle.polish(palette);
             }
 
-            QTextCursor cursor = ui->textEdit_log->textCursor();
-            QTextDocument *document = cursor.document();
-            QString html = document->toHtml();
-            html = html.replace("color:#ffffff", "color:#000000");
-            document->setHtml(html);
+            ui->plainTextEdit_log->setStyleSheet(
+            "QPlainTextEdit { background-color: white; color: black; }");
         }
         //日志窗体
         QString styleSheet = mIsDarkTheme ?
@@ -2409,7 +2416,7 @@ void MainWindow::updateConnectButtonState(bool connected)
 // 清除日志
 void MainWindow::on_bt_clearLog_clicked()
 {
-    ui->textEdit_log->clear();
+    ui->plainTextEdit_log->clear();
     mPendingLogs.clear();
     clearHighlights();
     mLastSearchText.clear();
@@ -2468,7 +2475,7 @@ void MainWindow::performSearch(bool forward, bool wrap)
         return;
     }
 
-    QTextEdit *textEdit = ui->textEdit_log;
+    QPlainTextEdit *textEdit = ui->plainTextEdit_log;
     QTextDocument *document = textEdit->document();
     QTextCursor cursor = textEdit->textCursor();
 
@@ -2555,7 +2562,7 @@ void MainWindow::highlightAllMatches(const QString &searchText)
         return;
     }
 
-    QTextEdit *textEdit = ui->textEdit_log;
+    QPlainTextEdit *textEdit = ui->plainTextEdit_log;
     QTextDocument *document = textEdit->document();
 
     // 清除之前的高亮
@@ -2592,7 +2599,7 @@ void MainWindow::highlightAllMatches(const QString &searchText)
 void MainWindow::clearHighlights()
 {
     mExtraSelections.clear();
-    ui->textEdit_log->setExtraSelections(mExtraSelections);
+    ui->plainTextEdit_log->setExtraSelections(mExtraSelections);
 }
 
 // 能量刻度

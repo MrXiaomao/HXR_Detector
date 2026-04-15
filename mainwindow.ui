@@ -1626,14 +1626,7 @@
               <number>0</number>
              </property>
              <item>
-              <widget class="QTextEdit" name="textEdit_log">
-               <property name="enabled">
-                <bool>true</bool>
-               </property>
-               <property name="readOnly">
-                <bool>true</bool>
-               </property>
-              </widget>
+              <widget class="QPlainTextEdit" name="plainTextEdit_log"/>
              </item>
              <item>
               <widget class="QWidget" name="widget_2" native="true">
@@ -1802,7 +1795,7 @@
      <x>0</x>
      <y>0</y>
      <width>1431</width>
-     <height>18</height>
+     <height>21</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">

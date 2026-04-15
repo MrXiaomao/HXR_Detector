@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-12-29 22:08:10
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-01-25 18:57:24
+ * @LastEditTime: 2026-04-15 10:05:17
  * @Description: 用于能量刻度，可进行线性拟合、二次函数拟合，能量刻度点的添加、删除、拟合等功能
  */
 #include "energycalibration.h"
@@ -334,7 +334,7 @@ void EnergyCalibration::on_pushButton_fit_clicked()
     // 检查数据点数量
     if(points.size() < 2)
     {
-        ui->textEdit_log->append("拟合失败：数据点不足，至少需要2个数据点才能进行拟合\n\n");
+        ui->plainTextEdit_log->appendPlainText("拟合失败：数据点不足，至少需要2个数据点才能进行拟合\n\n");
         return;
     }
 
@@ -348,21 +348,11 @@ void EnergyCalibration::on_pushButton_fit_clicked()
         //第二个拟合函数
         if(points.size() < 3)
         {
-            ui->textEdit_log->append("拟合失败：二次函数拟合至少需要3个数据点\n\n");
+            ui->plainTextEdit_log->appendPlainText("拟合失败：二次函数拟合至少需要3个数据点\n\n");
             return;
         }
         calculate(2);
     }
-
-    /*
-    // 保存界面参数
-    QSettings mSettings("./config/Calibration.ini", QSettings::IniFormat);
-    mSettings.setValue("Table/count", ui->tableWidget->rowCount());
-    for (int i= 0; i<ui->tableWidget->rowCount(); ++i){
-        double x, y;
-        mSettings.setValue(QString("Table/channel%1").arg(i+1), ui->tableWidget->item(i, 0)->text());
-        mSettings.setValue(QString("Table/energy%1").arg(i+1), ui->tableWidget->item(i, 1)->text());
-    }*/
 }
 
 void EnergyCalibration::calculate(int no)
@@ -386,7 +376,7 @@ void EnergyCalibration::calculate(int no)
             else
                 fixedTextTtem->setText(QString("y = %1 * x - %2 \nR² = %3").arg(C[0]).arg(qAbs(C[1])).arg(R2));
             
-            // 更新textEdit_log
+            // 更新plainTextEdit_log
             QString logText = QString("========== 拟合信息 ==========\n");
             logText += QString("拟合类型: 线性拟合 (y = ax + b)\n");
             logText += QString("拟合参数:\n");
@@ -397,11 +387,11 @@ void EnergyCalibration::calculate(int no)
             // logText += QString("终止类型: %1\n").arg(rep.terminationtype);
             logText += QString("数据点数: %1\n").arg(points.size());
             logText += QString("=============================\n\n");
-            ui->textEdit_log->setText(logText);
+            ui->plainTextEdit_log->setPlainText(logText);
         }
         else
         {
-            ui->textEdit_log->setText("拟合失败：线性拟合计算错误\n\n");
+            ui->plainTextEdit_log->setPlainText("拟合失败：线性拟合计算错误\n\n");
         }
     }
     else if(no == 2) //二次函数拟合 y=ax^2+bx+c
@@ -420,7 +410,7 @@ void EnergyCalibration::calculate(int no)
 
             fixedTextTtem->setText(QString("y = %1 * x² + %2 * x + %3\nR² = %4").arg(C[0]).arg(C[1]).arg(C[2]).arg(R2));
             
-            // 更新textEdit_log
+            // 更新plainTextEdit_log
             QString logText = QString("========== 拟合信息 ==========\n");
             logText += QString("拟合类型: 二次函数拟合 (y = ax² + bx + c)\n");
             logText += QString("拟合参数:\n");
@@ -432,11 +422,11 @@ void EnergyCalibration::calculate(int no)
             // logText += QString("终止类型: %1\n").arg(rep.terminationtype);
             logText += QString("数据点数: %1\n").arg(points.size());
             logText += QString("=============================\n\n");
-            ui->textEdit_log->setText(logText);
+            ui->plainTextEdit_log->setPlainText(logText);
         }
         else
         {
-            ui->textEdit_log->setText("拟合失败：二次函数拟合计算错误\n\n");
+            ui->plainTextEdit_log->setPlainText("拟合失败：二次函数拟合计算错误\n\n");
         }
     }
 
@@ -680,7 +670,7 @@ void EnergyCalibration::on_detRadioButton_toggled(bool checked)
                     customPlot->replot();
 
                     // 清空日志
-                    ui->textEdit_log->clear();
+                    ui->plainTextEdit_log->clear();
                 }
                 
                 settings.endGroup();

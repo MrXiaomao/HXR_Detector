@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-04-20 09:21:28
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-03-09 10:00:57
+ * @LastEditTime: 2026-04-15 09:55:26
  * @Description: 离线数据分析
  */
 #include "neutronyieldstatisticswindow.h"
@@ -355,12 +355,8 @@ void NeutronYieldStatisticsWindow::applyColorTheme()
                 darkStyle.polish(palette);
             }
 
-            // 创建一个 QTextCursor
-            QTextCursor cursor = ui->textEdit_log->textCursor();
-            QTextDocument *document = cursor.document();
-            QString html = document->toHtml();
-            html = html.replace("color:#000000", "color:#ffffff");
-            document->setHtml(html);
+            ui->plainTextEdit_log->setStyleSheet(
+            "QPlainTextEdit { background-color: black; color: white; }");
         }
         else
         {
@@ -375,11 +371,8 @@ void NeutronYieldStatisticsWindow::applyColorTheme()
                 lightStyle.polish(palette);
             }
 
-            QTextCursor cursor = ui->textEdit_log->textCursor();
-            QTextDocument *document = cursor.document();
-            QString html = document->toHtml();
-            html = html.replace("color:#ffffff", "color:#000000");
-            document->setHtml(html);
+            ui->plainTextEdit_log->setStyleSheet(
+            "QPlainTextEdit { background-color: white; color: black; }");
         }
         //日志窗体
         QString styleSheet = mIsDarkTheme ?
@@ -464,43 +457,49 @@ void NeutronYieldStatisticsWindow::restoreSettings()
 
 void NeutronYieldStatisticsWindow::replyWriteLog(const QString &msg, QtMsgType msgType)
 {
-    // 创建一个 QTextCursor
-    QTextCursor cursor = ui->textEdit_log->textCursor();
-    // 将光标移动到文本末尾
+    QPlainTextEdit* edit = ui->plainTextEdit_log;
+
+    // 可选：减少刷新（高频日志建议保留）
+    edit->setUpdatesEnabled(false);
+
+    QTextCursor cursor = edit->textCursor();
     cursor.movePosition(QTextCursor::End);
 
-    // 先插入时间
-    QString color = "black";
-    if (mIsDarkTheme)
-        color = "white";
-    cursor.insertHtml(QString("<span style='color:%1;'>%2</span>").arg(color, QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz >> ")));
-    // 再插入文本
-    if (msgType == QtDebugMsg || msgType == QtInfoMsg)
-        cursor.insertHtml(QString("<span style='color:%1;'>%2</span>").arg(color, msg));
-    else if (msgType == QtCriticalMsg || msgType == QtFatalMsg)
-        cursor.insertHtml(QString("<span style='color:red;'>%1</span>").arg(msg));
-    else
-        cursor.insertHtml(QString("<span style='color:green;'>%1</span>").arg(msg));
+    // ===== 定义颜色 =====
+    QTextCharFormat fmtNormal;
+    fmtNormal.setForeground(mIsDarkTheme ? Qt::white : Qt::black);
 
-    // 最后插入换行符
-    cursor.insertHtml("<br>");
+    QTextCharFormat fmtError;
+    fmtError.setForeground(Qt::red);
 
-    // 确保 QTextEdit 显示了光标的新位置
-    ui->textEdit_log->setTextCursor(cursor);
+    QTextCharFormat fmtWarning;
+    fmtWarning.setForeground(Qt::green);
 
-    //限制行数
-    QTextDocument *document = ui->textEdit_log->document(); // 获取文档对象，想象成打开了一个TXT文件
-    int rowCount = document->blockCount(); // 获取输出区的行数
-    int maxRowNumber = 2000;//设定最大行
-    if(rowCount > maxRowNumber){//超过最大行则开始删除
-        QTextCursor cursor = QTextCursor(document); // 创建光标对象
-        cursor.movePosition(QTextCursor::Start); //移动到开头，就是TXT文件开头
+    // ===== 时间 =====
+    cursor.setCharFormat(fmtNormal);
+    cursor.insertText(QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz >> "));
 
-        for (int var = 0; var < rowCount - maxRowNumber; ++var) {
-            cursor.movePosition(QTextCursor::Down, QTextCursor::KeepAnchor); // 向下移动并选中当前行
-        }
-        cursor.removeSelectedText();//删除选择的文本
+    // ===== 内容 =====
+    if (msgType == QtCriticalMsg || msgType == QtFatalMsg) {
+        cursor.setCharFormat(fmtError);
     }
+    else if (msgType == QtWarningMsg) {
+        cursor.setCharFormat(fmtWarning);
+    }
+    else {
+        cursor.setCharFormat(fmtNormal);
+    }
+
+    cursor.insertText(msg);
+    cursor.insertText("\n");
+
+    edit->setTextCursor(cursor);
+
+    // 自动滚动
+    edit->verticalScrollBar()->setValue(edit->verticalScrollBar()->maximum());
+    // 限制最大行数
+    ui->plainTextEdit_log->document()->setMaximumBlockCount(2000);
+    edit->setUpdatesEnabled(true);
 }
 
 #include "QFlowLayout.h"

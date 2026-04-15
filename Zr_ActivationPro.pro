@@ -28,7 +28,6 @@ SOURCES += \
     mainwindow.cpp \
     neutronyieldcalibration.cpp \
     neutronyieldstatisticswindow.cpp \
-    offlinewindow.cpp \
     otaupgradewindow.cpp \
     parsedata.cpp \
     particalwindow.cpp \
@@ -54,7 +53,6 @@ HEADERS += \
     localsettingwindow.h \
     neutronyieldcalibration.h \
     neutronyieldstatisticswindow.h \
-    offlinewindow.h \
     otaupgradewindow.h \
     parsedata.h \
     particalwindow.h \
@@ -77,7 +75,6 @@ FORMS += \
     mainwindow.ui \
     neutronyieldcalibration.ui \
     neutronyieldstatisticswindow.ui \
-    offlinewindow.ui \
     otaupgradewindow.ui \
     particalwindow.ui \
     waveformwindow.ui

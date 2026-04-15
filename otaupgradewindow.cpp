@@ -195,45 +195,52 @@ QPixmap OTAUpgradeWindow::dblroundPixmap(QSize sz, QColor clrIn, QColor clrOut)
     return result;
 }
 
+#include <QScrollBar>
 void OTAUpgradeWindow::slotWriteLog(const QString &msg, QtMsgType msgType)
 {
-    // 创建一个 QTextCursor
-    QTextCursor cursor = ui->textEdit_log->textCursor();
-    // 将光标移动到文本末尾
+    QPlainTextEdit* edit = ui->plainTextEdit_log;
+
+    // 可选：减少刷新（高频日志建议保留）
+    edit->setUpdatesEnabled(false);
+
+    QTextCursor cursor = edit->textCursor();
     cursor.movePosition(QTextCursor::End);
 
-    // 先插入时间
-    QString color = "black";
-    if (mIsDarkTheme)
-        color = "white";
-    cursor.insertHtml(QString("<span style='color:%1;'>%2</span>").arg(color, QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz >> ")));
-    // 再插入文本
-    if (msgType == QtDebugMsg || msgType == QtInfoMsg)
-        cursor.insertHtml(QString("<span style='color:%1;'>%2</span>").arg(color, msg));
-    else if (msgType == QtCriticalMsg || msgType == QtFatalMsg)
-        cursor.insertHtml(QString("<span style='color:#FF0000;'>%1</span>").arg(msg));
-    else
-        cursor.insertHtml(QString("<span style='color:#0000F0;'>%1</span>").arg(msg));
+    // ===== 定义颜色 =====
+    QTextCharFormat fmtNormal;
+    fmtNormal.setForeground(mIsDarkTheme ? Qt::white : Qt::black);
 
-    // 最后插入换行符
-    cursor.insertHtml("<br>");
+    QTextCharFormat fmtError;
+    fmtError.setForeground(Qt::red);
 
-    // 确保 QTextEdit 显示了光标的新位置
-    ui->textEdit_log->setTextCursor(cursor);
+    QTextCharFormat fmtWarning;
+    fmtWarning.setForeground(Qt::green);
 
-    //限制行数
-    QTextDocument *document = ui->textEdit_log->document(); // 获取文档对象，想象成打开了一个TXT文件
-    int rowCount = document->blockCount(); // 获取输出区的行数
-    const int maxRowNumber = 2000;//设定最大行
-    if(rowCount > maxRowNumber){//超过最大行则开始删除
-        QTextCursor cursor = QTextCursor(document); // 创建光标对象
-        cursor.movePosition(QTextCursor::Start); //移动到开头，就是TXT文件开头
+    // ===== 时间 =====
+    cursor.setCharFormat(fmtNormal);
+    cursor.insertText(QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss.zzz >> "));
 
-        for (int var = 0; var < rowCount - 1000; ++var) {
-            cursor.movePosition(QTextCursor::Down, QTextCursor::KeepAnchor); // 向下移动并选中当前行
-        }
-        cursor.removeSelectedText();//删除选择的文本
+    // ===== 内容 =====
+    if (msgType == QtCriticalMsg || msgType == QtFatalMsg) {
+        cursor.setCharFormat(fmtError);
     }
+    else if (msgType == QtWarningMsg) {
+        cursor.setCharFormat(fmtWarning);
+    }
+    else {
+        cursor.setCharFormat(fmtNormal);
+    }
+
+    cursor.insertText(msg);
+    cursor.insertText("\n");
+
+    edit->setTextCursor(cursor);
+
+    // 自动滚动
+    edit->verticalScrollBar()->setValue(edit->verticalScrollBar()->maximum());
+    // 限制最大行数
+    ui->plainTextEdit_log->document()->setMaximumBlockCount(2000);
+    edit->setUpdatesEnabled(true);
 }
 
 #if MULI_THREAD // 同时升级

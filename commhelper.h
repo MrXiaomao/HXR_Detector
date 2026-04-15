@@ -244,11 +244,12 @@ private:
 
     QMap<quint8, DataProcessor*> mDetectorDataProcessor;//32路探测器数据处理器
     QMap<quint8, QFile*> mDetectFileProcessor;  //32路探测器的测量数据文件句柄，不包含温度数据的数据包，可以是：能谱数据、波形数据、粒子数据。
-    QMap<quint8, QFile*> mNetRawFileProcessor;  //32路探测器原始数据文件存储句柄，包含温度数据
+
     // 每路探测器独立缓冲完整能谱转 H5 后的数据；后台线程每 10s 批量写入 HDF5
     QVector<QVector<H5Spectrum>> mPendingH5ByDetector;
     QMutex mSpectrumH5Mutex;
     SpectrumH5FlushThread* mSpectrumH5FlushThread = nullptr;
+    
     // 每路探测器原始能谱分包缓存；后台线程每 10s 批量写入 *.dat
     QVector<QByteArray> mPendingSpectrumRawByDetector;
     QMutex mSpectrumRawMutex;
@@ -271,9 +272,6 @@ private:
 
     // 对测量数据的flush进行检查和执行的辅助函数
     void checkAndFlushDetectFile(quint8 index, qint64 bytesWritten);
-
-    // 对网口数据的flush进行检查和执行的辅助函数
-    void checkAndFlushNetRawFile(quint8 index, qint64 bytesWritten);
 
     /*
      初始化网络
