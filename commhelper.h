@@ -222,10 +222,12 @@ private slots:
 private:
     // 处理探测器断开连接的统一逻辑
     void handleDetectorDisconnection(quint8 index);
-
-    void flushSpectrumH5BuffersOnWorkerThread(bool forceFlushAll = false);
-    void flushSpectrumRawBuffersOnWorkerThread(bool forceFlushAll = false);
+    // 能谱数据落盘
+    void flushSpectrumH5BuffersOnWorkerThread(bool forceFlushAll = false); 
+    // 网口原始数据落盘
+    void flushNetRawBuffersOnWorkerThread(bool forceFlushAll = false); 
     QMutex mPeersMutex;
+    
 #if ENABLE_LIBHV
     hv::TcpServer *mTcpServer; // libhv服务器实例
     QVector<hv::SocketChannelPtr> mConnectionPeers; //客户端连接表
@@ -251,9 +253,9 @@ private:
     std::array<QMutex, DET_NUM + 1> mSpectrumH5MutexByDetector;
     SpectrumH5FlushThread* mSpectrumH5FlushThread = nullptr;
     
-    // 每路探测器原始能谱分包缓存；后台线程每 10s 批量写入 *.dat
-    QVector<QByteArray> mPendingSpectrumRawByDetector;
-    QMutex mSpectrumRawMutex;
+    // 每路探测器原始网口数据；后台线程定时批量写入 *.dat
+    QVector<QByteArray> mPendingNetRawByDetector;
+    std::array<QMutex, DET_NUM + 1> mSpectrumRawMutexByDetector;
     SpectrumRawFlushThread* mSpectrumRawFlushThread = nullptr;
 
     //记录手动关闭POE供电的探测器ID

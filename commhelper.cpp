@@ -36,7 +36,7 @@ protected:
             for (int ms = 0; ms < 1000 && !isInterruptionRequested(); ms += 100)
                 QThread::msleep(100);
             if (!isInterruptionRequested())
-                mOwner->flushSpectrumRawBuffersOnWorkerThread(false);
+                mOwner->flushNetRawBuffersOnWorkerThread(false);
         }
     }
 
@@ -51,7 +51,7 @@ CommHelper::CommHelper(QObject *parent)
     hlog_disable();
 
     mPendingH5ByDetector.resize(DET_NUM + 1);
-    mPendingSpectrumRawByDetector.resize(DET_NUM + 1);
+    mPendingNetRawByDetector.resize(DET_NUM + 1);
 
     /*初始化网络*/
     initSocket();
@@ -139,7 +139,7 @@ CommHelper::~CommHelper()
         mSpectrumRawFlushThread->requestInterruption();
         mSpectrumRawFlushThread->wait(30000);
     }
-    flushSpectrumRawBuffersOnWorkerThread(true);
+    flushNetRawBuffersOnWorkerThread(true);
 
     if (mSpectrumH5FlushThread) {
         mSpectrumH5FlushThread->requestInterruption();
@@ -391,7 +391,7 @@ void CommHelper::flushSpectrumH5BuffersOnWorkerThread(bool forceFlushAll)
     }
 }
 
-void CommHelper::flushSpectrumRawBuffersOnWorkerThread(bool forceFlushAll)
+void CommHelper::flushNetRawBuffersOnWorkerThread(bool forceFlushAll)
 {
     if (!mMeasuring && !forceFlushAll)
         return;
@@ -399,8 +399,8 @@ void CommHelper::flushSpectrumRawBuffersOnWorkerThread(bool forceFlushAll)
     for (int det = 1; det <= DET_NUM; ++det) {
         QByteArray pendingRaw;
         {
-            QMutexLocker lock(&mSpectrumRawMutex);
-            mPendingSpectrumRawByDetector[det].swap(pendingRaw);
+            QMutexLocker lock(&mSpectrumRawMutexByDetector[det]);
+            mPendingNetRawByDetector[det].swap(pendingRaw);
         }
         if (pendingRaw.isEmpty())
             continue;
@@ -424,8 +424,8 @@ void CommHelper::onRawNetData(quint8 detID, const QByteArray& data)
     if (!mMeasuring || detID < 1 || detID > DET_NUM || data.isEmpty())
         return;
 
-    QMutexLocker lock(&mSpectrumRawMutex);
-    mPendingSpectrumRawByDetector[detID].append(data);
+    QMutexLocker lock(&mSpectrumRawMutexByDetector[detID]);
+    mPendingNetRawByDetector[detID].append(data);
 }
 
 // 处理温度数据超时报警
@@ -464,8 +464,8 @@ void CommHelper::onSpectrumData(quint8 detID, const QByteArray& data)
     if (!mMeasuring || detID < 1 || detID > DET_NUM || data.isEmpty())
         return;
 
-    QMutexLocker lock(&mSpectrumRawMutex);
-    mPendingSpectrumRawByDetector[detID].append(data);
+    QMutexLocker lock(&mSpectrumRawMutexByDetector[detID]);
+    mPendingNetRawByDetector[detID].append(data);
 }
 
 // 处理分包后的波形数据包
@@ -977,11 +977,10 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
             mPendingH5ByDetector[i].clear();
         }
     }
-    {
-        QMutexLocker lock(&mSpectrumRawMutex);
-        mPendingSpectrumRawByDetector.resize(DET_NUM + 1);
-        for (int i = 1; i <= DET_NUM; ++i)
-            mPendingSpectrumRawByDetector[i].clear();
+    mPendingNetRawByDetector.resize(DET_NUM + 1);
+    for (int i = 1; i <= DET_NUM; ++i) {
+        QMutexLocker lock(&mSpectrumRawMutexByDetector[i]);
+        mPendingNetRawByDetector[i].clear();
     }
 
     if (index == 0){
@@ -1149,8 +1148,8 @@ void CommHelper::stopMeasure(quint8 index/* = 0*/)
 {
     // 停止前先将 H5 缓存落盘，避免累计在内存中
     flushSpectrumH5BuffersOnWorkerThread(true);
-    // 停止前先将能谱原始缓存落盘，避免尾包丢失
-    flushSpectrumRawBuffersOnWorkerThread(true);
+    // 停止前先将网口原始数据缓存落盘，避免尾包丢失
+    flushNetRawBuffersOnWorkerThread(true);
 
     //默认情况所有通道直接一次性停止测量
     if (index == 0){
@@ -1196,9 +1195,9 @@ void CommHelper::stopMeasure(quint8 index/* = 0*/)
     }
     else if (index >= 1 && index <= DET_NUM){ //关闭单个通道
         {
-            QMutexLocker lock(&mSpectrumRawMutex);
-            if (index < mPendingSpectrumRawByDetector.size())
-                mPendingSpectrumRawByDetector[index].clear();
+            QMutexLocker lock(&mSpectrumRawMutexByDetector[index]);
+            if (index < mPendingNetRawByDetector.size())
+                mPendingNetRawByDetector[index].clear();
         }
         DataProcessor* detectorDataProcessor = mDetectorDataProcessor[index];
         if (!detectorDataProcessor->isFreeSocket()){
