@@ -314,7 +314,7 @@ void DataProcessor::stopMeasure()
     mTempTimeoutTimer.stop();
 }
 
-void DataProcessor::sendCmdToSocket(CommandItem cmdItem) const
+void DataProcessor::sendCmdToSocket(CommandItem cmdItem, bool delayflag) const
 {
 #if ENABLE_LIBHV
     if (mTcpSocket->isOpened()){
@@ -323,7 +323,7 @@ void DataProcessor::sendCmdToSocket(CommandItem cmdItem) const
                                   .arg(mIndex)
                                   .arg(QString(cmdItem.data.toHex(' ')))
                                   .arg(cmdItem.name);
-        ::QThread::msleep(10);// 每条指令发送完成暂停10毫秒
+        if(delayflag) ::QThread::msleep(10);// 每条指令发送完成暂停10毫秒
     }
 #else
     if (mTcpSocket && mTcpSocket->isOpen()){
@@ -333,7 +333,7 @@ void DataProcessor::sendCmdToSocket(CommandItem cmdItem) const
                                   .arg(QString(cmdItem.data.toHex(' ')))
                                   .arg(cmdItem.name);
         mTcpSocket->waitForBytesWritten();
-        ::QThread::msleep(10);// 每条指令发送完成暂停10毫秒
+        if(delayflag) ::QThread::msleep(10);// 每条指令发送完成暂停10毫秒
     }
 #endif //ENABLE_LIBHV
 }

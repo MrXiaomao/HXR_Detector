@@ -72,11 +72,11 @@ CommandAdapter::~CommandAdapter()
 /*
  * 发送下一条指令
 */
-void CommandAdapter::pushCmd(CommandItem cmdItem)
+void CommandAdapter::pushCmd(CommandItem cmdItem, bool delayflag)
 {
-    QMutexLocker locket(&mCmdMutex);
+    // QMutexLocker locket(&mCmdMutex);
     //cmdPool.enqueue(cmdItem);//因为指令没有返回码，所以没必要加入堆栈
-    sendCmdToSocket(cmdItem);
+    sendCmdToSocket(cmdItem, delayflag);
 }
 
 /*
@@ -616,7 +616,7 @@ void CommandAdapter::sendStartMeasure(CommandAdapter::MeasureMode measureMode){
         askCurrentCmd = QByteArray::fromHex(QString("12 34 00 0F EA 10 00 00 00 02 AB CD").toUtf8());
     }
 
-    pushCmd({QString("开始测量指令"), askCurrentCmd});
+    pushCmd({QString("开始测量指令"), askCurrentCmd}, false);
     mIsMeasuring = true;
 
     //通知发送指令
@@ -650,7 +650,7 @@ void CommandAdapter::sendStopMeasure(){
     this->clear();
 
     QByteArray askCurrentCmd = QByteArray::fromHex(QString("12 34 00 0F EA 10 00 00 00 00 AB CD").toUtf8());
-    pushCmd({QString("停止测量指令"), askCurrentCmd});
+    pushCmd({QString("停止测量指令"), askCurrentCmd}, false);
 
     mAskStopMeasure = true;
     mIsMeasuring = false;

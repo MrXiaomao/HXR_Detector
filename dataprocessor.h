@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-11-13 11:36:00
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-04-10 21:52:49
+ * @LastEditTime: 2026-04-16 15:37:51
  * @Description: 处理界面与探测器之间的数据交互，包括网络数据、能谱数据、温度数据等，控制探测器的工作模式、参数设置、数据采集等
  */
 #ifndef DATAPROCESSOR_H
@@ -36,7 +36,7 @@ public:
     explicit DataProcessor(quint8 index, QTcpSocket* socket = nullptr, QObject *parent = nullptr);
     ~DataProcessor();
 
-    virtual void sendCmdToSocket(CommandItem cmdItem) const override;
+    virtual void sendCmdToSocket(CommandItem cmdItem, bool delayflag = true) const override;
 
     void reallocIndex(quint8 index);//重新分配通道索引
 #if ENABLE_LIBHV

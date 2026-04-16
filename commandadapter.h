@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-11-13 11:36:00
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-04-09 10:22:58
+ * @LastEditTime: 2026-04-16 15:42:52
  * @Description: 协议（下行指令 + 上行数据）、拆包（上行流式解析）、发指令 API
  */
 #ifndef COMMANDADAPTER_H
@@ -35,7 +35,7 @@ public:
     explicit CommandAdapter(quint8 index, QObject *parent = nullptr);
     ~CommandAdapter();
 
-    virtual void sendCmdToSocket(CommandItem cmdItem) const{};
+    virtual void sendCmdToSocket(CommandItem cmdItem, bool delayflag = true) const{};
 
 signals:
     void reportSpectrumData(quint8 index, const QByteArray&); // 上报能谱数据
@@ -166,7 +166,12 @@ public:
     void sendSwitchHost(HostProgram hostProgram = haMain);
 
    // 发送指令
-    void pushCmd(CommandItem cmdItem);
+   /**
+    * @brief pushCmd 发送指令
+    * @param cmdItem 待发送的指令项，包含指令名称和指令数据
+    * @param delayflag 是否需要在发送指令后等待响应，默认为true，如果为true则会在发送指令后阻塞sleep
+    */
+    void pushCmd(CommandItem cmdItem, bool delayflag = true);
 
    // 发送下一条指令
     void notifySendNextCmd();
@@ -215,7 +220,7 @@ private:
     static const QByteArray kspecTail;
 
     bool mAskStopMeasure = false; //是否请求结束测量(如果已经请求了结束测量，那么就有必要解析结束测量指令)
-    QVector<CommandItem> cmdPool;//发送指令等候区
+    QVector<CommandItem> cmdPool;//发送指令等候区, 暂时不再使用
 
     quint16 mWaveformLength = 512;//波形或能谱长度
 
