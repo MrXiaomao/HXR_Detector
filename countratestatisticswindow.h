@@ -1,4 +1,11 @@
-﻿#ifndef COUNTRATESTATISTICSWINDOW_H
+﻿/*
+ * @Author: MrPan
+ * @Date: 2026-03-15 13:35:25
+ * @LastEditors: Maoxiaoqing
+ * @LastEditTime: 2026-04-17 12:29:03
+ * @Description: 请填写简介
+ */
+#ifndef COUNTRATESTATISTICSWINDOW_H
 #define COUNTRATESTATISTICSWINDOW_H
 
 #include <QWidget>
@@ -10,6 +17,7 @@ class CountRateStatisticsWindow;
 }
 
 class QCustomPlot;
+class QCheckBox;
 class CountRateStatisticsWindow : public QMainWindow
 {
     Q_OBJECT
@@ -19,12 +27,9 @@ public:
     ~CountRateStatisticsWindow();
 
     void initUi();
-    void initCustomPlot(QCustomPlot* customPlot, QString axisXLabel, QString axisYLabel);
+    void initCustomPlot(QCustomPlot* customPlot, QString axisXLabel, QString axisYLabel, int startDetector, int endDetector);
     void applyColorTheme();
     void restoreSettings();
-
-    Q_SIGNAL void reporWriteLog(const QString &msg, QtMsgType msgType = QtDebugMsg);
-    Q_SLOT void replyWriteLog(const QString &msg, QtMsgType msgType = QtDebugMsg);
 
 private slots:
     void on_action_lightTheme_triggered();
@@ -35,13 +40,33 @@ private slots:
 
     void on_action_exit_triggered();
 
-    void on_action_startMeasure_triggered();
+    void on_action_startParse_triggered();
 
-    void on_action_stopMeasure_triggered();
+    void on_action_stopParse_triggered();
 
     void on_tableWidget_cellClicked(int row, int column);
 
+    void replyWriteLog(const QString &msg, QtMsgType msgType = QtDebugMsg);
+
+signals:
+    void sigWriteLog(const QString &msg, QtMsgType msgType = QtDebugMsg);
+    void reporWriteLog(const QString &msg, QtMsgType msgType = QtDebugMsg);
+
 private:
+    QPixmap roundPixmap(QSize sz, QColor clrOut);
+    /** 与 QCPGraph 笔一致的小线段图标（图例复选框用） */
+    QPixmap lineLegendPixmap(const QColor &color, Qt::PenStyle style, int penWidth);
+    void updateTableRowCount();
+    void clearAllPlots();
+    void plotAllDetectors();
+    void updateAllPlotVisibility();
+    void updatePlotVisibility(QCustomPlot* customPlot, int startDetector, int endDetector);
+    void createDetectorLegendCheckboxes();
+    void syncDetectorCheckboxes();
+    /** 原始/修正 全局复选框：全选或全不选对应列通道 */
+    void applyOriginalGlobalState(bool enableAll);
+    void applyCorrectGlobalState(bool enableAll);
+
     Ui::CountRateStatisticsWindow *ui;
     bool mIsDarkTheme = true;
     bool mThemeColorEnable = true;
@@ -53,6 +78,12 @@ private:
 
     QMap<quint8, QVector<double>> mMapSpectrum;
     QMap<quint8, QVector<double>> mMapSpectrumAdjust;
+
+    // 图例/表格单通道的开关状态（与全局 cb_countOriginalPlotShow / cb_countCorrectPlotShow 组合生效）
+    QVector<bool> mOriginalEnabled;
+    QVector<bool> mCorrectEnabled;
+    QVector<QCheckBox*> mOriginalLegendChecks;
+    QVector<QCheckBox*> mCorrectLegendChecks;
 };
 
 #endif // COUNTRATESTATISTICSWINDOW_H
