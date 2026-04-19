@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2026-01-14 09:21:28
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-04-17 17:56:57
+ * @LastEditTime: 2026-04-19 21:54:07
  * @Description: 计数率统计
  */
 #include "countratestatisticswindow.h"
@@ -364,8 +364,6 @@ void CountRateStatisticsWindow::createDetectorLegendCheckboxes()
     legendGrid->setContentsMargins(4, 2, 4, 2);
     legendGrid->setHorizontalSpacing(18);
     legendGrid->setVerticalSpacing(2);
-    // legendGrid->addWidget(new QLabel(tr("左列原始"), legendPanel), 0, 0);
-    // legendGrid->addWidget(new QLabel(tr("右列修正"), legendPanel), 0, 1);
 
     for (int detector = 1; detector <= DET_NUM; ++detector)
     {
@@ -682,9 +680,7 @@ void CountRateStatisticsWindow::clearAllPlots()
 
 void CountRateStatisticsWindow::updatePlotVisibility(QCustomPlot* customPlot, int startDetector, int endDetector)
 {
-    const bool showOriginalGlobal = ui->cb_countOriginalPlotShow->isChecked();
-    const bool showCorrectedGlobal = ui->cb_countCorrectPlotShow->isChecked();
-
+    // 可见性仅由每通道勾选决定；顶部 cb_countOriginalPlotShow / cb_countCorrectPlotShow 只做全选/全不选
     const int localCount = endDetector - startDetector + 1; // 16
     for (int localIndex = 0; localIndex < localCount; ++localIndex)
     {
@@ -693,10 +689,10 @@ void CountRateStatisticsWindow::updatePlotVisibility(QCustomPlot* customPlot, in
         const int correctedGraphIndex = kDetectorsPerPlot + localIndex; // 修正曲线：后加
 
         if (originalGraphIndex < customPlot->graphCount())
-            customPlot->graph(originalGraphIndex)->setVisible(showOriginalGlobal && mOriginalEnabled[det]);
+            customPlot->graph(originalGraphIndex)->setVisible(mOriginalEnabled[det]);
 
         if (correctedGraphIndex < customPlot->graphCount())
-            customPlot->graph(correctedGraphIndex)->setVisible(showCorrectedGlobal && mCorrectEnabled[det]);
+            customPlot->graph(correctedGraphIndex)->setVisible(mCorrectEnabled[det]);
     }
 }
 
@@ -712,26 +708,40 @@ void CountRateStatisticsWindow::updateAllPlotVisibility()
 
 void CountRateStatisticsWindow::plotAllDetectors()
 {
-    QVector<double> keys;
-    keys.reserve(kSpectrumPointCount);
-    for (int i = 0; i < kSpectrumPointCount; ++i)
-        keys << i;
-
     for (int det = 1; det <= DET_NUM; ++det)
     {
-        if (!mMapSpectrum.contains(det) || !mMapSpectrumAdjust.contains(det))
+        if (!mMapCount.contains(det) || mMapCount[det].isEmpty())
             continue;
+        if (!mMapCountCorrect.contains(det) || mMapCountCorrect[det].size() != mMapCount[det].size())
+            continue;
+
+        const QVector<QPair<double, double>> &origPairs = mMapCount[det];
+        const QVector<QPair<double, double>> &corrPairs = mMapCountCorrect[det];
+        const int n = origPairs.size();
+
+        QVector<double> timeSec;
+        QVector<double> yOriginal;
+        QVector<double> yCorrect;
+        timeSec.reserve(n);
+        yOriginal.reserve(n);
+        yCorrect.reserve(n);
+        for (int i = 0; i < n; ++i)
+        {
+            timeSec << origPairs[i].first;
+            yOriginal << origPairs[i].second;
+            yCorrect << corrPairs[i].second;
+        }
 
         QCustomPlot* targetPlot = det <= kDetectorsPerPlot ? ui->plot_up : ui->plot_down;
         const int localIndex = (det <= kDetectorsPerPlot ? det - 1 : det - kDetectorsPerPlot - 1);
-        const int originalGraphIndex = localIndex; // 原始曲线：先加
-        const int correctedGraphIndex = kDetectorsPerPlot + localIndex; // 修正曲线：后加
+        const int originalGraphIndex = localIndex;
+        const int correctedGraphIndex = kDetectorsPerPlot + localIndex;
 
         if (correctedGraphIndex >= targetPlot->graphCount())
             continue;
 
-        targetPlot->graph(originalGraphIndex)->setData(keys, mMapSpectrum[det]);
-        targetPlot->graph(correctedGraphIndex)->setData(keys, mMapSpectrumAdjust[det]);
+        targetPlot->graph(originalGraphIndex)->setData(timeSec, yOriginal);
+        targetPlot->graph(correctedGraphIndex)->setData(timeSec, yCorrect);
     }
 
     ui->plot_up->rescaleAxes(true);
@@ -941,8 +951,8 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
 {
     emit reporWriteLog(tr("开始解析..."));
     mInterrupted = false;
-    mMapSpectrum.clear();
-    mMapSpectrumAdjust.clear();
+    mMapCount.clear();
+    mMapCountCorrect.clear();
     clearAllPlots();
     qApp->setOverrideCursor(QCursor(Qt::WaitCursor));
     quint32 tmStart = ui->spinBox_timeStart->value();
@@ -992,19 +1002,19 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
             hsize_t mem_dims[2] = {1, cols};
             H5::DataSpace mem_space(2, mem_dims);
             uint32_t* row_data = new uint32_t[cols];
-            quint64 minV = quint32(-1);
-            quint64 maxV = 0;
-            double minVAdjust = quint32(-1);
+            double minV = 0.0;
+            double maxV = 0;
+            double minVAdjust = 0.0;
             double maxVAdjust = 0;
-            double minVDeathTime = quint32(-1);
+            double minVDeathTime = 0.0;
             double maxVDeathTime = 0;
             quint32 ref = 0;
             quint64 total = 0;
             double totalDeathTime = 0;
             double totalAdjust = 0;// 修正后
-            QVector<double> spectrumTotal(kSpectrumPointCount, 0);
-            QVector<double> spectrumTotalAdjust(kSpectrumPointCount, 0);
 
+            mMapCount[index].reserve(rows);
+            mMapCountCorrect[index].reserve(rows);
             for (hsize_t i = 0; i < rows;/* ++i*/) {
                 if (mInterrupted)
                 {
@@ -1023,8 +1033,8 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                 if (data->sequence >= tmStart && data->sequence <= tmEnd)
                 {
                     // 8. 对数据按秒进行重新分类
-                    quint64 totalTemp = 0;//计数
-                    double totalTempDeathT = 0;//死时间
+                    double totalTemp = 0.0; //计数
+                    double totalTempDeathT = 0;//死时间率，单位%
                     quint8 step = qMax<quint8>(1, 1000 / data->measureTime);
                     QVector<quint32> spectrum(kSpectrumPointCount, 0);// 能谱/s
                     quint32 deathTime = 0;// 死时间/s
@@ -1040,33 +1050,34 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                     spectrum[kSpectrumPointCount-1]=0; //最后一道置零
                     i += step;
 
-                    // 9. 能谱统计
-                    for (int j=0; j<kSpectrumPointCount; ++j)
-                    {
-                        // 9. 对数据进行累加，计数率
+                    for (int j = 0; j < kSpectrumPointCount; ++j)
                         totalTemp += spectrum[j];
-                        spectrumTotal[j] += spectrum[j];
-                        spectrumTotalAdjust[j] += (double)spectrum[j] * data->measureTime * 10e6 / (data->measureTime*10e6 - data->deathTime*10);
-                    }
+
+                    // 计数率 cps
+                    double countRate = totalTemp * 1.0 / data->measureTime*1000;
 
                     // 死时间率统计
-                    totalTempDeathT = (double)deathTime*10 / (data->measureTime*10e6);
-                    minVDeathTime = qMin(minVDeathTime, (double)totalTempDeathT);
-                    maxVDeathTime = qMax(maxVDeathTime, (double)totalTempDeathT);
+                    totalTempDeathT = deathTime * 10.0 / (data->measureTime*10e6) *100;
+                    minVDeathTime = qMin(minVDeathTime, totalTempDeathT);
+                    maxVDeathTime = qMax(maxVDeathTime, totalTempDeathT);
                     totalDeathTime += totalTempDeathT;
 
-                    // 9. 修正后10e6
-                    double totalSAdjust = 0;
-                    totalSAdjust = (double)totalTemp * data->measureTime * 10e6 / (data->measureTime*10e6 - data->deathTime*10);
+                    // 9. 修正后的计数率cps
+                    double countRateCorrect = 0;
+                    countRateCorrect = totalTemp * data->measureTime * 10e6 / (data->measureTime*10e6 - data->deathTime*10);
 
                     ++ref;
-                    minV = qMin(minV, (quint64)totalTemp);
-                    maxV = qMax(maxV, (quint64)totalTemp);
+                    minV = qMin(minV, totalTemp);
+                    maxV = qMax(maxV, totalTemp);
                     total += (quint64)totalTemp;
 
-                    minVAdjust = qMin((double)minVAdjust, (double)totalSAdjust);
-                    maxVAdjust = qMax((double)maxVAdjust, (double)totalSAdjust);
-                    totalAdjust += totalSAdjust;
+                    minVAdjust = qMin(minVAdjust, countRateCorrect);
+                    maxVAdjust = qMax(maxVAdjust, countRateCorrect);
+                    totalAdjust += countRateCorrect;
+                    
+                    double timeSec = data->sequence * data->measureTime / 1000.0;
+                    mMapCount[index].push_back(QPair(timeSec, countRate));
+                    mMapCountCorrect[index].push_back(QPair(timeSec, countRateCorrect));
                 }
                 else{
                     ++i;
@@ -1097,9 +1108,7 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
 
                 ui->tableWidget->item(index + 1, 7)->setText(QString::number(minVDeathTime, 'e', 2));
                 ui->tableWidget->item(index + 1, 8)->setText(QString::number(maxVDeathTime, 'e', 2));
-                ui->tableWidget->item(index + 1, 9)->setText(QString::number(totalDeathTime * 100 / ref, 'e', 2));
-                mMapSpectrum[index] = spectrumTotal;
-                mMapSpectrumAdjust[index] = spectrumTotalAdjust;
+                ui->tableWidget->item(index + 1, 9)->setText(QString::number(totalDeathTime / ref, 'e', 2));
             }
 
             delete[] row_data;

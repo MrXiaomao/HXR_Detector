@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2026-03-15 13:35:25
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-04-17 12:29:03
+ * @LastEditTime: 2026-04-19 21:41:50
  * @Description: 请填写简介
  */
 #ifndef COUNTRATESTATISTICSWINDOW_H
@@ -76,10 +76,11 @@ private:
     // 中断解析
     std::atomic<bool> mInterrupted = false;
 
-    QMap<quint8, QVector<double>> mMapSpectrum;
-    QMap<quint8, QVector<double>> mMapSpectrumAdjust;
+    /** 每通道：时间(s) -> 原始/修正计数率(cps)，用于曲线绘制 */
+    QMap<quint8, QVector<QPair<double, double>>> mMapCount;
+    QMap<quint8, QVector<QPair<double, double>>> mMapCountCorrect;
 
-    // 图例/表格单通道的开关状态（与全局 cb_countOriginalPlotShow / cb_countCorrectPlotShow 组合生效）
+    // 图例/表格单通道的开关状态（顶部两个复选框仅用于全选/全不选，不参与与运算）
     QVector<bool> mOriginalEnabled;
     QVector<bool> mCorrectEnabled;
     QVector<QCheckBox*> mOriginalLegendChecks;

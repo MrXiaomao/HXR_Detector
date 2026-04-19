@@ -182,7 +182,7 @@
           <property name="minimumSize">
            <size>
             <width>300</width>
-            <height>750</height>
+            <height>900</height>
            </size>
           </property>
           <property name="verticalScrollBarPolicy">
