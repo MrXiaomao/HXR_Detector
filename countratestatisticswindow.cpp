@@ -29,6 +29,8 @@
 namespace {
 constexpr int kDetectorsPerPlot = 16;
 constexpr int kSpectrumPointCount = 8192;
+/** 统计表每行高度（与 setFixedHeight 计算一致） */
+constexpr int kStatsTableRowHeight = 25;
 }
 
 CountRateStatisticsWindow::CountRateStatisticsWindow(bool isDarkTheme, QWidget *parent)
@@ -258,14 +260,14 @@ void CountRateStatisticsWindow::initUi()
     updateTableRowCount();
     for (int row=0; row<ui->tableWidget->rowCount(); ++row)
     {
-        ui->tableWidget->setRowHeight(row, 25);
+        ui->tableWidget->setRowHeight(row, kStatsTableRowHeight);
         if (row>=2)
         {
             ui->tableWidget->setItem(row, 0, new QTableWidgetItem(QString("#%1").arg(row-1)));
             ui->tableWidget->item(row, 0)->setTextAlignment(Qt::AlignCenter);
         }
     }
-    ui->tableWidget->setFixedHeight(650);
+    ui->tableWidget->setFixedHeight((DET_NUM + 2) * kStatsTableRowHeight);
     ui->leftStackedWidget->setMinimumWidth(582);
 
     ui->tableWidget->setSpan(0, 0, 2, 1);
