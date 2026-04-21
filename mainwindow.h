@@ -2,6 +2,7 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <vector>
 #include "commhelper.h"
 #include "clientpeerswindow.h"
 #include "detsettingwindow.h"
@@ -50,7 +51,7 @@ public:
     void restoreSettings();
     void initCustomPlot(int index, QCustomPlot* customPlot, QString axisXLabel, QString axisYLabel, QString title, int graphCount = 1);
     //清除全部图像数据（计数曲线、能谱曲线）
-    void clearCustomPlotData();
+    void clearCustomPlotData(const std::vector<int>& channels = {});
     void applyColorTheme();
 
     // 新增的探测器数据管理方法
@@ -234,6 +235,7 @@ private:
 
     //记录联网的探测器ID
     QVector<quint8> mOnlineDetectors;
+    
     //记录温度超时报警的探测器ID
     QVector<quint8> mTemperatureTimeoutDetectors;
     //记录探测器是否正在测量

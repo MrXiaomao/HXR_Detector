@@ -933,32 +933,41 @@ void MainWindow::initCustomPlot(int index, QCustomPlot* customPlot, QString axis
 }
 
 //清除全部图像数据（计数曲线、能谱曲线）
-void MainWindow::clearCustomPlotData()
+void MainWindow::clearCustomPlotData(const std::vector<int>& channels)
 {
-    for (int i = 0; i < DET_NUM; ++i)
-    {
+    auto clearDetectorGraphs = [this](int detectorId) {
         // 计数率图
-        {
-            QCustomPlot* customPlot = getCustomPlot(i, false);
+        QCustomPlot* customPlot = getCustomPlot(detectorId, false);
 
-            if (customPlot)
-            {
-                for (int g = 0; g < customPlot->graphCount(); ++g)
-                {
-                    customPlot->graph(g)->data()->clear();  // 只清数据
-                }
-            }
+        if (customPlot)
+        {
+            //确定探测器是哪根曲线
+            int graphIndex = detectorId>16? detectorId - 17 : detectorId-1;
+            customPlot->graph(graphIndex)->data()->clear();  // 只清数据
         }
 
         // 能谱图
-        QCustomPlot* customPlot = getCustomPlot(i, true);
+        customPlot = getCustomPlot(detectorId, true);
         if (customPlot)
         {
-            for (int g = 0; g < customPlot->graphCount(); ++g)
-            {
-                customPlot->graph(g)->data()->clear();  // 只清数据
-            }
+            //确定探测器是哪根曲线
+            int graphIndex = detectorId>16? detectorId - 17 : detectorId-1;
+            customPlot->graph(graphIndex)->data()->clear();  // 只清数据
         }
+    };
+
+    if (channels.empty()) {
+        for (int i = 0; i < DET_NUM; ++i) {
+            clearDetectorGraphs(i);
+        }
+        return;
+    }
+
+    for (int channel : channels) {
+        if (channel < 0 || channel > DET_NUM) {
+            continue;
+        }
+        clearDetectorGraphs(channel);
     }
 }
 
@@ -1633,11 +1642,26 @@ void MainWindow::on_action_startAllMeasure_triggered()
 // 自定义通道测量，单独测量部分通道
 void MainWindow::on_btn_startSelectedMeasure_clicked()
 {
-    m_specPlotRefreshTime = qMax((quint32)1000, (quint32)HDF5Settings::instance()->detParameters()[1].spectrumRefreshTime) / 1000;
-    //清空图像中的曲线数据
-    clearCustomPlotData();
-    updateSpectrumPlotSettings();
+    // 禁止定时测量模式
+    if(!ui->checkBox_continueMeasure->isChecked()){
+        ui->checkBox_continueMeasure->setChecked(true);
+        qInfo().nospace().noquote() << "自定义通道测量下禁用了定时测量，已自动勾选持续测量选项";
+    }
 
+    // 禁止自动测量模式
+    if(ui->cbb_measureMode->currentIndex() == 1){
+        ui->cbb_measureMode->setCurrentIndex(0);
+        qInfo().nospace().noquote() << "自定义通道测量下禁用了自动测量，已自动切换为手动测量模式";
+    }
+
+    //禁止外触发模式
+    if(ui->com_triggerModel->currentIndex() == 1){
+        ui->com_triggerModel->setCurrentIndex(0);
+        qInfo().nospace().noquote() << "自定义通道测量下禁用了外触发模式，已自动切换为软件触发模式";
+    }
+
+    m_specPlotRefreshTime = qMax((quint32)1000, (quint32)HDF5Settings::instance()->detParameters()[1].spectrumRefreshTime) / 1000;
+    
     //先检查路径有效性 lineEdit_filePath
     QString filePath = ui->lineEdit_filePath->text();
     QDir dir1(filePath);
@@ -1657,16 +1681,6 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
     // 保存测量数据
     QString savePath = QString(tr("%1/%2")).arg(shotDir).arg(shotNumStr);
     QDir dir(QString(tr("%1/%2")).arg(shotDir).arg(shotNumStr));
-    if (!dir.exists()) {
-        dir.mkpath(".");
-    }
-    // 保存温度数据
-    dir.setPath(QDir::currentPath() + "/temperature");
-    if (!dir.exists()) {
-        dir.mkpath(".");
-    }
-    // 保存网络数据
-    dir.setPath(QDir::currentPath() + "/cache/net");
     if (!dir.exists()) {
         dir.mkpath(".");
     }
@@ -1722,9 +1736,18 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
         return;
     }
 
+    // 仅清除本次选中通道的图像数据
+    std::vector<int> selectedChannels;
+    selectedChannels.reserve(validIndexes.size());
+    for (const auto &mi : validIndexes) {
+        selectedChannels.push_back(mi.row());
+    }
+    clearCustomPlotData(selectedChannels);
+    updateSpectrumPlotSettings();
+
     if (ui->action_waveformMode->isChecked())
     {
-        QString str = QString("开始测量，通道号：");
+        QStringList startedChannels;
         for (const auto &mi : validIndexes) {
             int row = mi.row();
             if (0 == row)
@@ -1742,17 +1765,20 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
                 if (!mMeasureTimer->isValid())
                     mMeasureTimer->start();
 
-                qInfo().noquote().nospace() << QStringLiteral("谱仪[#%1]开始测量，波形测量模式").arg(index);
                 commHelper->startMeasure(QDateTime::currentDateTime(), CommandAdapter::MeasureMode::mmManual, CommandAdapter::WorkMode::wmWaveform, index);
                 //记录下所选的通道号，保存到成员变量中，停止测量的时候使用并清空
                 m_selectedChannels.append(index);
+                startedChannels.append(QString::number(index));
             }
+        }
+        if (!startedChannels.isEmpty()) {
+            qInfo().noquote().nospace() << QStringLiteral("开始测量(波形模式)，通道号：%1").arg(startedChannels.join(","));
         }
     }
     else if (ui->action_spectrumMode->isChecked())
     {
-        QString str = QString("开始测量，通道号：");
-        for (const auto &mi : validIndexes) {
+        QStringList startedChannels;
+        for (const auto &mi : validIndexes) {          
             int row = mi.row();
             if (0 == row)
                 continue;
@@ -1774,26 +1800,15 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
                     misTimedMeasure = false;
                     // 初始化测量时长显示为 00:00:00
                     ui->edit_measureTime->setText("00:00:00");
-                    
-                    qInfo().noquote().nospace() << QString("谱仪[#%1]开始测量，连续测量模式").arg(index);
                 }
-                else
-                {
-                    // 读取倒计时时间（秒）
-                    int countdownSeconds = ui->spinBox_measureTime->value();
-                    if (countdownSeconds > 0) {
-                        mTotalCountdown = countdownSeconds;
-                        misTimedMeasure = true;
-                        // 初始化测量时长显示为 00:00:00
-                        ui->edit_measureTime->setText("00:00:00");
-                        qInfo().noquote().nospace() << QString("谱仪[#%1]开始测量，倒计时：%2 秒").arg(index).arg(countdownSeconds);
-                    }
-                }
-
                 commHelper->startMeasure(QDateTime::currentDateTime(), CommandAdapter::MeasureMode::mmManual, CommandAdapter::WorkMode::wmSpectrum, index);
                 //记录下所选的通道号，保存到成员变量中，停止测量的时候使用并清空
                 m_selectedChannels.append(index);
+                startedChannels.append(QString::number(index));
             }
+        }
+        if (!startedChannels.isEmpty()) {
+            qInfo().noquote().nospace() << QStringLiteral("开始测量(能谱模式)，连续测量模式，通道号：%1").arg(startedChannels.join(","));
         }
     }
 
@@ -1809,13 +1824,6 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
 //（自定义通道）停止测量，停止测量已选中的通道
 void MainWindow::on_btn_stopSelectedMeasure_clicked()
 {
-    if(mEnableAutoMeasure){
-        qInfo().noquote() << "自动化测量已停止";
-    }
-    else{
-        qInfo().noquote() << "手动测量已停止";
-    }
-
     // 显示最终测量时长
     int elapsedSeconds = mMeasureTimer->elapsed() / 1000;
     ui->edit_measureTime->setText(formatTimeString(elapsedSeconds));
@@ -1850,17 +1858,20 @@ void MainWindow::on_btn_stopSelectedMeasure_clicked()
             validIndexes.append(mi);
     }
 
-    //打印日志
-
+    QStringList stoppedChannels;
     for (const auto &mi : validIndexes) {
         int row = mi.row();
         if (0 == row)
             continue;
 
         quint8 index = row;
-        qInfo().noquote().nospace() << QString("谱仪[#%1]点击停止测量").arg(index);
         commHelper->stopMeasure(index);
         m_selectedChannels.removeOne(index);
+        stoppedChannels.append(QString::number(index));
+    }
+
+    if (!stoppedChannels.isEmpty()) {
+        qInfo().noquote().nospace() << QStringLiteral("结束（自定义通道）测量，通道号：%1").arg(stoppedChannels.join(","));
     }
 
     if (m_selectedChannels.empty()){
@@ -1872,8 +1883,8 @@ void MainWindow::on_btn_stopSelectedMeasure_clicked()
         ui->action_waveformMode->setEnabled(true);
         ui->action_particalMode->setEnabled(true);
     }
-
-    ui->btn_startSelectedMeasure->setEnabled(true);
+    
+    // ui->btn_startSelectedMeasure->setEnabled(true);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
     ui->btn_stopSelectedMeasure->setEnabled(false);
     ui->action_startAllMeasure->setEnabled(true);
     ui->action_stopAllMeasure->setEnabled(false);
