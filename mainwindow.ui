@@ -438,7 +438,7 @@
             </widget>
            </item>
            <item>
-            <widget class="QPushButton" name="pushButton_startMeasure">
+            <widget class="QPushButton" name="btn_startSelectedMeasure">
              <property name="text">
               <string>开始实验</string>
              </property>
@@ -449,7 +449,7 @@
             </widget>
            </item>
            <item>
-            <widget class="QPushButton" name="pushButton_stopMeasure">
+            <widget class="QPushButton" name="btn_stopSelectedMeasure">
              <property name="text">
               <string>停止实验</string>
              </property>
@@ -1892,8 +1892,8 @@
    <addaction name="action_powerOn"/>
    <addaction name="action_powerOff"/>
    <addaction name="separator"/>
-   <addaction name="action_startMeasure"/>
-   <addaction name="action_stopMeasure"/>
+   <addaction name="action_startAllMeasure"/>
+   <addaction name="action_stopAllMeasure"/>
    <addaction name="separator"/>
    <addaction name="action_exit"/>
   </widget>
@@ -2023,7 +2023,7 @@
     <enum>QAction::NoRole</enum>
    </property>
   </action>
-  <action name="action_startMeasure">
+  <action name="action_startAllMeasure">
    <property name="icon">
     <iconset resource="../3rdParty/resource/resource.qrc">
      <normaloff>:/work-on.png</normaloff>:/work-on.png</iconset>
@@ -2038,7 +2038,7 @@
     <enum>QAction::NoRole</enum>
    </property>
   </action>
-  <action name="action_stopMeasure">
+  <action name="action_stopAllMeasure">
    <property name="icon">
     <iconset resource="../3rdParty/resource/resource.qrc">
      <normaloff>:/work-off.png</normaloff>:/work-off.png</iconset>

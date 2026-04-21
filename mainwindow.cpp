@@ -53,10 +53,10 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     ui->action_powerOn->setEnabled(false);
     ui->action_powerOff->setEnabled(false);
     ui->action_disconnect->setEnabled(false);
-    ui->action_startMeasure->setEnabled(false);
-    ui->action_stopMeasure->setEnabled(false);
-    ui->pushButton_startMeasure->setEnabled(false);
-    ui->pushButton_stopMeasure->setEnabled(false);
+    ui->action_startAllMeasure->setEnabled(false);
+    ui->action_stopAllMeasure->setEnabled(false);
+    ui->btn_startSelectedMeasure->setEnabled(false);
+    ui->btn_stopSelectedMeasure->setEnabled(false);
 
     // 初始化连接按钮状态（未连接状态）
     updateConnectButtonState(false);
@@ -1104,9 +1104,9 @@ void MainWindow::onSwitcherLogged(const QString& ip)
         commHelper->openPower();
 
         // 第三步 30s之后开始自动测量
-        ui->action_stopMeasure->setEnabled(false);
+        ui->action_stopAllMeasure->setEnabled(false);
         QTimer::singleShot(30000, this, [=](){
-            ui->action_stopMeasure->setEnabled(true);
+            ui->action_stopAllMeasure->setEnabled(true);
 
             /// 开始测量
             this->startMeasure();
@@ -1418,11 +1418,11 @@ void MainWindow::on_action_startServer_triggered()
     if (commHelper->startServer()){
         ui->action_startServer->setEnabled(false);
         ui->action_stopServer->setEnabled(true);
-        ui->action_startMeasure->setEnabled(true);
-        ui->action_stopMeasure->setEnabled(true);
+        ui->action_startAllMeasure->setEnabled(true);
+        ui->action_stopAllMeasure->setEnabled(true);
         ui->action_connectSwitch->setEnabled(true);
-        ui->pushButton_startMeasure->setEnabled(true);
-        ui->pushButton_stopMeasure->setEnabled(true);
+        ui->btn_startSelectedMeasure->setEnabled(true);
+        ui->btn_stopSelectedMeasure->setEnabled(true);
 
         QLabel* label_LocalServer = this->findChild<QLabel*>("label_LocalServer");
         label_LocalServer->setStyleSheet("color:#00ff00;");
@@ -1459,10 +1459,10 @@ void MainWindow::on_action_stopServer_triggered()
 
     ui->action_startServer->setEnabled(true);
     ui->action_stopServer->setEnabled(false);
-    ui->action_startMeasure->setEnabled(false);
-    ui->action_stopMeasure->setEnabled(false);
-    ui->pushButton_startMeasure->setEnabled(false);
-    ui->pushButton_stopMeasure->setEnabled(false);
+    ui->action_startAllMeasure->setEnabled(false);
+    ui->action_stopAllMeasure->setEnabled(false);
+    ui->btn_startSelectedMeasure->setEnabled(false);
+    ui->btn_stopSelectedMeasure->setEnabled(false);
 
     QLabel* label_LocalServer = this->findChild<QLabel*>("label_LocalServer");
     label_LocalServer->setStyleSheet("color:#ff0000;");
@@ -1520,10 +1520,10 @@ void MainWindow::onTriggerModelChanged(int index)
 }
 
 // 开始测量 全部通道测量
-void MainWindow::on_action_startMeasure_triggered()
+void MainWindow::on_action_startAllMeasure_triggered()
 {
     //打印线程编号
-    qDebug() << "MainWindow::on_action_startMeasure_triggered(), thread id:" << QThread::currentThreadId();
+    qDebug() << "MainWindow::on_action_startAllMeasure_triggered(), thread id:" << QThread::currentThreadId();
     clearCustomPlotData();
     updateSpectrumPlotSettings();
     //先检查路径有效性 lineEdit_filePath
@@ -1562,8 +1562,8 @@ void MainWindow::on_action_startMeasure_triggered()
         qInfo().nospace().noquote() << tr("开启手动测量");
     }
 
-    ui->action_startMeasure->setEnabled(false);
-    ui->action_stopMeasure->setEnabled(true);
+    ui->action_startAllMeasure->setEnabled(false);
+    ui->action_stopAllMeasure->setEnabled(true);
     ui->dateTime_shotTime->setEnabled(false);
     ui->com_triggerModel->setEnabled(false);
     ui->lineEdit_shotNum->setEnabled(false);
@@ -1573,8 +1573,8 @@ void MainWindow::on_action_startMeasure_triggered()
     ui->lineEdit_filePath->setEnabled(false);
     ui->dateTimeEdit_startTime->setEnabled(false);
     ui->cbb_measureMode->setEnabled(false);
-    ui->pushButton_startMeasure->setEnabled(false);
-    ui->pushButton_stopMeasure->setEnabled(false);
+    ui->btn_startSelectedMeasure->setEnabled(false);
+    ui->btn_stopSelectedMeasure->setEnabled(false);
     ui->action_waveformMode->setEnabled(false);
     ui->action_particalMode->setEnabled(false);
     ui->spinBox_coolTimeLength->setEnabled(false);
@@ -1610,8 +1610,8 @@ void MainWindow::on_action_startMeasure_triggered()
     }
 }
 
-//单通道测量，单独测量某个通道
-void MainWindow::on_pushButton_startMeasure_clicked()
+// 自定义通道测量，单独测量部分通道
+void MainWindow::on_btn_startSelectedMeasure_clicked()
 {
     m_specPlotRefreshTime = qMax((quint32)1000, (quint32)HDF5Settings::instance()->detParameters()[1].spectrumRefreshTime) / 1000;
     //清空图像中的曲线数据
@@ -1778,16 +1778,16 @@ void MainWindow::on_pushButton_startMeasure_clicked()
     }
 
     // 测量中禁用参数配置
-    ui->pushButton_stopMeasure->setEnabled(true);
-    ui->action_startMeasure->setEnabled(false);
-    ui->action_stopMeasure->setEnabled(false);
+    ui->btn_stopSelectedMeasure->setEnabled(true);
+    ui->action_startAllMeasure->setEnabled(false);
+    ui->action_stopAllMeasure->setEnabled(false);
     ui->action_waveformMode->setEnabled(false);
     ui->action_particalMode->setEnabled(false);
 }
 
 
 //（自定义通道）停止测量，停止测量已选中的通道
-void MainWindow::on_pushButton_stopMeasure_clicked()
+void MainWindow::on_btn_stopSelectedMeasure_clicked()
 {
     if(mEnableAutoMeasure){
         qInfo().noquote() << "自动化测量已停止";
@@ -1845,25 +1845,25 @@ void MainWindow::on_pushButton_stopMeasure_clicked()
 
     if (m_selectedChannels.empty()){
         // 非测量中可用参数配置
-        ui->action_startMeasure->setEnabled(true);
-        ui->action_stopMeasure->setEnabled(false);
+        ui->action_startAllMeasure->setEnabled(true);
+        ui->action_stopAllMeasure->setEnabled(false);
 
-        ui->pushButton_stopMeasure->setEnabled(false);
+        ui->btn_stopSelectedMeasure->setEnabled(false);
         ui->action_waveformMode->setEnabled(true);
         ui->action_particalMode->setEnabled(true);
     }
 
-    ui->pushButton_startMeasure->setEnabled(true);
-    ui->pushButton_stopMeasure->setEnabled(false);
-    ui->action_startMeasure->setEnabled(true);
-    ui->action_stopMeasure->setEnabled(false);
+    ui->btn_startSelectedMeasure->setEnabled(true);
+    ui->btn_stopSelectedMeasure->setEnabled(false);
+    ui->action_startAllMeasure->setEnabled(true);
+    ui->action_stopAllMeasure->setEnabled(false);
 }
 
 
-void MainWindow::on_action_stopMeasure_triggered()
+void MainWindow::on_action_stopAllMeasure_triggered()
 {
-    ui->action_startMeasure->setEnabled(true);
-    ui->action_stopMeasure->setEnabled(false);
+    ui->action_startAllMeasure->setEnabled(true);
+    ui->action_stopAllMeasure->setEnabled(false);
     ui->com_triggerModel->setEnabled(true);
     ui->lineEdit_shotNum->setEnabled(true);
     ui->checkBox_autoIncrease->setEnabled(true);
@@ -1871,8 +1871,8 @@ void MainWindow::on_action_stopMeasure_triggered()
     ui->lineEdit_filePath->setEnabled(true);
     ui->dateTimeEdit_startTime->setEnabled(false);
     ui->cbb_measureMode->setEnabled(true);
-    ui->pushButton_startMeasure->setEnabled(true);
-    ui->pushButton_stopMeasure->setEnabled(false);
+    ui->btn_startSelectedMeasure->setEnabled(true);
+    ui->btn_stopSelectedMeasure->setEnabled(false);
     ui->action_waveformMode->setEnabled(true);
     ui->action_particalMode->setEnabled(true);
     ui->spinBox_measureTime->setEnabled(!ui->checkBox_continueMeasure->isChecked());
@@ -1893,7 +1893,7 @@ void MainWindow::on_action_stopMeasure_triggered()
         qInfo().nospace().noquote() << tr("停止手动测量");
     }
 
-    ui->action_startMeasure->setEnabled(true);
+    ui->action_startAllMeasure->setEnabled(true);
 
     // 停止测量
     stopMeasure();
@@ -1948,10 +1948,10 @@ void MainWindow::onMeasureCountdownTimeout()
         //清空探测器正在测量记录
         mDetectorMeasuring.clear();
 
-        ui->action_startMeasure->setEnabled(true);
-        ui->action_stopMeasure->setEnabled(false);
-        ui->pushButton_startMeasure->setEnabled(true);
-        ui->pushButton_stopMeasure->setEnabled(false);
+        ui->action_startAllMeasure->setEnabled(true);
+        ui->action_stopAllMeasure->setEnabled(false);
+        ui->btn_startSelectedMeasure->setEnabled(true);
+        ui->btn_stopSelectedMeasure->setEnabled(false);
         ui->dateTime_shotTime->setEnabled(false);
         ui->com_triggerModel->setEnabled(true);
         ui->lineEdit_shotNum->setEnabled(true);

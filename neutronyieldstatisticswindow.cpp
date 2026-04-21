@@ -244,7 +244,7 @@ void NeutronYieldStatisticsWindow::initUi()
         ui->tableWidget->setItem(row, 0, new QTableWidgetItem(QString("#%1").arg(row+1)));
         ui->tableWidget->item(row, 0)->setTextAlignment(Qt::AlignCenter);
     }
-    ui->tableWidget->setFixedHeight(625);
+    ui->tableWidget->setFixedHeight((32+1)*25); //表头1行加32行探测器
     ui->leftStackedWidget->setMinimumWidth(200);
 
     // 连接表格选择变化信号

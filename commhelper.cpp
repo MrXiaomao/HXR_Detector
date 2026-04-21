@@ -164,7 +164,7 @@ void CommHelper::initSocket()
     mTcpServer->onConnection = [&](const hv::SocketChannelPtr& channel)
     {
         if (channel->isConnected()){// isOpened()){// ->status == hv::SocketChannel::CONNECTED){
-            channel->setKeepaliveTimeout(5000);// 5s没有数据交互就断开
+            // channel->setKeepaliveTimeout(5000);// 5s没有数据交互就断开
 
             QString peerAddress = QString::fromStdString(channel->peerip());
             quint16 peerPort = channel->peerport();

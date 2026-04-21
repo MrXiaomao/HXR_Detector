@@ -320,6 +320,46 @@
             <string>谱仪#24</string>
            </property>
           </row>
+          <row>
+           <property name="text">
+            <string>新建行</string>
+           </property>
+          </row>
+          <row>
+           <property name="text">
+            <string>谱仪#25</string>
+           </property>
+          </row>
+          <row>
+           <property name="text">
+            <string>谱仪#26</string>
+           </property>
+          </row>
+          <row>
+           <property name="text">
+            <string>谱仪#27</string>
+           </property>
+          </row>
+          <row>
+           <property name="text">
+            <string>谱仪#28</string>
+           </property>
+          </row>
+          <row>
+           <property name="text">
+            <string>谱仪#29</string>
+           </property>
+          </row>
+          <row>
+           <property name="text">
+            <string>谱仪#30</string>
+           </property>
+          </row>
+          <row>
+           <property name="text">
+            <string>谱仪#32</string>
+           </property>
+          </row>
           <column>
            <property name="text">
             <string>序号</string>

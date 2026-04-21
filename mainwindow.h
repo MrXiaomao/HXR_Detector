@@ -120,13 +120,13 @@ private slots:
     // 触发模式选择：软件触发/外触发
     void onTriggerModelChanged(int index);
     // 全通道开始测量
-    void on_action_startMeasure_triggered();
+    void on_action_startAllMeasure_triggered();
     // 全通道停止测量
-    void on_action_stopMeasure_triggered();
+    void on_action_stopAllMeasure_triggered();
     // 自定义通道开始测量
-    void on_pushButton_startMeasure_clicked();
+    void on_btn_startSelectedMeasure_clicked();
     // 自定义通道停止测量
-    void on_pushButton_stopMeasure_clicked();
+    void on_btn_stopSelectedMeasure_clicked();
     // 打开所有通道POE电源
     void on_action_powerOn_triggered();
     // 关闭所有通道POE电源
