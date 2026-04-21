@@ -746,6 +746,10 @@ bool CommHelper::closeSwitcherPOEPower(quint8 index)
 bool CommHelper::openSwitcherExtendPOEPower()
 {
     mExtendTimeSynModule.reload();
+    //检查是否存在
+    if(mHuaWeiSwitcherHelper.isEmpty() || mExtendTimeSynModule.switcherIndex <= 0 || mExtendTimeSynModule.switcherIndex > mHuaWeiSwitcherHelper.size()){
+        return false;
+    }
     return mHuaWeiSwitcherHelper[mExtendTimeSynModule.switcherIndex-1]->openSwitcherPOEPower(mExtendTimeSynModule.poeIndex);
 }
 

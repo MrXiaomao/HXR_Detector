@@ -494,13 +494,13 @@ void MainWindow::initUi()
     }
     ui->tableWidget_detector->setRowHeight(0, 50);
     ui->tableWidget_detector->verticalHeaderItem(0)->setText("时间同步\n触发模块");
-    ui->tableWidget_detector->setMinimumHeight(DET_NUM*25+2);
+    ui->tableWidget_detector->setMinimumHeight((DET_NUM+3)*25+2);
 
     for (int row=0; row<ui->tableWidget_detector->rowCount(); ++row){
         for (int column=0; column<=3; ++column){
             if (column == 0){
                 SwitchButton* cell = new SwitchButton();
-                cell->setObjectName(QStringLiteral("poeSwitcher%1").arg(column));
+                cell->setObjectName(QStringLiteral("poeSwitcher%1").arg(row));
                 if (row == 0)
                     cell->setContentsMargins(5, 12, 5, 12);
                 else
@@ -513,13 +513,17 @@ void MainWindow::initUi()
                         // 时间同步模块
                         if (!cell->getChecked())
                         {
-                            commHelper->openSwitcherExtendPOEPower();
-                            qInfo().nospace() << "时间同步触发模块手动打开POE供电";
+                            if(commHelper->openSwitcherExtendPOEPower())
+                                qInfo().nospace() << "时间同步触发模块手动打开POE供电";
+                            else
+                                qInfo().nospace() <<"尝试打开时间同步触发模块失败，交换机未连接";
                         }
                         else
                         {
-                            commHelper->closeSwitcherExtendPOEPower();
-                            qInfo().nospace() << "时间同步触发模块手动关闭POE供电";
+                            if(commHelper->closeSwitcherExtendPOEPower())
+                                qInfo().nospace() << "时间同步触发模块手动关闭POE供电";
+                            else
+                                qInfo().nospace() <<"尝试关闭时间同步触发模块失败，交换机未连接";
                         }
                     }
                     else
@@ -528,18 +532,23 @@ void MainWindow::initUi()
                             if (commHelper->openSwitcherPOEPower(row))
                             {
                                 commHelper->manualOpenSwitcherPOEPower(row);
-                                //cell->setChecked(true);
                                 //打印日志
                                 qInfo().nospace() << "谱仪[#" << row << "]手动打开POE供电";
+                            }
+                            else{
+                                qInfo().nospace() <<"尝试打开谱仪[#" << row << "]的POE供电失败，交换机未连接";
+                                cell->setChecked(false);
                             }
                         }
                         else{
                             if (commHelper->closeSwitcherPOEPower(row))
                             {
                                 commHelper->manualCloseSwitcherPOEPower(row);
-                                //cell->setChecked(false);
-                                //打印日志
                                 qInfo().nospace() << "谱仪[#" << row << "]手动关闭POE供电";
+                            }
+                            else{
+                                qInfo().nospace() <<"尝试关闭谱仪[#" << row << "]的POE供电失败，交换机未连接";
+                                cell->setChecked(true);
                             }
                         }
                     }
@@ -1168,7 +1177,18 @@ void MainWindow::onDetectorOffline(quint8 index)
 void MainWindow::onPoePowerStatusReport(quint8 index, bool on)
 {
     int row = index;
-    SwitchButton* cell =  qobject_cast<SwitchButton*>(ui->tableWidget_detector->cellWidget(row, 0));
+    if (row < 0 || row >= ui->tableWidget_detector->rowCount()) {
+        qWarning().nospace() << "忽略无效POE状态上报，index=" << index
+                             << ", rowCount=" << ui->tableWidget_detector->rowCount();
+        return;
+    }
+
+    SwitchButton* cell = qobject_cast<SwitchButton*>(ui->tableWidget_detector->cellWidget(row, 0));
+    if (!cell) {
+        qWarning().nospace() << "POE状态上报时单元格未就绪，row=" << row;
+        return;
+    }
+
     if(on)
     {
         if (row == 0)
@@ -2786,16 +2806,6 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
             ui->spectroMeter1_bottom->xAxis->setRange(m_spectrumPlotSettings[index-1].xMin, m_spectrumPlotSettings[index-1].xMax);
             ui->spectroMeter2_bottom->xAxis->setRange(m_spectrumPlotSettings[index-1].xMin, m_spectrumPlotSettings[index-1].xMax);
         }
-
-        // 取公共最小值/最大值
-        // double xMin = m_spectrumPlotSettings[0].xMin;
-        // double xMax = m_spectrumPlotSettings[0].xMax;
-        // for(int index = 1; index < DET_NUM; ++index)
-        // {
-        //     xMin = qMin(xMin, m_spectrumPlotSettings[index].xMin);
-        //     xMax = qMax(xMax, m_spectrumPlotSettings[index].xMax);
-        // }
-
         return;
     }
 
