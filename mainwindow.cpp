@@ -1324,7 +1324,10 @@ void MainWindow::closeEvent(QCloseEvent *event) {
     // 关闭前把缓存的温度点写入磁盘，避免丢数据
     flushTemperatureCache();
 
-    commHelper->stopMeasure();
+    // 停止测量 - 仅停止m_selectedChannels中的探测器
+    for (quint8 index : m_selectedChannels) {
+        commHelper->stopMeasure(index);
+    }
     commHelper->stopServer();
     event->accept();
 }
@@ -1483,7 +1486,10 @@ void MainWindow::on_action_stopServer_triggered()
     mTemperatureTimeoutDetectors.clear();
 
     // 断开网络
-    commHelper->stopMeasure();
+    // 停止测量 - 仅停止m_selectedChannels中的探测器
+    for (quint8 index : m_selectedChannels) {
+        commHelper->stopMeasure(index);
+    }
     commHelper->stopServer();
 
     ui->action_startServer->setEnabled(true);
@@ -1885,8 +1891,8 @@ void MainWindow::on_btn_stopSelectedMeasure_clicked()
     }
     
     // ui->btn_startSelectedMeasure->setEnabled(true);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
-    ui->btn_stopSelectedMeasure->setEnabled(false);
-    ui->action_startAllMeasure->setEnabled(true);
+    // ui->btn_stopSelectedMeasure->setEnabled(false);
+    // ui->action_startAllMeasure->setEnabled(true);
     ui->action_stopAllMeasure->setEnabled(false);
 }
 
@@ -1924,10 +1930,35 @@ void MainWindow::on_action_stopAllMeasure_triggered()
         qInfo().nospace().noquote() << tr("停止手动测量");
     }
 
-    ui->action_startAllMeasure->setEnabled(true);
+    // 停止测量 - 仅停止m_selectedChannels中的探测器
+    QStringList stoppedChannels;
+    for (quint8 index : m_selectedChannels) {
+        commHelper->stopMeasure(index);
+        stoppedChannels.append(QString::number(index));
+    }
+    
+    if (!stoppedChannels.isEmpty()) {
+        qInfo().noquote().nospace() << QStringLiteral("结束(全部测量)，通道号：%1").arg(stoppedChannels.join(","));
 
-    // 停止测量
-    stopMeasure();
+        // 显示最终测量时长
+        int elapsedSeconds = mMeasureTimer->elapsed() / 1000;
+        ui->edit_measureTime->setText(formatTimeString(elapsedSeconds));
+        mMeasureTimer->invalidate();
+        misTimedMeasure = false;
+
+        // 自动更新发次号
+        if (ui->checkBox_autoIncrease->isChecked()){
+            ui->lineEdit_shotNum->setText(increaseShotNumSuffix(ui->lineEdit_shotNum->text().trimmed()));
+            GlobalSettings settings(DEVICE_CONFIG_FILE);
+            settings.setValue("mainWindow/ShotNumStr", ui->lineEdit_shotNum->text());
+        }
+
+        //清空温度超时报警的探测器ID
+        mTemperatureTimeoutDetectors.clear();
+        //清空探测器正在测量记录
+        mDetectorMeasuring.clear();
+    }
+    
     m_selectedChannels.clear();
 
     mEnableAutoMeasure = false;
@@ -1952,8 +1983,10 @@ void MainWindow::onMeasureCountdownTimeout()
         {
             qInfo() << "测量倒计时结束，正在停止测量并关闭所有通道电源...";
 
-            // 停止所有测量
-            commHelper->stopMeasure();
+            // 停止测量 - 仅停止m_selectedChannels中的探测器
+            for (quint8 index : m_selectedChannels) {
+                commHelper->stopMeasure(index);
+            }
 
             //记录下关闭的电源通道号
             foreach (quint8 index, mOnlineDetectors)
@@ -1968,8 +2001,10 @@ void MainWindow::onMeasureCountdownTimeout()
         {
             qInfo() << "测量倒计时结束，正在停止测量...";
 
-            // 停止所有测量
-            commHelper->stopMeasure();
+            // 停止测量 - 仅停止m_selectedChannels中的探测器
+            for (quint8 index : m_selectedChannels) {
+                commHelper->stopMeasure(index);
+            }
         }
 
         //停止测量定时器
@@ -2765,8 +2800,6 @@ void MainWindow::stopMeasure()
         settings.setValue("mainWindow/ShotNumStr", ui->lineEdit_shotNum->text());
     }
 
-    // 停止测量
-    commHelper->stopMeasure();
     //清空温度超时报警的探测器ID
     mTemperatureTimeoutDetectors.clear();
     //清空探测器正在测量记录

@@ -292,7 +292,7 @@ void DataProcessor::stopMeasure()
     const double avgCostUs = (packetCount > 0)
                                  ? (static_cast<double>(totalCostNs) / 1000.0 / static_cast<double>(packetCount))
                                  : 0.0;
-    qInfo().nospace().noquote()
+    qDebug().nospace().noquote()
         << "谱仪[#"<< mIndex << "] mergeSubSpec统计: window=" << wallMs
         << "ms, packets=" << packetCount
         << ", totalCost=" << totalCostMs << "ms"
@@ -304,7 +304,7 @@ void DataProcessor::stopMeasure()
     const double analyzeAvgUs = (packetCount > 0)
                                     ? (static_cast<double>(analyzeCostNs) / 1000.0 / static_cast<double>(packetCount/32))
                                     : 0.0;
-    qInfo().nospace().noquote()
+    qDebug().nospace().noquote()
         << "谱仪[#"<< mIndex << "] analyzeCommands统计: fullSpec=" << packetCount/32
         << ", totalCost=" << analyzeTotalMs << "ms"
         << ", avg=" << analyzeAvgUs << "us/call";
