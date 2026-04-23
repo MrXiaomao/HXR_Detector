@@ -115,7 +115,7 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
 
     //从HDF5加载配置信息
     HDF5Settings *settings = HDF5Settings::instance();
-    QMap<quint8, DetParameter> &detParameters = settings->detParameters();
+    QMap<quint8, DetParameter> &detParameters = settings->getDetParameters();
     for (int i=1; i<=DET_NUM; ++i){
         DetParameter detParameter = detParameters[i];
         ui->tableWidget->item(i - 1, 1)->setText(detParameter.det_Ip_port);
@@ -155,7 +155,7 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
 
         quint8 row = items.first()->row();
         QAbstractItemModel *model = ui->tableWidget->model();
-        QMap<quint8, DetParameter> &detParameters = settings->detParameters();
+        QMap<quint8, DetParameter> &detParameters = settings->getDetParameters();
         DetParameter& detParameter = detParameters[row + 1];
 
         bool ok = false;
@@ -503,7 +503,7 @@ void DetSettingWindow::saveAt(quint8 detId)
 {
     //从HDF5加载配置信息
     HDF5Settings *settings = HDF5Settings::instance();
-    QMap<quint8, DetParameter>& detParameters = settings->detParameters();
+    QMap<quint8, DetParameter>& detParameters = settings->getDetParameters();
     DetParameter& detParameter = detParameters[detId];
     double lon = 0.0;
     double lat = 0.0;
@@ -559,14 +559,14 @@ void DetSettingWindow::saveAt(quint8 detId)
     detParameter.trapShapePeakPoint = static_cast<quint8>(ui->spinBox_trapShapePeakPoint->value());
     //下降沿
     detParameter.trapShapeFallPoint = static_cast<quint8>(ui->spinBox_trapShapeFallPoint->value());
-    settings->sync();
+    settings->export_LocalDetPara();
 }
 
 void DetSettingWindow::loadAt(quint8 detId)
 {
     //从HDF5加载配置信息
     HDF5Settings *settings = HDF5Settings::instance();
-    QMap<quint8, DetParameter>& detParameters = settings->detParameters();
+    QMap<quint8, DetParameter>& detParameters = settings->getDetParameters();
     DetParameter& detParameter = detParameters[detId];
 
     int row = detId - 1;
@@ -708,7 +708,7 @@ void DetSettingWindow::showEvent(QShowEvent */*event*/)
 
     //从HDF5加载配置信息
     HDF5Settings *settings = HDF5Settings::instance();
-    QMap<quint8, DetParameter> &detParameters = settings->detParameters();
+    QMap<quint8, DetParameter> &detParameters = settings->getDetParameters();
     for (int i=1; i<=DET_NUM; ++i){
         DetParameter detParameter = detParameters[i];
         ui->tableWidget->item(i - 1, 1)->setText(detParameter.det_Ip_port);

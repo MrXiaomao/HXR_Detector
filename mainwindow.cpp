@@ -888,7 +888,7 @@ void MainWindow::initCustomPlot(int index, QCustomPlot* customPlot, QString axis
 
     // 读取探测器参数 ，能谱长度
     HDF5Settings *settings = HDF5Settings::instance();
-    QMap<quint8, DetParameter>& detParameters = settings->detParameters();
+    QMap<quint8, DetParameter>& detParameters = settings->getDetParameters();
     DetParameter& detParameter = detParameters[1]; //默认读取探测器1的参数
     int multiCh = detParameter.spectrumLength;
 
@@ -1574,7 +1574,7 @@ void MainWindow::on_action_startAllMeasure_triggered()
 
     mEnableAutoMeasure = ui->cbb_measureMode->currentIndex()==1;
     mEnableExtendTrigger = ui->com_triggerModel->currentIndex()==1;
-    m_specPlotRefreshTime = qMax((quint32)1000, (quint32)HDF5Settings::instance()->detParameters()[1].spectrumRefreshTime) / 1000;
+    m_specPlotRefreshTime = qMax((quint32)1000, (quint32)HDF5Settings::instance()->getDetParameters()[1].spectrumRefreshTime) / 1000;
 
     if (mEnableAutoMeasure)
     {
@@ -1629,13 +1629,13 @@ void MainWindow::on_action_startAllMeasure_triggered()
         ui->dateTime_shotTime->setDateTime(QDateTime::fromString("2026-01-01 00:00:00"));
     }
     else{ // 软件触发模式，开始时间=当前时间，外触发模式，开始时间=打靶时间+冷却时间
-        ui->lineEdit_triggerflag->setText("手动触发");
+        ui->lineEdit_triggerflag->setText("软件触发");
         QDateTime now = QDateTime::currentDateTime();
         ui->dateTimeEdit_startTime->setDateTime(now);
         ui->spinBox_coolTimeLength->setValue(ui->dateTime_shotTime->dateTime().secsTo(now));
     }
 
-    if (!mEnableAutoMeasure)
+    if (!mEnableAutoMeasure)//手动测量模式，直接开始测量
     {
         ui->lineEdit_triggerflag->setText("已经触发");
         mAutoMeasureDelayTimer->stop();
@@ -1643,7 +1643,7 @@ void MainWindow::on_action_startAllMeasure_triggered()
         // 直接开始测量
         this->startMeasure();
     }
-    else{
+    else{ // 自动测量模式，启动定时器，等待测量起始时刻的到来
         mAutoMeasureDelayTimer->start();
     }
 }
@@ -1669,7 +1669,7 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
         qInfo().nospace().noquote() << "自定义通道测量下禁用了外触发模式，已自动切换为软件触发模式";
     }
 
-    m_specPlotRefreshTime = qMax((quint32)1000, (quint32)HDF5Settings::instance()->detParameters()[1].spectrumRefreshTime) / 1000;
+    m_specPlotRefreshTime = qMax((quint32)1000, (quint32)HDF5Settings::instance()->getDetParameters()[1].spectrumRefreshTime) / 1000;
     
     //先检查路径有效性 lineEdit_filePath
     QString filePath = ui->lineEdit_filePath->text();
@@ -1679,7 +1679,7 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
         return;
     }
 
-    /*设置发次信息*/
+    // 检验shotDir有效性，若无效则使用默认路径"./cache"，并更新界面显示
     QString shotDir = ui->lineEdit_filePath->text();
     QString shotNumStr = ui->lineEdit_shotNum->text();
     if (shotDir.isEmpty()){
@@ -1692,20 +1692,6 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
     QDir dir(QString(tr("%1/%2")).arg(shotDir).arg(shotNumStr));
     if (!dir.exists()) {
         dir.mkpath(".");
-    }
-
-    {
-        GlobalSettings settings(QString("%1/Settings.ini").arg(savePath));
-        settings.setValue("mainWindow/MeasureMode", ui->cbb_measureMode->currentIndex());
-        settings.setValue("mainWindow/TriggerMode", ui->com_triggerModel->currentText());
-        settings.setValue("mainWindow/ShotNumStr", shotNumStr);
-        settings.setValue("mainWindow/MeasureTimeSeconds(s)", ui->spinBox_measureTime->value());
-    }
-
-    {
-        GlobalSettings settings(SYSTEM_CONFIG_FILE);
-        settings.setValue("mainWindow/ShotNumStr", shotNumStr);
-        settings.setValue("mainWindow/CacheDir", ui->lineEdit_filePath->text());
     }
 
     commHelper->setShotInformation(shotDir, shotNumStr);
@@ -1826,7 +1812,7 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
     QString paramFilePath = QString("%1/%2/%3_measureParam.h5").arg(ui->lineEdit_filePath->text())
                                         .arg(shotNumStr)
                                         .arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss"));
-    bool saveOk = HDF5Settings::instance()->saveMeasureParametersToH5(paramFilePath, HDF5Settings::instance()->detParameters());
+    bool saveOk = HDF5Settings::instance()->saveMeasureParametersToH5(paramFilePath, HDF5Settings::instance()->getDetParameters());
     if (!saveOk) {
         qWarning().noquote().nospace() << QStringLiteral("测量参数保存失败：") << paramFilePath;
     }
@@ -2759,7 +2745,7 @@ void MainWindow::on_action_yieldCalibration_triggered()
 
 void MainWindow::startMeasure()
 {
-    /*设置发次信息*/
+    // 检验shotDir有效性，若无效则使用默认路径"./cache"，并更新界面显示
     QString shotDir = ui->lineEdit_filePath->text();
     QString shotNumStr = ui->lineEdit_shotNum->text().trimmed(); //去掉 开头 和 结尾 的空白,不会删除中间的空格
     if (shotDir.isEmpty()){
@@ -2825,9 +2811,6 @@ void MainWindow::startMeasure()
         commHelper->startMeasure(tmStart, measureMode, CommandAdapter::WorkMode::wmWaveform);
     else if (ui->action_spectrumMode->isChecked())
         commHelper->startMeasure(tmStart, measureMode, CommandAdapter::WorkMode::wmSpectrum);
-
-    // 测量中禁用参数配置
-    //ui->cb_calibration->setEnabled(false);
 }
 
 void MainWindow::stopMeasure()
@@ -2907,7 +2890,7 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
 
     // 读取探测器参数
     // 读取道数
-    QMap<quint8, DetParameter>& detParameters = HDF5Settings::instance()->detParameters();
+    QMap<quint8, DetParameter>& detParameters = HDF5Settings::instance()->getDetParameters();
 
     //更新m_spectrumPlotSettings
     DetParameter& detParameter = detParameters[detectorId];
@@ -3031,7 +3014,7 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
 #include "particalwindow.h"
 void MainWindow::on_action_particalMode_triggered()
 {
-    /*设置发次信息*/
+    // 检验shotDir有效性，若无效则使用默认路径"./cache"，并更新界面显示
     QString shotDir = ui->lineEdit_filePath->text();
     QString shotNumStr = ui->lineEdit_shotNum->text();
     if (shotDir.isEmpty()){
@@ -3092,7 +3075,7 @@ void MainWindow::on_action_neutronYieldStatistics_triggered()
 #include "waveformwindow.h"
 void MainWindow::on_action_waveformMode_triggered()
 {
-    /*设置发次信息*/
+    // 检验shotDir有效性，若无效则使用默认路径"./cache"，并更新界面显示
     QString shotDir = ui->lineEdit_filePath->text();
     QString shotNumStr = ui->lineEdit_shotNum->text();
     if (shotDir.isEmpty()){

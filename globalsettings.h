@@ -838,7 +838,7 @@ public:
         return &hdf5Settings;
     }
 
-    QMap<quint8, DetParameter>& detParameters();
+    QMap<quint8, DetParameter>& getDetParameters();
     void setDetParameter(QMap<quint8, DetParameter>&);
     
     // 写一个标量字符串 attribute（可变长）
@@ -847,19 +847,24 @@ public:
     // 给数据集写入探测器参数结构属性说明
     void writeDetParStrAttr(H5::DataSet& dataset);
 
-    // 同步内存数据到文件
-    void sync();
-
     // 定义FullSpectrum的HDF5复合类型
     H5::CompType createH5SpectrumType();
+
+    // 定义DetParameter的HDF5复合类型
     static H5::CompType createCfgDataType();
 
-    H5::H5File *openH5Config();
-    void createH5Config();
+    // 加载本地文件Config/Settings.H5中的探测器参数配置数据到内存
+    // 如果没有文件或文件中没有相关数据，则使用默认参数，并创建文件和数据集
+    void load_localDetPara();
+
+    // 导出探测器参数配置数据(内存数据）到本地文件Config/Settings.H5
+    void export_LocalDetPara();
+
     void createH5Spectrum(QString filePath);
     void closeH5Spectrum();
 
-    H5::DataSet createDataSet(H5::H5File* H5File, quint8 index);
+    // 创建指定探测器的能谱数据集 Detector#%1/Spectrum
+    H5::DataSet createSpecDataSet(H5::H5File* H5File, quint8 index);
 
     /**
      * @brief 写入单个FullSpectrum结构体到HDF5文件
@@ -920,14 +925,16 @@ public:
     Q_SIGNAL void sigSpectrum(const H5Spectrum&);
 
 private:
-    //H5::H5File *mfH5Setting = nullptr; // H5配置文件
+    // 打开本地文件Config/Settings.H5，返回H5File对象指针
+    H5::H5File *open_localDetParaFile();
+
     H5::H5File *mfH5Spectrum = nullptr; // H5能谱文件
     QString mSpectrumFilePath;          // 当前能谱文件路径
     bool mSpectrumFileFull = false;     // 文件是否已达到容量上限
     quint32 mSpectrumRef = 0;// 能谱计数
     H5::DataSet mSpectrumDataset[DET_NUM];
     
-    H5::CompType mCompDataType;//复合数据类型
+    H5::CompType mConfigDataType;//复合数据类型
     H5::CompType mSpectrumDataType;//复合数据类型
     QMap<quint8, DetParameter> mMapDetParameter;
     QMutex mWrite_mutex;

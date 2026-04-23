@@ -62,7 +62,7 @@ CommHelper::CommHelper(QObject *parent)
     connect(this, &CommHelper::settingfinished, this, [=](){        
         //更改了设置，这里需要重新对数据处理器进行关联
         HDF5Settings *settings = HDF5Settings::instance();
-        QMap<quint8, DetParameter>& detParameters = settings->detParameters();
+        QMap<quint8, DetParameter>& detParameters = settings->getDetParameters();
 
         auto it = this->mConnectionPeers.begin();
         while (it != this->mConnectionPeers.end()) {
@@ -542,7 +542,7 @@ qint8 CommHelper::allocDataProcessor(const hv::SocketChannelPtr& socket)
         qint8 index =  (qint8)(intptr_t)(socket->context());// channel->property("detectorIndex").isValid();
         if (index >= 1 && index <= DET_NUM){
             HDF5Settings *settings = HDF5Settings::instance();
-            QMap<quint8, DetParameter>& detParameters = settings->detParameters();
+            QMap<quint8, DetParameter>& detParameters = settings->getDetParameters();
             DetParameter& detParameter = detParameters[index];
             mDetectorDataProcessor[index]->reallocSocket(socket, &detParameter);
             socket->setContext((void*)(intptr_t)index);
@@ -551,7 +551,7 @@ qint8 CommHelper::allocDataProcessor(const hv::SocketChannelPtr& socket)
     }
 
     HDF5Settings *settings = HDF5Settings::instance();
-    QMap<quint8, DetParameter>& detParameters = settings->detParameters();
+    QMap<quint8, DetParameter>& detParameters = settings->getDetParameters();
 
     // IP+PORT匹配
     {
@@ -585,7 +585,7 @@ qint8 CommHelper::allocDataProcessor(const hv::SocketChannelPtr& socket)
         QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
         if (mDetectorDataProcessor[index]->isFreeSocket() && detectorAddress==QStringLiteral("0.0.0.0")){
             qstrcpy(detParameter.det_Ip_port, peerAddress.toStdString().c_str());
-            settings->sync();
+            settings->export_LocalDetPara();
             mDetectorDataProcessor[index]->reallocSocket(socket, &detParameter);
             socket->setContext((void*)(intptr_t)index);
             return index;
@@ -602,7 +602,7 @@ void CommHelper::freeDataProcessor(const hv::SocketChannelPtr& socket)
         return;
 
     HDF5Settings *settings = HDF5Settings::instance();
-    QMap<quint8, DetParameter>& detParameters = settings->detParameters();
+    QMap<quint8, DetParameter>& detParameters = settings->getDetParameters();
     DetParameter& detParameter = detParameters[index];
     mDetectorDataProcessor[index]->reallocSocket(nullptr);
 }
@@ -637,7 +637,7 @@ qint8 CommHelper::allocDataProcessor(QTcpSocket *socket)
         qint8 index = socket->property("detectorIndex").toInt();
         if (index >= 1 && index <= DET_NUM){
             HDF5Settings *settings = HDF5Settings::instance();
-            QMap<quint8, DetParameter>& detParameters = settings->detParameters();
+            QMap<quint8, DetParameter>& detParameters = settings->getDetParameters();
             DetParameter& detParameter = detParameters[index];
             mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
             socket->setProperty("detectorIndex", index);
@@ -646,7 +646,7 @@ qint8 CommHelper::allocDataProcessor(QTcpSocket *socket)
     }
 
     HDF5Settings *settings = HDF5Settings::instance();
-    QMap<quint8, DetParameter>& detParameters = settings->detParameters();
+    QMap<quint8, DetParameter>& detParameters = settings->getDetParameters();
 
     // IP+PORT匹配
     {
@@ -680,7 +680,7 @@ qint8 CommHelper::allocDataProcessor(QTcpSocket *socket)
         if (mDetectorDataProcessor[index]->isFreeSocket()){
             DetParameter& detParameter = detParameters[index];
             qstrcpy(detParameter.det_Ip_port, peerAddress.toStdString().c_str());
-            settings->sync();
+            settings->export_LocalDetPara();
             mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
             socket->setProperty("detectorIndex", index);
             return index;
@@ -697,7 +697,7 @@ void CommHelper::freeDataProcessor(QTcpSocket *socket)
         return;
 
     HDF5Settings *settings = HDF5Settings::instance();
-    QMap<quint8, DetParameter>& detParameters = settings->detParameters();
+    QMap<quint8, DetParameter>& detParameters = settings->getDetParameters();
     DetParameter& detParameter = detParameters[index];
     mDetectorDataProcessor[index]->reallocSocket(nullptr, detParameter);
 }
