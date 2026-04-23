@@ -1891,6 +1891,7 @@
    <addaction name="separator"/>
    <addaction name="action_startAllMeasure"/>
    <addaction name="action_stopAllMeasure"/>
+   <addaction name="action_picture_reset"/>
    <addaction name="separator"/>
    <addaction name="action_exit"/>
   </widget>
@@ -2331,6 +2332,24 @@
    </property>
    <property name="text">
     <string>任务栏</string>
+   </property>
+  </action>
+  <action name="action_picture_reset">
+   <property name="icon">
+    <iconset resource="../3rdParty/resource/resource.qrc">
+     <normaloff>:/picture_reset.png</normaloff>:/picture_reset.png</iconset>
+   </property>
+   <property name="text">
+    <string>重置图像</string>
+   </property>
+   <property name="iconText">
+    <string>重置图像</string>
+   </property>
+   <property name="toolTip">
+    <string>重置图像（只重置非测量状态的曲线）</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::NoRole</enum>
    </property>
   </action>
  </widget>

@@ -1843,12 +1843,6 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
 //（自定义通道）停止测量，停止测量已选中的通道
 void MainWindow::on_btn_stopSelectedMeasure_clicked()
 {
-    // 显示最终测量时长
-    int elapsedSeconds = mMeasureTimer->elapsed() / 1000;
-    ui->edit_measureTime->setText(formatTimeString(elapsedSeconds));
-    mMeasureTimer->invalidate();
-    misTimedMeasure = false;
-
     // 获取所选通道
     // 再发开始测量指令
     auto rows  = ui->tableWidget_detector->selectionModel()->selectedRows();
@@ -1894,6 +1888,11 @@ void MainWindow::on_btn_stopSelectedMeasure_clicked()
     }
 
     if (m_selectedChannels.empty()){
+        // 显示最终测量时长
+        int elapsedSeconds = mMeasureTimer->elapsed() / 1000;
+        ui->edit_measureTime->setText(formatTimeString(elapsedSeconds));
+        mMeasureTimer->invalidate();
+
         // 非测量中可用参数配置
         ui->action_startAllMeasure->setEnabled(true);
         ui->action_stopAllMeasure->setEnabled(false);
@@ -2081,6 +2080,48 @@ void MainWindow::on_action_powerOff_triggered()
 {
     // 关闭电源
     commHelper->closePower();
+}
+
+void MainWindow::on_action_picture_reset_triggered()
+{
+    const auto reply = QMessageBox::question(
+        this,
+        tr("确认图形重置"),
+        tr("将清除当前非测量通道的能谱和计数率曲线数据，是否确认？"),
+        QMessageBox::Yes | QMessageBox::No,
+        QMessageBox::No);
+    if (reply != QMessageBox::Yes) {
+        return;
+    }
+
+    std::vector<int> channels;
+    channels.reserve(DET_NUM);
+    for (int channel = 1; channel <= DET_NUM; ++channel) {
+        if (!m_selectedChannels.contains(static_cast<quint8>(channel))) {
+            channels.push_back(channel);
+        }
+    }
+
+    if (channels.empty()) {
+        qInfo().noquote().nospace() << QStringLiteral("所有通道均在测量中，清除曲线数据失败");
+        return;
+    }
+
+    clearCustomPlotData(channels);
+    for (int channel : channels) {
+        resetDetectorSpectrum(channel);
+    }
+
+    ui->spectroMeter1_top->replot(QCustomPlot::rpQueuedReplot);
+    ui->spectroMeter2_top->replot(QCustomPlot::rpQueuedReplot);
+    ui->spectroMeter1_bottom->replot(QCustomPlot::rpQueuedReplot);
+    ui->spectroMeter2_bottom->replot(QCustomPlot::rpQueuedReplot);
+
+    QStringList clearedChannels;
+    for (int channel : channels) {
+        clearedChannels.append(QString::number(channel));
+    }
+    qInfo().noquote().nospace() << QStringLiteral("已清除非测量状态下的曲线数据，通道号：") << clearedChannels.join(",");
 }
 
 void MainWindow::on_action_about_triggered()

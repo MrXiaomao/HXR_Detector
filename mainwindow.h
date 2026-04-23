@@ -132,6 +132,8 @@ private slots:
     void on_action_powerOn_triggered();
     // 关闭所有通道POE电源
     void on_action_powerOff_triggered();
+    // 清空图像曲线数据（非测量状态）
+    void on_action_picture_reset_triggered();
     // 开启服务，打开本地TCP server
     void on_action_startServer_triggered();
     // 关闭服务，关闭本地TCP server
