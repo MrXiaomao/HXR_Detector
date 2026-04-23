@@ -778,21 +778,24 @@ void MainWindow::initUi()
 
     // 接收触发信号时间戳
     connect(commHelper, &CommHelper::reportTimestampe, this, [=](QDateTime& tm){
-        // 只有启用了外触发才会接收打靶信号的时间戳，并且只在自动测量未激活时更新界面显示
-        if (mEnableExtendTrigger && !mAutoMeasureTimerActive)
-        {
-            // 只有开启了自动化测量，才接收自动触发的时间戳，并更新界面显示
-            ui->dateTime_shotTime->setDateTime(tm);
-            ui->lineEdit_triggerflag->setText("已经触发");
+        // 只有启用了外触发才会接收打靶信号的时间戳，并且只在自动测量未激活时更新界面显示,
+        // 这里进来时是子线程，所以在QTimer里面执行就变成主线程了
+        QTimer::singleShot(0, this, [=]{
+            if (mEnableExtendTrigger && !mAutoMeasureTimerActive)
+            {
+                // 只有开启了自动化测量，才接收自动触发的时间戳，并更新界面显示
+                ui->dateTime_shotTime->setDateTime(tm);
+                ui->lineEdit_triggerflag->setText("已经触发");
 
-            // 根据冷却时间设置自动测量的触发时间，单位为秒
-            qint32 coolTimelength = ui->spinBox_coolTimeLength->value();
-            ui->dateTimeEdit_startTime->setDateTime(tm.addSecs(coolTimelength));
+                // 根据冷却时间设置自动测量的触发时间，单位为秒
+                qint32 coolTimelength = ui->spinBox_coolTimeLength->value();
+                ui->dateTimeEdit_startTime->setDateTime(tm.addSecs(coolTimelength));
 
-            mAutoMeasureTimerActive = true;
-            qInfo().noquote().nospace() << "收到打靶信号时间戳：" << tm.toString("yyyy-MM-dd HH:mm:ss") << "，自动测量将在" << coolTimelength << "秒后触发";
-        }
-    }, Qt::QueuedConnection);
+                mAutoMeasureTimerActive = true;
+                qInfo().noquote().nospace() << "收到打靶信号时间戳：" << tm.toString("yyyy-MM-dd HH:mm:ss") << "，自动测量将在" << coolTimelength << "秒后触发";
+            }
+        });
+    }, Qt::DirectConnection);
 }
 
 QPixmap MainWindow::roundPixmap(QSize sz, QColor clrOut)
@@ -1818,6 +1821,16 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
         }
     }
 
+    // 保存测量参数到H5文件，命名为时间戳_measureParam.h5，路径为lineEdit_filePath/shotNumStr/
+    // 将DetParameter保存到H5文件中，方便后续分析使用
+    QString paramFilePath = QString("%1/%2/%3_measureParam.h5").arg(ui->lineEdit_filePath->text())
+                                        .arg(shotNumStr)
+                                        .arg(QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss"));
+    bool saveOk = HDF5Settings::instance()->saveMeasureParametersToH5(paramFilePath, HDF5Settings::instance()->detParameters());
+    if (!saveOk) {
+        qWarning().noquote().nospace() << QStringLiteral("测量参数保存失败：") << paramFilePath;
+    }
+
     // 测量中禁用参数配置
     ui->btn_stopSelectedMeasure->setEnabled(true);
     ui->action_startAllMeasure->setEnabled(false);
@@ -2272,8 +2285,6 @@ void MainWindow::resetDetectorSpectrum(int detectorId) {
     it->lastAccumulateCount = 0;
     // 清空计数率历史并释放内存
     QVector<double>().swap(it->countRateHistory);
-
-    qDebug().noquote().nospace() << "Detector" << detectorId << "spectrum and countRateHistory reset";
 }
 
 // 获取探测器数据

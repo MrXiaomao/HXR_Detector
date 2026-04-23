@@ -992,3 +992,92 @@ bool HDF5Settings::readFullSpectrum(const std::string& filePath,
 
     return true;
 }
+
+/**
+ * @brief 保存测量参数到H5文件
+ * @param filePath H5文件路径
+ * @param parameters 包含所有探测器参数的映射
+ * @return 是否保存成功
+ */
+bool HDF5Settings::saveMeasureParametersToH5(const QString& filePath, const QMap<quint8, DetParameter>& parameters)
+{
+    try {
+        // 文本编码处理（支持中文路径）
+        QTextCodec* gbk_codec = QTextCodec::codecForName("GBK");
+        QByteArray filePathBytes = gbk_codec->fromUnicode(filePath);
+
+        // 1. 创建或打开H5文件
+        H5::H5File file(filePathBytes.toStdString(), H5F_ACC_TRUNC);
+
+        // 2. 创建或打开Config分组
+        H5::Group cfgGroup;
+        if (H5Lexists(file.getId(), "Config", H5P_DEFAULT) > 0) {
+            cfgGroup = file.openGroup("Config");
+        } else {
+            cfgGroup = file.createGroup("Config");
+        }
+
+        // 3. 准备数据：按照 id 1..DET_NUM 的顺序
+        QVector<DetParameter> data;
+        data.reserve(DET_NUM);
+        for (int i = 1; i <= DET_NUM; ++i) {
+            const quint8 ki = static_cast<quint8>(i);
+            DetParameter row = parameters.value(ki, DetParameter());
+            row.id = ki;
+            data.push_back(row);
+        }
+
+        // 4. 创建数据空间
+        hsize_t dims[1] = {DET_NUM};
+        H5::DataSpace dataspace(1, dims);
+
+        // 5. 写入或更新数据集
+        if (H5Lexists(cfgGroup.getId(), "MeasureParameters", H5P_DEFAULT) > 0) {
+            H5::DataSet ds = cfgGroup.openDataSet("MeasureParameters");
+            ds.write(data.data(), mCompDataType);
+        } else {
+            H5::DataSet dataset = cfgGroup.createDataSet("MeasureParameters", mCompDataType, dataspace);
+            dataset.write(data.data(), mCompDataType, dataspace);
+            
+            // 写入字段说明属性
+            writeDetParStrAttr(dataset);
+        }
+
+        // 6. 写入时间戳属性
+        QString startTime = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss");
+        std::string timeStr = startTime.toStdString();
+        H5::StrType strType(H5::PredType::C_S1, H5T_VARIABLE);
+        H5::DataSpace scalarSpace(H5S_SCALAR);
+        
+        if (H5Lexists(cfgGroup.getId(), "SaveTime", H5P_DEFAULT) > 0) {
+            H5::DataSet dsTime = cfgGroup.openDataSet("SaveTime");
+            dsTime.write(timeStr, strType);
+        } else {
+            H5::DataSet dsTime = cfgGroup.createDataSet("SaveTime", strType, scalarSpace);
+            dsTime.write(timeStr, strType);
+        }
+
+        // 7. 同步并关闭文件
+        H5Fflush(file.getId(), H5F_SCOPE_GLOBAL);
+        file.close();
+
+        qInfo().noquote().nospace() << QObject::tr("测量参数已保存到：") << filePath;
+        return true;
+
+    } catch (H5::FileIException& error) {
+        QMessageBox::warning(nullptr, QObject::tr("保存失败"), QObject::tr("H5文件打开失败，文件被占用！"));
+        qWarning() << error.getCDetailMsg();
+        return false;
+    } catch (H5::DataSetIException& error) {
+        QMessageBox::warning(nullptr, QObject::tr("保存失败"), QObject::tr("H5文件打开失败，数据集已损坏！"));
+        qWarning() << error.getCDetailMsg();
+        return false;
+    } catch (H5::DataSpaceIException& error) {
+        QMessageBox::warning(nullptr, QObject::tr("保存失败"), QObject::tr("H5文件打开失败，数据空间已损坏！"));
+        qWarning() << error.getCDetailMsg();
+        return false;
+    } catch (H5::Exception& e) {
+        e.printErrorStack();
+        return false;
+    }
+}

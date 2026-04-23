@@ -897,6 +897,14 @@ public:
                                   const std::string& datasetName,
                                   std::function<void(const H5Spectrum&)> callback);
 
+    /**
+     * @brief 保存测量参数到H5文件
+     * @param filePath H5文件路径
+     * @param parameters 包含所有探测器参数的映射
+     * @return 是否保存成功
+     */
+    bool saveMeasureParametersToH5(const QString& filePath, const QMap<quint8, DetParameter>& parameters);
+
     // Getter函数
     quint32 pluseTime() const { return mPluseTime; }
 
