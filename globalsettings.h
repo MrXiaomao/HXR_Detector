@@ -860,10 +860,16 @@ public:
     // 导出探测器参数配置数据(内存数据）到本地文件Config/Settings.H5
     void export_LocalDetPara();
 
-    void createH5Spectrum(QString filePath);
+    // 创建测量数据 H5文件
+    void createH5Spectrum(QString filePath, const QString& shotTime = QString());
+    
+    // 向当前测量H5文件写入/更新打靶时刻（Config/shotTime）
+    bool writeShotTimeToCurrentH5(const QString& shotTime);
+
+    // 关闭测量数据 H5文件
     void closeH5Spectrum();
 
-    // 创建指定探测器的能谱数据集 Detector#%1/Spectrum
+    // 创建指定探测器的测量数据H5文件中的数据集 Detector#%1/Spectrum
     H5::DataSet createSpecDataSet(H5::H5File* H5File, quint8 index);
 
     /**

@@ -90,7 +90,9 @@ public:
     /*
      开始测量
     */
-    void startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode measureMode, CommandAdapter::WorkMode workMode, quint8 index = 0);
+    void startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode measureMode, 
+        CommandAdapter::WorkMode workMode, quint8 index = 0, const QString& shotTime = QString());
+        
     /*
      停止测量
     */

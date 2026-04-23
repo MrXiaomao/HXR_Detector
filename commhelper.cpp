@@ -344,6 +344,10 @@ void CommHelper::initDataProcessor()
         // 触发信号时间戳(解析后的数据)
         connect(processor, &DataProcessor::reportTriggerTimeInfo, this, [=](quint8 detID, QDateTime triggerTime){
             emit reportTimestampe(triggerTime); //通知界面更新触发时间戳
+
+            // 若当前测量H5文件已存在，则将打靶时刻写入Config/shotTime
+            const QString shotTime = triggerTime.toString("yyyy-MM-dd hh:mm:ss");
+            HDF5Settings::instance()->writeShotTimeToCurrentH5(shotTime);
         }, Qt::DirectConnection);
 
         // 原始OTA升级数据
@@ -983,7 +987,8 @@ void CommHelper::setShotInformation(const QString shotDir, const QString shotNum
  * @param mode 波形测量/能谱测量
  * @param index index=0时则认为是全部探测器一起开始测量
  */
-void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode measureMode, CommandAdapter::WorkMode workMode, quint8 index/* = 0*/)
+void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode measureMode, 
+    CommandAdapter::WorkMode workMode, quint8 index/* = 0*/, const QString& shotTime/* = QString()*/)
 {
     constexpr int kReserveH5PerDetector = 60; // 每路探测器预留60个能谱数据
     constexpr int kReserveRawBytesPerDetector = 1024 * 1024; // 每路探测器预留1MB网口原始数据，50ms能谱刷新频率下0.625MB/s
@@ -1006,7 +1011,7 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
         mDataFileList.clear();
         QString filePath = QString("%1/%2/%3.H5").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime);
         HDF5Settings::instance()->closeH5Spectrum();
-        HDF5Settings::instance()->createH5Spectrum(filePath);
+        HDF5Settings::instance()->createH5Spectrum(filePath, shotTime);
 
         for (index = 1; index <= DET_NUM; ++index){
             if (mDetectFileProcessor.contains(index)){

@@ -2802,16 +2802,21 @@ void MainWindow::startMeasure()
     CommandAdapter::MeasureMode measureMode = ui->cbb_measureMode->currentIndex() == 0 ? \
         CommandAdapter::MeasureMode::mmManual : CommandAdapter::MeasureMode::mmAuto;
     QDateTime tmStart = QDateTime::currentDateTime();
+    QString shotTime;
     if (ui->cbb_measureMode->currentIndex() == 1)
     {
         tmStart = ui->dateTimeEdit_startTime->dateTime();
     }
+    // 软件触发模式下记录打靶时刻到测量H5文件
+    if (ui->com_triggerModel->currentIndex() == 0) {
+        shotTime = ui->dateTime_shotTime->dateTime().toString("yyyy-MM-dd hh:mm:ss");
+    }
 
     // 再发开始测量指令
     if (ui->action_waveformMode->isChecked())
-        commHelper->startMeasure(tmStart, measureMode, CommandAdapter::WorkMode::wmWaveform);
+        commHelper->startMeasure(tmStart, measureMode, CommandAdapter::WorkMode::wmWaveform, 0);
     else if (ui->action_spectrumMode->isChecked())
-        commHelper->startMeasure(tmStart, measureMode, CommandAdapter::WorkMode::wmSpectrum);
+        commHelper->startMeasure(tmStart, measureMode, CommandAdapter::WorkMode::wmSpectrum, 0, shotTime);
 }
 
 void MainWindow::stopMeasure()

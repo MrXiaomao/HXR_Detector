@@ -84,7 +84,7 @@ void GlobalSettings::setValue(const QString &key, const QVariant &value)
 {
     QSettings::setValue(key, value);
     if(realtime)
-        export_LocalDetPara();
+        sync();
 }
 
 void GlobalSettings::setIntVector(const QString& key, const QVector<int>& vec)
@@ -93,7 +93,7 @@ void GlobalSettings::setIntVector(const QString& key, const QVector<int>& vec)
     sl.reserve(vec.size());
     for (int v : vec)
         sl << QString::number(v);
-    setValue(key, sl);
+    this->setValue(key, sl);
 }
 
 QVector<int> GlobalSettings::GetIntVector(const QString& key,
@@ -113,10 +113,10 @@ void GlobalSettings::setDoubleVector(const QString& key, const QVector<double>& 
     for (double v : vec)
         sl << QString::number(v, 'g', 17);
 
-    setValue(key, sl);
-    // 如果你们希望立刻落盘，可选export_LocalDetPara()：
+    this->setValue(key, sl);
+    // 如果你们希望立刻落盘，可选sync()：
     if(realtime)
-        export_LocalDetPara();
+        sync();
 }
 
 // 从配置读取 double 向量
@@ -465,7 +465,7 @@ H5::DataSet HDF5Settings::createSpecDataSet(H5::H5File* H5File, quint8 index)
     return dataset;
 }
 
-void HDF5Settings::createH5Spectrum(QString filePath)
+void HDF5Settings::createH5Spectrum(QString filePath, const QString& shotTime)
 {
     // 创建表格数组
     if (!QFileInfo::exists(filePath))
@@ -511,6 +511,16 @@ void HDF5Settings::createH5Spectrum(QString filePath)
 
                 // 4. 写入
                 dataset2.write(timeStr, strType);
+
+                // 软件触发模式下写入打靶时刻
+                if (!shotTime.isEmpty()) {
+                    std::string shotTimeStr = shotTime.toStdString();
+                    H5::DataSet shotTimeDataset = cfgGroup.createDataSet(
+                        "shotTime",
+                        strType,
+                        scalarSpace);
+                    shotTimeDataset.write(shotTimeStr, strType);
+                }
             }
         } catch (H5::FileIException& error) {
             QMessageBox::warning(nullptr, "打开配置文件", "H5能谱数据文件打开失败，文件被占用！");
@@ -535,6 +545,43 @@ void HDF5Settings::closeH5Spectrum()
         mfH5Spectrum = nullptr;
         mSpectrumFileFull = false;
         mSpectrumFilePath.clear();
+    }
+}
+
+bool HDF5Settings::writeShotTimeToCurrentH5(const QString& shotTime)
+{
+    if (shotTime.isEmpty())
+        return false;
+
+    QMutexLocker locker(&mWrite_mutex);
+    if (!mfH5Spectrum || mSpectrumFilePath.isEmpty() || !QFileInfo::exists(mSpectrumFilePath))
+        return false;
+
+    try {
+        H5::Group cfgGroup;
+        if (H5Lexists(mfH5Spectrum->getId(), "Config", H5P_DEFAULT) > 0) {
+            cfgGroup = mfH5Spectrum->openGroup("Config");
+        } else {
+            cfgGroup = mfH5Spectrum->createGroup("Config");
+        }
+
+        H5::StrType strType(H5::PredType::C_S1, H5T_VARIABLE);
+        H5::DataSpace scalarSpace(H5S_SCALAR);
+        std::string shotTimeStr = shotTime.toStdString();
+
+        if (H5Lexists(cfgGroup.getId(), "shotTime", H5P_DEFAULT) > 0) {
+            H5::DataSet shotTimeDataset = cfgGroup.openDataSet("shotTime");
+            shotTimeDataset.write(shotTimeStr, strType);
+        } else {
+            H5::DataSet shotTimeDataset = cfgGroup.createDataSet("shotTime", strType, scalarSpace);
+            shotTimeDataset.write(shotTimeStr, strType);
+        }
+
+        H5Fflush(mfH5Spectrum->getId(), H5F_SCOPE_GLOBAL);
+        return true;
+    } catch (H5::Exception& e) {
+        qWarning() << "写入shotTime失败:" << e.getCDetailMsg();
+        return false;
     }
 }
 
