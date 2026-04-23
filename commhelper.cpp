@@ -62,7 +62,7 @@ CommHelper::CommHelper(QObject *parent)
     connect(this, &CommHelper::settingfinished, this, [=](){        
         //更改了设置，这里需要重新对数据处理器进行关联
         HDF5Settings *settings = HDF5Settings::instance();
-        QMap<quint8, DetParameter>& detParameters = settings->getDetParameters();
+        const QMap<quint8, DetParameter> detParameters = settings->getDetParameters();
 
         auto it = this->mConnectionPeers.begin();
         while (it != this->mConnectionPeers.end()) {
@@ -71,12 +71,12 @@ CommHelper::CommHelper(QObject *parent)
             // ip修改可能导致关联的探测器索引也发生改变，这里改为重新分配
             qint8 index =  (qint8)(intptr_t)(connection->context());
             if (index >= 1 && index <= DET_NUM){
-                DetParameter& detParameter = detParameters[index];
+                DetParameter detParameter = detParameters.value(index);
 
                 QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
                 QString peerAddress = QString::fromStdString(connection->peerip());
                 if (peerAddress != detectorAddress){
-                    DetParameter& detParameter = detParameters[index];
+                    DetParameter detParameter = detParameters.value(index);
                     QMetaObject::invokeMethod(this, "detectorOffline",
                                               Qt::QueuedConnection,
                                               Q_ARG(quint8, index));
@@ -101,12 +101,12 @@ CommHelper::CommHelper(QObject *parent)
             if (connection->property("detectorIndex").isValid())
             {
                 qint8 index = connection->property("detectorIndex").toInt();
-                DetParameter& detParameter = detParameters[index];
+                DetParameter detParameter = detParameters.value(index);
 
                 QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
                 QString peerAddress = connection->peerAddress().toString();
                 if (peerAddress != detectorAddress){
-                    DetParameter& detParameter = detParameters[index];
+                    DetParameter detParameter = detParameters.value(index);
                     QMetaObject::invokeMethod(this, "detectorOffline",
                                               Qt::QueuedConnection,
                                               Q_ARG(quint8, index));
@@ -537,62 +537,73 @@ qint8 CommHelper::allocDataProcessor(const hv::SocketChannelPtr& socket)
         return 0;
     }
 
+    HDF5Settings *settings = HDF5Settings::instance();
+    QMap<quint8, DetParameter> detParameters = settings->getDetParameters();
+    bool needExport = false;
+    qint8 assignedIndex = -1;
+
+    auto commitAssign = [&](qint8 index){
+        settings->setDetParameter(detParameters);
+        socket->setContext((void*)(intptr_t)index);
+        assignedIndex = index;
+        needExport = true;
+    };
+
     if (socket->context() != nullptr)
     {
         qint8 index =  (qint8)(intptr_t)(socket->context());// channel->property("detectorIndex").isValid();
         if (index >= 1 && index <= DET_NUM){
-            HDF5Settings *settings = HDF5Settings::instance();
-            QMap<quint8, DetParameter>& detParameters = settings->getDetParameters();
             DetParameter& detParameter = detParameters[index];
             mDetectorDataProcessor[index]->reallocSocket(socket, &detParameter);
-            socket->setContext((void*)(intptr_t)index);
-            return index;
+            commitAssign(index);
         }
     }
 
-    HDF5Settings *settings = HDF5Settings::instance();
-    QMap<quint8, DetParameter>& detParameters = settings->getDetParameters();
-
+    // 这里需要考虑IP+PORT匹配和IP匹配两种情况，兼容使用，简单起见，现版本直接输入IP即可，不输入PORT
     // IP+PORT匹配
-    {
+    if (assignedIndex < 0) {
         for (int index = 1; index <= DET_NUM; ++index){
             DetParameter& detParameter = detParameters[index];
             QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
             if (detectorAddress == QString("%1:%2").arg(peerAddress).arg(peerPort)){
                 mDetectorDataProcessor[index]->reallocSocket(socket, &detParameter);
-                socket->setContext((void*)(intptr_t)index);
-                return index;
+                commitAssign(index);
+                break;
             }
         }
     }
 
     // IP匹配
-    {
+    if (assignedIndex < 0) {
         for (int index = 1; index <= DET_NUM; ++index){
             DetParameter& detParameter = detParameters[index];
             QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
             if (detectorAddress == peerAddress){
                 mDetectorDataProcessor[index]->reallocSocket(socket, &detParameter);
-                socket->setContext((void*)(intptr_t)index);
-                return index;
+                commitAssign(index);
+                break;
             }
         }
     }
 
     //重新分配空闲的数据处理器
-    for (int index = 1; index <= DET_NUM; ++index){
-        DetParameter& detParameter = detParameters[index];
-        QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
-        if (mDetectorDataProcessor[index]->isFreeSocket() && detectorAddress==QStringLiteral("0.0.0.0")){
-            qstrcpy(detParameter.det_Ip_port, peerAddress.toStdString().c_str());
-            settings->export_LocalDetPara();
-            mDetectorDataProcessor[index]->reallocSocket(socket, &detParameter);
-            socket->setContext((void*)(intptr_t)index);
-            return index;
+    if (assignedIndex < 0) {
+        for (int index = 1; index <= DET_NUM; ++index){
+            DetParameter& detParameter = detParameters[index];
+            QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
+            if (mDetectorDataProcessor[index]->isFreeSocket() && detectorAddress==QStringLiteral("0.0.0.0")){
+                qstrcpy(detParameter.det_Ip_port, peerAddress.toStdString().c_str());
+                mDetectorDataProcessor[index]->reallocSocket(socket, &detParameter);
+                commitAssign(index);
+                break;
+            }
         }
     }
 
-    return -1;
+    if (needExport)
+        settings->export_LocalDetPara();
+
+    return assignedIndex;
 }
 
 void CommHelper::freeDataProcessor(const hv::SocketChannelPtr& socket)
@@ -601,9 +612,6 @@ void CommHelper::freeDataProcessor(const hv::SocketChannelPtr& socket)
     if (index <= 0)
         return;
 
-    HDF5Settings *settings = HDF5Settings::instance();
-    QMap<quint8, DetParameter>& detParameters = settings->getDetParameters();
-    DetParameter& detParameter = detParameters[index];
     mDetectorDataProcessor[index]->reallocSocket(nullptr);
 }
 
@@ -632,62 +640,72 @@ qint8 CommHelper::allocDataProcessor(QTcpSocket *socket)
         return 0;
     }
 
+    HDF5Settings *settings = HDF5Settings::instance();
+    QMap<quint8, DetParameter> detParameters = settings->getDetParameters();
+    bool needExport = false;
+    qint8 assignedIndex = -1;
+
+    auto commitAssign = [&](qint8 index){
+        settings->setDetParameter(detParameters);
+        socket->setProperty("detectorIndex", index);
+        assignedIndex = index;
+        needExport = true;
+    };
+
     if (socket->property("detectorIndex").isValid())
     {
         qint8 index = socket->property("detectorIndex").toInt();
         if (index >= 1 && index <= DET_NUM){
-            HDF5Settings *settings = HDF5Settings::instance();
-            QMap<quint8, DetParameter>& detParameters = settings->getDetParameters();
             DetParameter& detParameter = detParameters[index];
             mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
-            socket->setProperty("detectorIndex", index);
-            return index;
+            commitAssign(index);
         }
     }
 
-    HDF5Settings *settings = HDF5Settings::instance();
-    QMap<quint8, DetParameter>& detParameters = settings->getDetParameters();
-
     // IP+PORT匹配
-    {
+    if (assignedIndex < 0) {
         for (int index = 1; index <= DET_NUM; ++index){
             DetParameter& detParameter = detParameters[index];
             QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
             if (detectorAddress == QString("%1:%2").arg(peerAddress).arg(peerPort) &&
                 mDetectorDataProcessor[index]->isFreeSocket()){
                 mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
-                socket->setProperty("detectorIndex", index);
-                return index;
+                commitAssign(index);
+                break;
             }
         }
     }
 
     // IP匹配
-    {
+    if (assignedIndex < 0) {
         for (int index = 1; index <= DET_NUM; ++index){
             DetParameter& detParameter = detParameters[index];
             QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
             if (detectorAddress == peerAddress && mDetectorDataProcessor[index]->isFreeSocket()){
                 mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
-                socket->setProperty("detectorIndex", index);
-                return index;
+                commitAssign(index);
+                break;
             }
         }
     }
 
     //重新分配空闲的数据处理器
-    for (int index = 1; index <= DET_NUM; ++index){
-        if (mDetectorDataProcessor[index]->isFreeSocket()){
-            DetParameter& detParameter = detParameters[index];
-            qstrcpy(detParameter.det_Ip_port, peerAddress.toStdString().c_str());
-            settings->export_LocalDetPara();
-            mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
-            socket->setProperty("detectorIndex", index);
-            return index;
+    if (assignedIndex < 0) {
+        for (int index = 1; index <= DET_NUM; ++index){
+            if (mDetectorDataProcessor[index]->isFreeSocket()){
+                DetParameter& detParameter = detParameters[index];
+                qstrcpy(detParameter.det_Ip_port, peerAddress.toStdString().c_str());
+                mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
+                commitAssign(index);
+                break;
+            }
         }
     }
 
-    return -1;
+    if (needExport)
+        settings->export_LocalDetPara();
+
+    return assignedIndex;
 }
 
 void CommHelper::freeDataProcessor(QTcpSocket *socket)
@@ -697,8 +715,8 @@ void CommHelper::freeDataProcessor(QTcpSocket *socket)
         return;
 
     HDF5Settings *settings = HDF5Settings::instance();
-    QMap<quint8, DetParameter>& detParameters = settings->getDetParameters();
-    DetParameter& detParameter = detParameters[index];
+    const QMap<quint8, DetParameter> detParameters = settings->getDetParameters();
+    DetParameter detParameter = detParameters.value(index);
     mDetectorDataProcessor[index]->reallocSocket(nullptr, detParameter);
 }
 

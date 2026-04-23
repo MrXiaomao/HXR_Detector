@@ -888,8 +888,8 @@ void MainWindow::initCustomPlot(int index, QCustomPlot* customPlot, QString axis
 
     // 读取探测器参数 ，能谱长度
     HDF5Settings *settings = HDF5Settings::instance();
-    QMap<quint8, DetParameter>& detParameters = settings->getDetParameters();
-    DetParameter& detParameter = detParameters[1]; //默认读取探测器1的参数
+    const QMap<quint8, DetParameter> detParameters = settings->getDetParameters();
+    const DetParameter detParameter = detParameters.value(1); //默认读取探测器1的参数
     int multiCh = detParameter.spectrumLength;
 
     // 设置刻度范围
@@ -1574,7 +1574,7 @@ void MainWindow::on_action_startAllMeasure_triggered()
 
     mEnableAutoMeasure = ui->cbb_measureMode->currentIndex()==1;
     mEnableExtendTrigger = ui->com_triggerModel->currentIndex()==1;
-    m_specPlotRefreshTime = qMax((quint32)1000, (quint32)HDF5Settings::instance()->getDetParameters()[1].spectrumRefreshTime) / 1000;
+    m_specPlotRefreshTime = qMax((quint32)1000, (quint32)HDF5Settings::instance()->getDetParameters().value(1).spectrumRefreshTime) / 1000;
 
     if (mEnableAutoMeasure)
     {
@@ -1669,7 +1669,8 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
         qInfo().nospace().noquote() << "自定义通道测量下禁用了外触发模式，已自动切换为软件触发模式";
     }
 
-    m_specPlotRefreshTime = qMax((quint32)1000, (quint32)HDF5Settings::instance()->getDetParameters()[1].spectrumRefreshTime) / 1000;
+    m_specPlotRefreshTime = qMax((quint32)1000, 
+        (quint32)HDF5Settings::instance()->getDetParameters().value(1).spectrumRefreshTime) / 1000;
     
     //先检查路径有效性 lineEdit_filePath
     QString filePath = ui->lineEdit_filePath->text();
@@ -2890,10 +2891,10 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
 
     // 读取探测器参数
     // 读取道数
-    QMap<quint8, DetParameter>& detParameters = HDF5Settings::instance()->getDetParameters();
+    const QMap<quint8, DetParameter> detParameters = HDF5Settings::instance()->getDetParameters();
 
     //更新m_spectrumPlotSettings
-    DetParameter& detParameter = detParameters[detectorId];
+    const DetParameter detParameter = detParameters.value(detectorId);
     int multiCh = detParameter.spectrumLength;
     m_spectrumPlotSettings[detectorId-1].multiChannel = multiCh;
 

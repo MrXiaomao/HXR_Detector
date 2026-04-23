@@ -168,12 +168,12 @@ HDF5Settings::~HDF5Settings()
     }
 }
 
-QMap<quint8, DetParameter>& HDF5Settings::getDetParameters()
+QMap<quint8, DetParameter> HDF5Settings::getDetParameters() const
 {
     return mMapDetParameter;
 }
 
-void HDF5Settings::setDetParameter(QMap<quint8, DetParameter>& detParameters)
+void HDF5Settings::setDetParameter(const QMap<quint8, DetParameter>& detParameters)
 {
     mMapDetParameter = detParameters;
     normalizeDetParameterMap(mMapDetParameter);

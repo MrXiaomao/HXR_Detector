@@ -129,7 +129,6 @@ void DataProcessor::reallocSocket(const hv::SocketChannelPtr& tcpSocket, DetPara
             QString peerAddress = QString::fromStdString(tcpSocket->peerip());
             memset(detParameter->det_Ip_port, 0, IP_LENGTH);
             strcpy(detParameter->det_Ip_port, peerAddress.toStdString().c_str());
-            HDF5Settings::instance()->export_LocalDetPara();
             updateSetting(detParameter);
         }
 
@@ -155,7 +154,6 @@ void DataProcessor::reallocSocket(QTcpSocket *tcpSocket, DetParameter* detParame
             QString peerAddress = tcpSocket->peerAddress().toString();
             memset(detParameter->det_Ip_port, 0, IP_LENGTH);
             strcpy(detParameter->det_Ip_port, peerAddress.toStdString().c_str());
-            HDF5Settings::instance()->export_LocalDetPara();
             updateSetting(detParameter);
         }
     }
@@ -486,8 +484,8 @@ void DataProcessor::extractWaveformData(quint8 no, const QByteArray& data)
 
     // 从 HDF5 加载配置信息
     HDF5Settings *settings = HDF5Settings::instance();
-    QMap<quint8, DetParameter>& detParameters = settings->getDetParameters();
-    DetParameter& detParameter = detParameters[no];
+    const QMap<quint8, DetParameter> detParameters = settings->getDetParameters();
+    const DetParameter detParameter = detParameters.value(no);
     quint32 waveLen = detParameter.waveformLength;
 
     if (waveLen < 2)

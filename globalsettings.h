@@ -838,8 +838,8 @@ public:
         return &hdf5Settings;
     }
 
-    QMap<quint8, DetParameter>& getDetParameters();
-    void setDetParameter(QMap<quint8, DetParameter>&);
+    QMap<quint8, DetParameter> getDetParameters() const;
+    void setDetParameter(const QMap<quint8, DetParameter>& detParameters);
     
     // 写一个标量字符串 attribute（可变长）
     void writeStrAttr(H5::DataSet& ds, const std::string& key, const std::string& val);
