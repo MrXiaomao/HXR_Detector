@@ -571,11 +571,12 @@ void DataProcessor::extractParticleData(quint8 no, const QByteArray& data)
 void DataProcessor::extractTimestampData(quint8 no, const QByteArray& packetData)
 {
     bool ok;
-    quint32 utc = packetData.mid(6, 4).toHex().toUInt(&ok, 16); // utc时间戳
-    quint32 msecond = packetData.mid(10, 4).toHex().toUInt(&ok, 16)*1000 / std::pow(2,32);//65536; // 毫秒
+    quint32 utc = packetData.mid(6, 4).toHex().toUInt(&ok, 32); // utc时间戳
+    quint32 UTCms = packetData.mid(10, 4).toHex().toUInt(&ok, 32);
+    quint64 msecond = static_cast<quint64>(UTCms) * 1000 / std::pow(2,32);//65536; // 毫秒
 
     // UTC转Unix时间戳，也就是从1970年1月1日00：00：00开始计算的整数秒数
-    quint64 tmUnix = utc - 2208988800; // UTC时间戳（1970）-unix时间戳
+    quint64 tmUnix = static_cast<quint64>(utc) - 2208988800ULL; // UTC时间戳（1970）-unix时间戳
     QDateTime tm = QDateTime::fromMSecsSinceEpoch(tmUnix*1000 + msecond);
 
     // 上报时间戳信息

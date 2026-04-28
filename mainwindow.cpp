@@ -1185,7 +1185,7 @@ void MainWindow::onDetectorOffline(quint8 index)
     //清除联网的探测器ID
     if (mOnlineDetectors.contains(index)){
         mOnlineDetectors.removeOne(index);
-        qInfo().nospace() << "谱仪[#" << index << "]离线";
+        // qInfo().nospace() << "谱仪[#" << index << "]离线";
     }
 }
 
