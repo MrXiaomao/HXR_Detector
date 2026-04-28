@@ -37,7 +37,7 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
         }
 
         mRespondString.append(dest);
-        qDebug() << "STR2:" << mRespondString;
+        //qDebug() << "STR2:" << mRespondString;
 
         // switch (mState) {
         // case State::LoginUsername:
@@ -482,14 +482,14 @@ bool QHuaWeiSwitcherHelper::openSwitcherPOEPower(quint8 port/* = 0*/)
         QMutexLocker locker(&mActionLocker);
         if (port == 0){
             for (auto iter = mMapAssociatedDetector.begin(); iter!=mMapAssociatedDetector.end(); ++iter){
-                if (!mMapPoeState[*iter]){
+                if (!mMapPoeState.contains(*iter) || !mMapPoeState[*iter]){
                     mActionsWait.push_back(ACTION_WAIT(*iter, acSwitchInterface));
                     mActionsWait.push_back(ACTION_WAIT(*iter, acOpenPoe));
                 }
             }
         }
         else{
-            if (!mMapPoeState[port]){
+            if (!mMapPoeState.contains(port) || !mMapPoeState[port]){
                 mActionsWait.push_back(ACTION_WAIT(port, acSwitchInterface));
                 mActionsWait.push_back(ACTION_WAIT(port, acOpenPoe));
             }
@@ -515,14 +515,14 @@ bool QHuaWeiSwitcherHelper::closeSwitcherPOEPower(quint8 port/* = 0*/, bool disc
         QMutexLocker locker(&mActionLocker);
         if (port == 0){
             for (auto iter = mMapAssociatedDetector.begin(); iter!=mMapAssociatedDetector.end(); ++iter){
-                if (mMapPoeState[*iter]){
+                if (!mMapPoeState.contains(*iter) || mMapPoeState[*iter]){
                     mActionsWait.push_back(ACTION_WAIT(*iter, acSwitchInterface));
                     mActionsWait.push_back(ACTION_WAIT(*iter, acClosePoe));
                 }
             }
         }
         else{
-            if (!mMapPoeState[port]){
+            if (!mMapPoeState.contains(port) || mMapPoeState[port]){
                 mActionsWait.push_back(ACTION_WAIT(port, acSwitchInterface));
                 mActionsWait.push_back(ACTION_WAIT(port, acClosePoe));
             }
