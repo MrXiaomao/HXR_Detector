@@ -838,8 +838,8 @@ public:
         return &hdf5Settings;
     }
 
-    QMap<quint8, DetParameter> getDetParameters() const;
-    void setDetParameter(const QMap<quint8, DetParameter>& detParameters);
+    QMap<quint8, DetParameter*> getDetParameters() const;
+    void setDetParameter(const QMap<quint8, DetParameter*>& detParameters);
     
     // 写一个标量字符串 attribute（可变长）
     void writeStrAttr(H5::DataSet& ds, const std::string& key, const std::string& val);
@@ -914,7 +914,7 @@ public:
      * @param parameters 包含所有探测器参数的映射
      * @return 是否保存成功
      */
-    bool saveMeasureParametersToH5(const QString& filePath, const QMap<quint8, DetParameter>& parameters);
+    bool saveMeasureParametersToH5(const QString& filePath, const QMap<quint8, DetParameter*>& parameters);
 
     // Getter函数
     quint32 pluseTime() const { return mPluseTime; }
@@ -942,7 +942,7 @@ private:
     
     H5::CompType mConfigDataType;//复合数据类型
     H5::CompType mSpectrumDataType;//复合数据类型
-    QMap<quint8, DetParameter> mMapDetParameter;
+    QMap<quint8, DetParameter*> mMapDetParameter;
     QMutex mWrite_mutex;
     quint32 mPluseTime = 10;//心跳时间(秒)
 };

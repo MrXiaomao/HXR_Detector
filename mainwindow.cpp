@@ -888,9 +888,9 @@ void MainWindow::initCustomPlot(int index, QCustomPlot* customPlot, QString axis
 
     // 读取探测器参数 ，能谱长度
     HDF5Settings *settings = HDF5Settings::instance();
-    const QMap<quint8, DetParameter> detParameters = settings->getDetParameters();
-    const DetParameter detParameter = detParameters.value(1); //默认读取探测器1的参数
-    int multiCh = detParameter.spectrumLength;
+    const QMap<quint8, DetParameter*> detParameters = settings->getDetParameters();
+    const DetParameter *detParameter = detParameters.value(1); //默认读取探测器1的参数
+    int multiCh = detParameter->spectrumLength;
 
     // 设置刻度范围
     customPlot->xAxis->setRange(0, multiCh);
@@ -960,7 +960,7 @@ void MainWindow::clearCustomPlotData(const std::vector<int>& channels)
     };
 
     if (channels.empty()) {
-        for (int i = 0; i < DET_NUM; ++i) {
+        for (int i = 1; i <= DET_NUM; ++i) {
             clearDetectorGraphs(i);
         }
         return;
@@ -1084,20 +1084,24 @@ void MainWindow::onSystemTimer()
 
     // 能谱刷新需根据刷新时长来决定，最小1s刷新一次
     if (commHelper->isMeasuring() && (t % m_specPlotRefreshTime) == 0){
-        //
-        ui->spectroMeter1_top->replot(QCustomPlot::rpQueuedReplot);
-        ui->spectroMeter2_top->replot(QCustomPlot::rpQueuedReplot);
+        // 开始测量以后，有一段冷却时长，这段时间内可以不用刷新能谱
+        if (mPlotAlready.load()){
+            ui->spectroMeter1_top->replot(QCustomPlot::rpQueuedReplot);
+            ui->spectroMeter2_top->replot(QCustomPlot::rpQueuedReplot);
 
-        //能谱图像 y轴自动缩放
-        ui->spectroMeter1_bottom->yAxis->rescale();
-        ui->spectroMeter1_bottom->yAxis->setRangeUpper(
-            ui->spectroMeter1_bottom->yAxis->range().upper * 1.1); // 留10%余量
-        ui->spectroMeter1_bottom->replot(QCustomPlot::rpQueuedReplot);
+            //能谱图像 y轴自动缩放
+            ui->spectroMeter1_bottom->yAxis->rescale();
+            ui->spectroMeter1_bottom->yAxis->setRangeUpper(
+                ui->spectroMeter1_bottom->yAxis->range().upper * 1.1); // 留10%余量
+            ui->spectroMeter1_bottom->replot(QCustomPlot::rpQueuedReplot);
 
-        ui->spectroMeter2_bottom->yAxis->rescale();
-        ui->spectroMeter2_bottom->yAxis->setRangeUpper(
-            ui->spectroMeter2_bottom->yAxis->range().upper * 1.1); // 留10%余量
-        ui->spectroMeter2_bottom->replot(QCustomPlot::rpQueuedReplot);
+            ui->spectroMeter2_bottom->yAxis->rescale();
+            ui->spectroMeter2_bottom->yAxis->setRangeUpper(
+                ui->spectroMeter2_bottom->yAxis->range().upper * 1.1); // 留10%余量
+            ui->spectroMeter2_bottom->replot(QCustomPlot::rpQueuedReplot);
+
+            mPlotAlready.store(false);
+        }
     }
 
     // 定时测量模式下，检测是否时长已满
@@ -1523,13 +1527,20 @@ void MainWindow::on_actionstatusBar_triggered()
 // 测量模式选择：手动测量/继续测量
 void MainWindow::onMeasureModeChanged(int index)
 {
-    //手动测量模式，只允许软件触发，自动测量既可以软件触发也可以外触发
     if(index==0){
+        //手动测量模式，只允许软件触发，自动测量既可以软件触发也可以外触发
         ui->com_triggerModel->setCurrentIndex(0);
         ui->com_triggerModel->setEnabled(false);
+
+        //手动测量模式，不允许设置开始时刻
+        ui->dateTimeEdit_startTime->setEnabled(false);
     }
     else{
+        //自动化测量模式，允许选择硬触发模式
         ui->com_triggerModel->setEnabled(true);
+
+        //自动化测量模式，允许设置开始时刻
+        ui->dateTimeEdit_startTime->setEnabled(true);
     }
 }
 
@@ -1540,7 +1551,14 @@ void MainWindow::onMeasureModeChanged(int index)
 void MainWindow::onTriggerModelChanged(int index)
 {
     if(index==0){
-        if(ui->cbb_measureMode->currentIndex() ==  0){ 
+        //软件触发模式
+        if(ui->cbb_measureMode->currentIndex() ==  0){
+            //手动测量模式
+            ui->spinBox_coolTimeLength->setEnabled(false);// 手动测量下，软件触发不允许设置冷却时间
+            ui->dateTimeEdit_startTime->setEnabled(true); // 手动测量下，允许设置开始时刻
+        }
+        else{
+            //自动化测量模式
             ui->spinBox_coolTimeLength->setEnabled(false);// 手动测量下，软件触发不允许设置冷却时间
         }
         //软件触发
@@ -1574,18 +1592,19 @@ void MainWindow::on_action_startAllMeasure_triggered()
 
     mEnableAutoMeasure = ui->cbb_measureMode->currentIndex()==1;
     mEnableExtendTrigger = ui->com_triggerModel->currentIndex()==1;
-    m_specPlotRefreshTime = qMax((quint32)1000, (quint32)HDF5Settings::instance()->getDetParameters().value(1).spectrumRefreshTime) / 1000;
+    m_specPlotRefreshTime = qMax((quint32)1000, (quint32)HDF5Settings::instance()->getDetParameters().value(1)->spectrumRefreshTime) / 1000;
 
     if (mEnableAutoMeasure)
     {
-        qInfo().nospace().noquote() << tr("开启自动化测量");
-        mAutoMeasureTimerActive = false; // 等到触发信号后，再置为true
         //确保测量时刻距离当前时间大于240s，给自动测量模式预留足够的准备时间
         QDateTime tmStart = ui->dateTimeEdit_startTime->dateTime();
         QDateTime now = QDateTime::currentDateTime();
         if (now.secsTo(tmStart) < 240){
             QMessageBox::information(this, QStringLiteral("提示"), "请确保测量起始时间距离当前时间至少4分钟，以便自动测量模式有足够的准备时间！");
+            return;
         }
+
+        qInfo().nospace().noquote() << tr("开启自动化测量");
     }
     else
     {
@@ -1635,8 +1654,9 @@ void MainWindow::on_action_startAllMeasure_triggered()
         ui->spinBox_coolTimeLength->setValue(ui->dateTime_shotTime->dateTime().secsTo(now));
     }
 
-    if (!mEnableAutoMeasure)//手动测量模式，直接开始测量
+    if (!mEnableAutoMeasure)
     {
+        //手动测量模式，直接开始测量
         ui->lineEdit_triggerflag->setText("已经触发");
         mAutoMeasureDelayTimer->stop();
 
@@ -1644,6 +1664,17 @@ void MainWindow::on_action_startAllMeasure_triggered()
         this->startMeasure();
     }
     else{ // 自动测量模式，启动定时器，等待测量起始时刻的到来
+
+        if (mEnableExtendTrigger)
+        {
+            // 外触发需要等到触发信号才激活
+            mAutoMeasureTimerActive = false; // 等到触发信号后，再置为true
+        }
+        else{
+            // 软件触发及时激活
+            mAutoMeasureTimerActive = true;
+        }
+
         mAutoMeasureDelayTimer->start();
     }
 }
@@ -1669,8 +1700,8 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
         qInfo().nospace().noquote() << "自定义通道测量下禁用了外触发模式，已自动切换为软件触发模式";
     }
 
-    m_specPlotRefreshTime = qMax((quint32)1000, 
-        (quint32)HDF5Settings::instance()->getDetParameters().value(1).spectrumRefreshTime) / 1000;
+    m_specPlotRefreshTime = qMax((quint32)1000,
+                                 (quint32)HDF5Settings::instance()->getDetParameters().value(1)->spectrumRefreshTime) / 1000;
     
     //先检查路径有效性 lineEdit_filePath
     QString filePath = ui->lineEdit_filePath->text();
@@ -2030,6 +2061,9 @@ void MainWindow::onMeasureCountdownTimeout()
         if (!mEnableExtendTrigger){
             ui->dateTime_shotTime->setEnabled(true);
         }
+
+        emit ui->cbb_measureMode->currentIndexChanged(ui->cbb_measureMode->currentIndex());
+        emit ui->com_triggerModel->currentIndexChanged(ui->com_triggerModel->currentIndex());
     }
 }
 
@@ -2389,6 +2423,7 @@ void MainWindow::updateSpecPlotData(int detectorId, const quint32 spectrum[]) {
 
     // 更新图像数据
     getGraph(detectorId, true)->setData(x, y);
+    mPlotAlready.store(true);
 }
 
 // 添加计数率显示更新函数
@@ -2456,6 +2491,7 @@ void MainWindow::updateCountRatePlotData(int detectorId, double fpgaTime, double
         double pad = (y_max - y_min) * 0.1;
         customPlot->yAxis->setRange(y_min - pad, y_max + pad);
     }
+    mPlotAlready.store(true);
 }
 
 #include "localsettingwindow.h"
@@ -2896,11 +2932,11 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
 
     // 读取探测器参数
     // 读取道数
-    const QMap<quint8, DetParameter> detParameters = HDF5Settings::instance()->getDetParameters();
+    const QMap<quint8, DetParameter*> detParameters = HDF5Settings::instance()->getDetParameters();
 
     //更新m_spectrumPlotSettings
-    const DetParameter detParameter = detParameters.value(detectorId);
-    int multiCh = detParameter.spectrumLength;
+    const DetParameter *detParameter = detParameters.value(detectorId);
+    int multiCh = detParameter->spectrumLength;
     m_spectrumPlotSettings[detectorId-1].multiChannel = multiCh;
 
     double xMin = 0.0;
@@ -2908,8 +2944,8 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
 
     if (mEnScale)
     {
-        m_spectrumPlotSettings[detectorId-1].xMin = detParameter.spectrumPlotEnMin;
-        m_spectrumPlotSettings[detectorId-1].xMax = detParameter.spectrumPlotEnMax;
+        m_spectrumPlotSettings[detectorId-1].xMin = detParameter->spectrumPlotEnMin;
+        m_spectrumPlotSettings[detectorId-1].xMax = detParameter->spectrumPlotEnMax;
 
         // 读取能量刻度系数
         // 判断是否勾选能量刻度

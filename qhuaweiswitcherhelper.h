@@ -135,6 +135,11 @@ private:
 };
 #endif //ENABLE_LIBHV_SOCKET
 
+typedef struct _action_wait{
+    int poeIndex;
+    bool openPoe;
+}ACTION_WAIT;
+
 class QHuaWeiSwitcherHelper : public QObject
 {
     Q_OBJECT
@@ -258,6 +263,7 @@ private:
     quint8 mLogoutStep = 0; // 0=未退出, 1=已发第一条 quit, 2=已发第二条 quit
 
     QMap<quint8, bool> mMapPoeState;
+    QVector<ACTION_WAIT> mActionWait;// 等待执行的动作
 };
 
 #endif // QHUAWEISWITCHERHELPER_H

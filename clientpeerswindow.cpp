@@ -11,6 +11,8 @@ ClientPeersWindow::ClientPeersWindow(QWidget *parent)
     ui->tableWidget->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Fixed);
     ui->tableWidget->setColumnWidth(1, 200);
     ui->tableWidget->setRowHeight(0, 30);
+    ui->tableWidget->horizontalHeader()->setSortIndicatorShown(true); // 显示排序箭头
+    ui->tableWidget->horizontalHeader()->setSortIndicator(0, Qt::AscendingOrder); // 0是第一列，升序
 
     connect(this, &ClientPeersWindow::connectPeerConnection, this, [=](QString peerAddress, quint16 peerPort){
         int row = ui->tableWidget->rowCount();

@@ -62,7 +62,7 @@ CommHelper::CommHelper(QObject *parent)
     connect(this, &CommHelper::settingfinished, this, [=](){        
         //更改了设置，这里需要重新对数据处理器进行关联
         HDF5Settings *settings = HDF5Settings::instance();
-        const QMap<quint8, DetParameter> detParameters = settings->getDetParameters();
+        const QMap<quint8, DetParameter*> detParameters = settings->getDetParameters();
 
         auto it = this->mConnectionPeers.begin();
         while (it != this->mConnectionPeers.end()) {
@@ -71,12 +71,12 @@ CommHelper::CommHelper(QObject *parent)
             // ip修改可能导致关联的探测器索引也发生改变，这里改为重新分配
             qint8 index =  (qint8)(intptr_t)(connection->context());
             if (index >= 1 && index <= DET_NUM){
-                DetParameter detParameter = detParameters.value(index);
+                DetParameter *detParameter = detParameters.value(index);
 
-                QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
+                QString detectorAddress = QString::fromStdString(detParameter->det_Ip_port);
                 QString peerAddress = QString::fromStdString(connection->peerip());
                 if (peerAddress != detectorAddress){
-                    DetParameter detParameter = detParameters.value(index);
+                    DetParameter *detParameter = detParameters.value(index);
                     QMetaObject::invokeMethod(this, "detectorOffline",
                                               Qt::QueuedConnection,
                                               Q_ARG(quint8, index));
@@ -91,7 +91,7 @@ CommHelper::CommHelper(QObject *parent)
                 }
                 else{
                     // ip没做更改，只需要更新参数即可
-                    mDetectorDataProcessor[index]->updateSetting(&detParameter);
+                    mDetectorDataProcessor[index]->updateSetting(detParameter);
                 }
             }
 #else
@@ -444,7 +444,7 @@ void CommHelper::onTemperatureTimeout(quint8 detID)
     stopMeasure(detID);
     //先停止测量
     int stopDelay = 30; //min
-    qInfo().nospace() << "谱仪[#" << detID
+    qInfo().nospace().noquote() << "谱仪[#" << detID
             << QString("]温度心跳超时报警！停止测量并断电%1min后重新打开供电!").arg(stopDelay);
     //断电
     closeSwitcherPOEPower(detID);
@@ -542,24 +542,24 @@ qint8 CommHelper::allocDataProcessor(const hv::SocketChannelPtr& socket)
     }
 
     HDF5Settings *settings = HDF5Settings::instance();
-    QMap<quint8, DetParameter> detParameters = settings->getDetParameters();
+    QMap<quint8, DetParameter*> detParameters = settings->getDetParameters();
     bool needExport = false;
     qint8 assignedIndex = -1;
 
-    auto commitAssign = [&](qint8 index){
+    auto commitAssign = [&](qint8 index, bool bNeedExport){
         settings->setDetParameter(detParameters);
         socket->setContext((void*)(intptr_t)index);
         assignedIndex = index;
-        needExport = true;
+        needExport = bNeedExport;
     };
 
     if (socket->context() != nullptr)
     {
         qint8 index =  (qint8)(intptr_t)(socket->context());// channel->property("detectorIndex").isValid();
         if (index >= 1 && index <= DET_NUM){
-            DetParameter& detParameter = detParameters[index];
-            mDetectorDataProcessor[index]->reallocSocket(socket, &detParameter);
-            commitAssign(index);
+            DetParameter* detParameter = detParameters[index];
+            mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
+            commitAssign(index, false);
         }
     }
 
@@ -567,11 +567,11 @@ qint8 CommHelper::allocDataProcessor(const hv::SocketChannelPtr& socket)
     // IP+PORT匹配
     if (assignedIndex < 0) {
         for (int index = 1; index <= DET_NUM; ++index){
-            DetParameter& detParameter = detParameters[index];
-            QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
+            DetParameter* detParameter = detParameters[index];
+            QString detectorAddress = QString::fromStdString(detParameter->det_Ip_port);
             if (detectorAddress == QString("%1:%2").arg(peerAddress).arg(peerPort)){
-                mDetectorDataProcessor[index]->reallocSocket(socket, &detParameter);
-                commitAssign(index);
+                mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
+                commitAssign(index, false);
                 break;
             }
         }
@@ -580,11 +580,11 @@ qint8 CommHelper::allocDataProcessor(const hv::SocketChannelPtr& socket)
     // IP匹配
     if (assignedIndex < 0) {
         for (int index = 1; index <= DET_NUM; ++index){
-            DetParameter& detParameter = detParameters[index];
-            QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
+            DetParameter* detParameter = detParameters[index];
+            QString detectorAddress = QString::fromStdString(detParameter->det_Ip_port);
             if (detectorAddress == peerAddress){
-                mDetectorDataProcessor[index]->reallocSocket(socket, &detParameter);
-                commitAssign(index);
+                mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
+                commitAssign(index, false);
                 break;
             }
         }
@@ -593,12 +593,13 @@ qint8 CommHelper::allocDataProcessor(const hv::SocketChannelPtr& socket)
     //重新分配空闲的数据处理器
     if (assignedIndex < 0) {
         for (int index = 1; index <= DET_NUM; ++index){
-            DetParameter& detParameter = detParameters[index];
-            QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
+            DetParameter* detParameter = detParameters[index];
+            QString detectorAddress = QString::fromStdString(detParameter->det_Ip_port);
             if (mDetectorDataProcessor[index]->isFreeSocket() && detectorAddress==QStringLiteral("0.0.0.0")){
-                qstrcpy(detParameter.det_Ip_port, peerAddress.toStdString().c_str());
-                mDetectorDataProcessor[index]->reallocSocket(socket, &detParameter);
-                commitAssign(index);
+                memset(detParameter->det_Ip_port, 0, sizeof(detParameter->det_Ip_port));
+                qstrcpy(detParameter->det_Ip_port, peerAddress.toStdString().c_str());
+                mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
+                commitAssign(index, true);
                 break;
             }
         }
@@ -772,6 +773,8 @@ bool CommHelper::openSwitcherExtendPOEPower()
     if(mHuaWeiSwitcherHelper.isEmpty() || mExtendTimeSynModule.switcherIndex <= 0 || mExtendTimeSynModule.switcherIndex > mHuaWeiSwitcherHelper.size()){
         return false;
     }
+
+    mHuaWeiSwitcherHelper[mExtendTimeSynModule.switcherIndex-1]->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
     return mHuaWeiSwitcherHelper[mExtendTimeSynModule.switcherIndex-1]->openSwitcherPOEPower(mExtendTimeSynModule.poeIndex);
 }
 
@@ -781,6 +784,12 @@ bool CommHelper::openSwitcherExtendPOEPower()
 bool CommHelper::closeSwitcherExtendPOEPower()
 {
     mExtendTimeSynModule.reload();
+    //检查是否存在
+    if(mHuaWeiSwitcherHelper.isEmpty() || mExtendTimeSynModule.switcherIndex <= 0 || mExtendTimeSynModule.switcherIndex > mHuaWeiSwitcherHelper.size()){
+        return false;
+    }
+
+    mHuaWeiSwitcherHelper[mExtendTimeSynModule.switcherIndex-1]->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
     return mHuaWeiSwitcherHelper[mExtendTimeSynModule.switcherIndex-1]->closeSwitcherPOEPower(mExtendTimeSynModule.poeIndex);
 }
 
@@ -882,12 +891,12 @@ void CommHelper::connectSwitcher(bool query)
     GlobalSettings settings(DEVICE_CONFIG_FILE);
     mHuaWeiSwitcherCount =  settings.value("Switcher/Count", 0).toUInt();
     mHuaWeiSwitcherHelper.reserve(mHuaWeiSwitcherCount);
+    mExtendTimeSynModule.reload();
     for (int i=0; i<mHuaWeiSwitcherCount; ++i){
         QString ip = settings.value(QString("Switcher/%1/ip").arg(i+1), "").toString();
         QString ass = settings.value(QString("Switcher/%1/detector").arg(i+1), "").toString();
         QHuaWeiSwitcherHelper* huaWeiSwitcherHelper = new QHuaWeiSwitcherHelper(ip);
         huaWeiSwitcherHelper->setAssociatedDetector(ass);
-        mExtendTimeSynModule.reload();
         if (mExtendTimeSynModule.switcherIndex == (i+1))
             huaWeiSwitcherHelper->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
 
@@ -939,7 +948,7 @@ void CommHelper::openPower()
         for (auto switcherHelper : mHuaWeiSwitcherHelper)
         {
             if (switcherHelper->ip() == ip){
-                switcherHelper->setAssociatedDetector(ass);
+                // switcherHelper->setAssociatedDetector(ass);
                 // mExtendTimeSynModule.reload();
                 // if (mExtendTimeSynModule.switcherIndex == (i+1))
                 //     switcherHelper->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
@@ -961,7 +970,7 @@ void CommHelper::closePower(bool disconnect)
         for (auto switcherHelper : mHuaWeiSwitcherHelper)
         {
             if (switcherHelper->ip() == ip){
-                switcherHelper->setAssociatedDetector(ass);
+                // switcherHelper->setAssociatedDetector(ass);
                 // mExtendTimeSynModule.reload();
                 // if (mExtendTimeSynModule.switcherIndex == (i+1))
                 //     switcherHelper->setAssociatedDetector(mExtendTimeSynModule.poeIndex);

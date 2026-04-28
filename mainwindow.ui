@@ -1394,7 +1394,7 @@
                    <bool>false</bool>
                   </property>
                   <property name="toolTip">
-                   <string>系统在该时刻之前提前30s做好测试准备工作</string>
+                   <string>系统在该时刻之前提前2分钟做好测试准备工作</string>
                   </property>
                   <property name="displayFormat">
                    <string>yyyy/M/d H:mm:ss</string>
@@ -1792,7 +1792,7 @@
      <x>0</x>
      <y>0</y>
      <width>1431</width>
-     <height>21</height>
+     <height>18</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">

@@ -63,10 +63,12 @@ DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
 
     mTempTimeoutTimer.setSingleShot(true);
     connect(&mTempTimeoutTimer, &QTimer::timeout, this, [this](){
-        qWarning().noquote().nospace() << tr("谱仪[#%1]超过%2秒未收到温度数据，触发报警！").arg(mIndex).arg(mTempTimeoutTimer.interval() / 1000);
+        if (this->mTcpSocket && this->mTcpSocket->isConnected()){
+            qWarning().noquote().nospace() << tr("谱仪[#%1]超过%2秒未收到温度数据，触发报警！").arg(mIndex).arg(mTempTimeoutTimer.interval() / 1000);
 
-        // 给CommHelper模块上报温度超时报警
-        emit reportTemperatureTimeout(mIndex);
+            // 给CommHelper模块上报温度超时报警
+            emit reportTemperatureTimeout(mIndex);
+        }
     });
 
     // 温度刷新，重启心跳定时器
@@ -382,7 +384,6 @@ void DataProcessor::restartTempTimeout() {
 #if USED_SIMULATOR
     return;
 #endif //
-    return;
 
     //从HDF5加载配置信息
     HDF5Settings *settings = HDF5Settings::instance();
@@ -484,9 +485,9 @@ void DataProcessor::extractWaveformData(quint8 no, const QByteArray& data)
 
     // 从 HDF5 加载配置信息
     HDF5Settings *settings = HDF5Settings::instance();
-    const QMap<quint8, DetParameter> detParameters = settings->getDetParameters();
-    const DetParameter detParameter = detParameters.value(no);
-    quint32 waveLen = detParameter.waveformLength;
+    const QMap<quint8, DetParameter*> detParameters = settings->getDetParameters();
+    const DetParameter *detParameter = detParameters.value(no);
+    quint32 waveLen = detParameter->waveformLength;
 
     if (waveLen < 2)
         return;
@@ -571,7 +572,7 @@ void DataProcessor::extractTimestampData(quint8 no, const QByteArray& packetData
 {
     bool ok;
     quint32 utc = packetData.mid(6, 4).toHex().toUInt(&ok, 16); // utc时间戳
-    quint32 msecond = packetData.mid(10, 4).toHex().toUInt(&ok, 16)*1000/65536; // 毫秒
+    quint32 msecond = packetData.mid(10, 4).toHex().toUInt(&ok, 16)*1000 / std::pow(2,32);//65536; // 毫秒
 
     // UTC转Unix时间戳，也就是从1970年1月1日00：00：00开始计算的整数秒数
     quint64 tmUnix = utc - 2208988800; // UTC时间戳（1970）-unix时间戳
