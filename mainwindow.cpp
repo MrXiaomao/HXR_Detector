@@ -482,19 +482,19 @@ void MainWindow::initUi()
         ui->rightSidewidget->setFixedWidth(30);
     }
 
-    ui->tableWidget_detector->verticalHeader()->setDefaultSectionSize(25); // 设置默认行高
+    ui->tableWidget_detector->verticalHeader()->setDefaultSectionSize(24); // 设置默认行高
     ui->tableWidget_detector->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed); // 固定高度
     ui->tableWidget_detector->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    ui->tableWidget_detector->horizontalHeader()->setFixedHeight(25);
+    ui->tableWidget_detector->horizontalHeader()->setFixedHeight(24);
     ui->tableWidget_detector->setRowCount(DET_NUM+1);
     for (int row = 0; row <= DET_NUM; ++row){
         QTableWidgetItem *__qtablewidgetitem = new QTableWidgetItem(QStringLiteral("谱仪#%1").arg(row));
         ui->tableWidget_detector->setVerticalHeaderItem(row, __qtablewidgetitem);
-        ui->tableWidget_detector->setRowHeight(row, 25);
+        ui->tableWidget_detector->setRowHeight(row, 24);
     }
-    ui->tableWidget_detector->setRowHeight(0, 50);
+    ui->tableWidget_detector->setRowHeight(0, 40);
     ui->tableWidget_detector->verticalHeaderItem(0)->setText("时间同步\n触发模块");
-    ui->tableWidget_detector->setMinimumHeight((DET_NUM+3)*25+2);
+    ui->tableWidget_detector->setMinimumHeight((DET_NUM+1)*24+42);
 
     for (int row=0; row<ui->tableWidget_detector->rowCount(); ++row){
         for (int column=0; column<=3; ++column){
