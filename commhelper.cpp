@@ -164,7 +164,7 @@ void CommHelper::initSocket()
     mTcpServer->onConnection = [&](const hv::SocketChannelPtr& channel)
     {
         if (channel->isConnected()){// isOpened()){// ->status == hv::SocketChannel::CONNECTED){
-            // channel->setKeepaliveTimeout(5000);// 5s没有数据交互就断开
+            channel->setKeepaliveTimeout(10000);// 10s没有数据交互就断开
 
             QString peerAddress = QString::fromStdString(channel->peerip());
             quint16 peerPort = channel->peerport();
@@ -440,6 +440,11 @@ void CommHelper::onTemperatureTimeout(quint8 detID)
         return;
     }
 
+    // 判断探测器是否在测量状态
+    if (!mDetectFileProcessor.contains(detID)) {
+        return;
+    }
+    
     //断电30min后重新打开供电
     stopMeasure(detID);
     //先停止测量
@@ -1377,6 +1382,22 @@ void CommHelper::handleDetectorDisconnection(quint8 index)
             continue;
         }
 
+        // 保存连接信息，用于触发信号
+#if ENABLE_LIBHV
+        QString peerAddress = QString::fromStdString(connection->peerip());
+        quint16 peerPort = connection->peerport();
+#else
+        QString peerAddress = connection->property("peerAddress").toString();
+        quint16 peerPort = connection->property("peerPort").toUInt();
+#endif //ENABLE_LIBHV
+
+        // 1. 关闭连接
+#if ENABLE_LIBHV
+        connection->close();
+#else
+        connection->disconnectFromHost();
+#endif //ENABLE_LIBHV
+
         // 2. 触发 detectorOffline 信号
         QMetaObject::invokeMethod(this, "detectorOffline",
             Qt::QueuedConnection,
@@ -1384,6 +1405,15 @@ void CommHelper::handleDetectorDisconnection(quint8 index)
 
         // 3. 取消数据处理器关联
         freeDataProcessor(connection);
+
+        // 4. 从连接列表中移除
+        it = mConnectionPeers.erase(it);
+
+        // 5. 触发 disconnectPeerConnection 信号
+        QMetaObject::invokeMethod(this, "disconnectPeerConnection",
+            Qt::QueuedConnection,
+            Q_ARG(QString, peerAddress),
+            Q_ARG(quint16, peerPort));
 
         qInfo().nospace() << "谱仪[#" << index << "]下线，已执行断开连接处理";
         return; // 找到并处理完成，退出
