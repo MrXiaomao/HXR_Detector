@@ -948,7 +948,7 @@ void CommHelper::openPower()
         for (auto switcherHelper : mHuaWeiSwitcherHelper)
         {
             if (switcherHelper->ip() == ip){
-                // switcherHelper->setAssociatedDetector(ass);
+                switcherHelper->setAssociatedDetector(ass); // 这里只关联了谱仪，如果需要关联时间同步模块，需要开发下面的几行代码
                 // mExtendTimeSynModule.reload();
                 // if (mExtendTimeSynModule.switcherIndex == (i+1))
                 //     switcherHelper->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
@@ -970,7 +970,7 @@ void CommHelper::closePower(bool disconnect)
         for (auto switcherHelper : mHuaWeiSwitcherHelper)
         {
             if (switcherHelper->ip() == ip){
-                // switcherHelper->setAssociatedDetector(ass);
+                switcherHelper->setAssociatedDetector(ass);// 这里只关联了谱仪，如果需要关联时间同步模块，需要开发下面的几行代码
                 // mExtendTimeSynModule.reload();
                 // if (mExtendTimeSynModule.switcherIndex == (i+1))
                 //     switcherHelper->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
