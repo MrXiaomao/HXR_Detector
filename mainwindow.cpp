@@ -267,7 +267,6 @@ void MainWindow::initUi()
         // 测量模式
         int measureMode = systemSettings.value("MeasureMode", 0).toInt();
         ui->cbb_measureMode->setCurrentIndex(measureMode);
-        onMeasureModeChanged(measureMode);
 
         // 测量发次号是否自动增加
         bool flag = systemSettings.value("ShotNumIsAutoIncrease", true).toBool();
@@ -287,6 +286,7 @@ void MainWindow::initUi()
         ui->com_triggerModel->setCurrentIndex(triggerMode); // 或者从配置文件中读取
         onTriggerModelChanged(triggerMode);
         systemSettings.endGroup();
+
     }
 
     connect(ui->cbb_measureMode, QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -294,6 +294,9 @@ void MainWindow::initUi()
 
     connect(ui->com_triggerModel, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &MainWindow::onTriggerModelChanged);
+
+    emit ui->cbb_measureMode->currentIndexChanged(ui->cbb_measureMode->currentIndex());
+    emit ui->com_triggerModel->currentIndexChanged(ui->com_triggerModel->currentIndex());
 
     // 创建上线客户端页面
     mClientPeersWindow = new ClientPeersWindow();
@@ -492,9 +495,9 @@ void MainWindow::initUi()
         ui->tableWidget_detector->setVerticalHeaderItem(row, __qtablewidgetitem);
         ui->tableWidget_detector->setRowHeight(row, 24);
     }
-    ui->tableWidget_detector->setRowHeight(0, 40);
+    ui->tableWidget_detector->setRowHeight(0, 50);
     ui->tableWidget_detector->verticalHeaderItem(0)->setText("时间同步\n触发模块");
-    ui->tableWidget_detector->setMinimumHeight((DET_NUM+1)*24+42);
+    ui->tableWidget_detector->setMinimumHeight((DET_NUM+1)*24+52);
 
     for (int row=0; row<ui->tableWidget_detector->rowCount(); ++row){
         for (int column=0; column<=3; ++column){
