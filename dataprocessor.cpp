@@ -63,6 +63,9 @@ DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
 
     mTempTimeoutTimer.setSingleShot(true);
     connect(&mTempTimeoutTimer, &QTimer::timeout, this, [this](){
+        if (mIsUpgrading)
+            return ;// 升级过程中不做温度心跳检测
+
         if (this->mTcpSocket && this->mTcpSocket->isConnected()){
             qWarning().noquote().nospace() << tr("谱仪[#%1]超过%2秒未收到温度数据，触发报警！").arg(mIndex).arg(mTempTimeoutTimer.interval() / 1000);
 
@@ -75,7 +78,6 @@ DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
     connect(this, &DataProcessor::reportTemperatureData, this, [this](){
         restartTempTimeout();
     });
-
 }
 
 

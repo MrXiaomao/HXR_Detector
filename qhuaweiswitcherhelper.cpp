@@ -15,28 +15,31 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
     connect(mHeartbeatTimer, &QTimer::timeout, this, &QHuaWeiSwitcherHelper::performHeartbeatCheck);
 
     // 初始化心跳检测
-    mHeartbeatTimer->setInterval(60000); // 每30秒检测一次
+    mHeartbeatTimer->setInterval(60000); // 每60秒检测一次
     mHeartbeatTimer->setSingleShot(false);
     mWaitingHeartbeatResponse = false;
     mIsReconnecting = false;
 
     connect(mTelnet, &QTcpSocket::readyRead,this,[=](){
-        QByteArray rx_current = mTelnet->readAll();
-        //qDebug() << "STR1:" << rx_current;// << "HEX:"  << rx_current.toHex(' ');
-        QByteArray dest;
-        for (int i=0; i<rx_current.size(); ++i){
-            // 保留：英文字母、数字、空格、回车、常见符号
-            if (isalpha(rx_current[i]) || isdigit((uint8_t)rx_current[i]) ||
-                (uint8_t)rx_current[i] == ' ' || (uint8_t)rx_current[i] == '\r' || (uint8_t)rx_current[i] == '\n' ||
-                ((uint8_t)rx_current[i] >= 33 && (uint8_t)rx_current[i] <= 47) ||  // !"#$%&'()*+,-./
-                ((uint8_t)rx_current[i] >= 58 && (uint8_t)rx_current[i] <= 64) ||  // :;<=>?@
-                ((uint8_t)rx_current[i] >= 91 && (uint8_t)rx_current[i] <= 96) ||  // [\]^_`
-                ((uint8_t)rx_current[i] >= 123 && (uint8_t)rx_current[i] <= 126)) { // {|}~
-                dest.push_back(rx_current[i]);
+        while (mTelnet->bytesAvailable() > 0)
+        {
+            QByteArray rx_current = mTelnet->readLine();//readAll();
+            //qDebug() << "STR1:" << rx_current;// << "HEX:"  << rx_current.toHex(' ');
+            QByteArray dest;
+            for (int i=0; i<rx_current.size(); ++i){
+                // 保留：英文字母、数字、空格、回车、常见符号
+                if (isalpha(rx_current[i]) || isdigit((uint8_t)rx_current[i]) ||
+                    (uint8_t)rx_current[i] == ' ' || (uint8_t)rx_current[i] == '\r' || (uint8_t)rx_current[i] == '\n' ||
+                    ((uint8_t)rx_current[i] >= 33 && (uint8_t)rx_current[i] <= 47) ||  // !"#$%&'()*+,-./
+                    ((uint8_t)rx_current[i] >= 58 && (uint8_t)rx_current[i] <= 64) ||  // :;<=>?@
+                    ((uint8_t)rx_current[i] >= 91 && (uint8_t)rx_current[i] <= 96) ||  // [\]^_`
+                    ((uint8_t)rx_current[i] >= 123 && (uint8_t)rx_current[i] <= 126)) { // {|}~
+                    dest.push_back(rx_current[i]);
+                }
             }
-        }
 
-        mRespondString.append(dest);
+            mRespondString.append(dest);
+        }
         //qDebug() << "STR2:" << mRespondString;
 
         // switch (mState) {
@@ -168,14 +171,14 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
         }
         // 检测心跳响应（只要在等待心跳响应且响应包含 HUAWEI 提示符就认为是心跳响应）
         else if (mWaitingHeartbeatResponse &&
-                 (mRespondString.contains("[HUAWEI]") || mRespondString.contains("<HUAWEI>") || mRespondString.contains("display clock\r")))
+                 (mRespondString.contains("[HUAWEI]") || mRespondString.contains("<HUAWEI>") || mRespondString.contains("UTC+08:00\r\n")))
         {
             // 收到心跳响应，重置标志
             mWaitingHeartbeatResponse = false;
             mLastHeartbeatTime.restart();
             mRespondString.clear();
 
-            executeNextAction(true);
+            executeNextAction();
             // qDebug().nospace().noquote() << "交换机[" << mIp << "]心跳检测正常";
         }
         else if (mSwitcherInSystemView){
@@ -356,6 +359,11 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
             startHeartbeatCheck();
         }
     });
+
+    connect(this, &QHuaWeiSwitcherHelper::syncPoePowerStatus, this, [=](quint8 index, bool on){
+        mMapPoeState[index] = on;
+        QMetaObject::invokeMethod(this, "reportPoePowerStatus", Qt::QueuedConnection, Q_ARG(quint8, index), Q_ARG(bool, true));
+    });
 }
 
 //判断谱仪编号是否存在
@@ -423,7 +431,10 @@ void QHuaWeiSwitcherHelper::queryPowerStatus()
     {
         QMutexLocker locker(&mActionLocker);
         for (auto iter = mMapAssociatedDetector.begin(); iter!=mMapAssociatedDetector.end(); ++iter){
-            mActionsWait.push_back(ACTION_WAIT(*iter, acQueryState));
+            if (!mMapPoeState.contains(*iter) || !mMapPoeState[*iter]){//已经在线的就不用再重复查询了
+                //mActionsWait.push_back(ACTION_WAIT(*iter, acSwitchInterface));
+                mActionsWait.push_back(ACTION_WAIT(*iter, acQueryState));
+            }
         }
 
         mCurrentPoeIndex = mMapAssociatedDetector[0];
@@ -480,8 +491,20 @@ bool QHuaWeiSwitcherHelper::openSwitcherPOEPower(quint8 port/* = 0*/)
 
     {
         QMutexLocker locker(&mActionLocker);
-        if (port == 0){
+        if (mBusyStartTimer.elapsed() >= 5000)
+            mActionsWait.clear();// 为了防止指令堵塞，清空闲置指令
+
+        if (port == 0){            
             for (auto iter = mMapAssociatedDetector.begin(); iter!=mMapAssociatedDetector.end(); ++iter){
+                // 按照优先级，删除之前未执行的指令，达到快速响应效果
+                mActionsWait.erase(
+                    std::remove_if(mActionsWait.begin(), mActionsWait.end(),
+                       [=](const ACTION_WAIT& item){
+                           return item.poeIndex == *iter;
+                       }
+                    ), mActionsWait.end()
+                );
+
                 if (!mMapPoeState.contains(*iter) || !mMapPoeState[*iter]){
                     mActionsWait.push_back(ACTION_WAIT(*iter, acSwitchInterface));
                     mActionsWait.push_back(ACTION_WAIT(*iter, acOpenPoe));
@@ -513,8 +536,19 @@ bool QHuaWeiSwitcherHelper::closeSwitcherPOEPower(quint8 port/* = 0*/, bool disc
 
     {
         QMutexLocker locker(&mActionLocker);
+        if (mBusyStartTimer.elapsed() >= 5000)
+            mActionsWait.clear();// 为了防止指令堵塞，清空闲置指令
+
         if (port == 0){
             for (auto iter = mMapAssociatedDetector.begin(); iter!=mMapAssociatedDetector.end(); ++iter){
+                // 按照优先级，删除之前未执行的指令，达到快速响应效果
+                mActionsWait.erase(
+                    std::remove_if(mActionsWait.begin(), mActionsWait.end(),
+                       [=](const ACTION_WAIT& item){
+                           return item.poeIndex == *iter;
+                        }
+                    ), mActionsWait.end()
+                );
                 if (!mMapPoeState.contains(*iter) || mMapPoeState[*iter]){
                     mActionsWait.push_back(ACTION_WAIT(*iter, acSwitchInterface));
                     mActionsWait.push_back(ACTION_WAIT(*iter, acClosePoe));
@@ -546,11 +580,11 @@ void QHuaWeiSwitcherHelper::checkLoginAlive()
 
     {
         QMutexLocker locker(&mActionLocker);
+        if (mBusyStartTimer.elapsed() >= 5000)
+            mActionsWait.clear();// 为了防止指令堵塞，清空闲置指令
+
         mActionsWait.push_back(ACTION_WAIT(0x00, acKeepLive));
     }
-
-    mWaitingHeartbeatResponse = true;
-    mLastHeartbeatTime.restart();
 
     if (!mSwitcherIsBusy.load() || mBusyStartTimer.elapsed() >= 5000/*距离上次指令执行已经超过5s*/){
         executeNextAction(true);
@@ -798,7 +832,13 @@ void QHuaWeiSwitcherHelper::executeNextAction(bool keepFirst)
 
     QTimer::singleShot(0, this, [=](){
         mSwitcherIsBusy.store(true);
-        mBusyStartTimer.restart();
+        if (mCurrentAction == acKeepLive){
+            mWaitingHeartbeatResponse = true;
+            mLastHeartbeatTime.restart();
+        } else {
+            mBusyStartTimer.restart();
+        }
+
         mTelnet->write(mCurrentCommand.toLatin1());
     });
 }

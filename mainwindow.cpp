@@ -286,7 +286,6 @@ void MainWindow::initUi()
         ui->com_triggerModel->setCurrentIndex(triggerMode); // 或者从配置文件中读取
         onTriggerModelChanged(triggerMode);
         systemSettings.endGroup();
-
     }
 
     connect(ui->cbb_measureMode, QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -2092,6 +2091,8 @@ QString MainWindow::increaseShotNumSuffix(QString shotNumStr)
 
 void MainWindow::on_action_powerOn_triggered()
 {
+    qInfo() << "手动打开所有POE电源";
+
     //清除所有
     commHelper->manualOpenSwitcherPOEPower();
 
@@ -2102,6 +2103,8 @@ void MainWindow::on_action_powerOn_triggered()
 
 void MainWindow::on_action_powerOff_triggered()
 {
+    qInfo() << "手动关闭所有POE电源";
+
     // 关闭电源
     commHelper->closePower();
 }

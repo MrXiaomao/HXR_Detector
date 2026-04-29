@@ -141,7 +141,7 @@ OTAUpgradeWindow::OTAUpgradeWindow(QWidget *parent)
 
     connect(commHelper, &CommHelper::reportOTAUpgradeData, this, [=](quint8 index, const QByteArray& data){
         m_returnDataSize[index] += data.size();
-        qDebug() << "reportOTAUpgradeData" << m_returnDataSize[index] << data.size();
+        //qDebug() << "reportOTAUpgradeData" << m_returnDataSize[index] << data.size();
         // if (m_returnDataSize[index] >= m_currentFileSize[index])
         // {
         //     if (index == 0)
@@ -386,6 +386,8 @@ void OTAUpgradeWindow::startNextTask()
     QString partition = currentTask.second;
     QString filePath = m_rpdFiles[index];
 
+    qDebug() << (tr("=== 开始执行任务%1：谱仪[#%2]（分区：%3） ===")
+               .arg(m_currentTaskIndex + 1).arg(index).arg(partition));
     sigWriteLog(tr("=== 开始执行任务%1：谱仪[#%2]（分区：%3） ===")
                     .arg(m_currentTaskIndex + 1).arg(index).arg(partition));
 
@@ -396,10 +398,14 @@ void OTAUpgradeWindow::startNextTask()
     sectorData[9] = sectorCount & 0xFF;
 
     if (!commHelper->sendOTAUpgradeData(index, sectorData)) {
-        if (index == 0)
+        if (index == 0){
+            qCritical() << tr("时钟同步模块发送更新数据包失败，跳过该任务").arg(index);
             sigWriteLog(tr("时钟同步模块发送更新数据包失败，跳过该任务").arg(index), QtCriticalMsg);
-        else
+        }
+        else{
+            qCritical() << tr("时钟同步模块发送更新数据包失败，跳过该任务").arg(index);
             sigWriteLog(tr("谱仪[#%1]发送更新数据包失败，跳过该任务").arg(index), QtCriticalMsg);
+        }
         m_currentTaskIndex++;
         startNextTask(); // 直接执行下一个任务
         return;
@@ -409,6 +415,7 @@ void OTAUpgradeWindow::startNextTask()
     QByteArray addrData = QByteArray::fromHex("12 34 00 0F CA 10 00 00 00 00 AB CD");
     addrData[7] = (ui->comboBox_partition->currentIndex() == 0) ? 0x00 : 0x80;
     if (!commHelper->sendOTAUpgradeData(index, addrData)) {
+        qCritical() << tr("谱仪[#%1]发送更新地址失败，跳过该任务").arg(index);
         sigWriteLog(tr("谱仪[#%1]发送更新地址失败，跳过该任务").arg(index), QtCriticalMsg);
         m_currentTaskIndex++;
         startNextTask();
@@ -471,10 +478,14 @@ void OTAUpgradeWindow::on_pushButton_switch_clicked()
     }
 
     for (const auto index : validIndexes) {
-        if (index == 0)
+        if (index == 0){
+            qDebug() << (tr("开始切换[时间同步触发模块]程序至[%1]......").arg(selectedPartition));
             emit sigWriteLog(tr("开始切换[时间同步触发模块]程序至[%1]......").arg(selectedPartition));
-        else
+        }
+        else{
+            qDebug() << (tr("开始切换谱仪[#%1]程序至[%2]......").arg(index).arg(selectedPartition));
             emit sigWriteLog(tr("开始切换谱仪[#%1]程序至[%2]......").arg(index).arg(selectedPartition));
+        }
 
         // 切换程序指令
         QByteArray data = QByteArray::fromHex("12 34 00 0F CA 12 00 00 00 00 AB CD");
@@ -485,18 +496,26 @@ void OTAUpgradeWindow::on_pushButton_switch_clicked()
         }
 
         if (!commHelper->sendOTAUpgradeData(index, data)){
-            if (index == 0)
+            if (index == 0){
+                qDebug() << (tr("[时间同步触发模块]程序切换失败！！！"));
                 emit sigWriteLog(tr("[时间同步触发模块]程序切换失败！！！"));
-            else
+            }
+            else{
+                qDebug() << (tr("谱仪[#%1]程序切换失败！！！").arg(index).arg(selectedPartition));
                 emit sigWriteLog(tr("谱仪[#%1]程序切换失败！！！").arg(index).arg(selectedPartition));
+            }
 
             continue;
         }
 
-        if (index == 0)
+        if (index == 0){
+            qDebug() << (tr("[时间同步触发模块]程序切换成功！！！"));
             emit sigWriteLog(tr("[时间同步触发模块]程序切换成功！！！"));
-        else
+        }
+        else{
+            qDebug() << (tr("谱仪[#%1]程序切换成功！！！").arg(index).arg(selectedPartition));
             emit sigWriteLog(tr("谱仪[#%1]程序切换成功！！！").arg(index).arg(selectedPartition));
+        }
     }
 }
 
@@ -604,13 +623,15 @@ void OTAUpgradeWindow::slotSendFinished(int index, const QString& partition, boo
         QByteArray finishData = QByteArray::fromHex("12 34 00 0F CA 10 00 00 00 00 AB CD");
         finishData[7] = (ui->comboBox_partition->currentIndex() == 0) ? 0x00 : 0x80;
 
-        if (commHelper->sendOTAUpgradeData(index, finishData)) {
-            //emit sigWriteLog(tr("谱仪[#%1][%2]数据发送完毕，正在等待设备返回校验结果...").arg(index).arg(partition));
+        if (commHelper->sendOTAUpgradeData(index, finishData)) {            
+            qDebug() << (tr("谱仪[#%1][%2]数据发送完毕！").arg(index).arg(partition));
             emit sigWriteLog(tr("谱仪[#%1][%2]数据发送完毕！").arg(index).arg(partition));
         } else {
+            qCritical() << (tr("谱仪[#%1][%2]发送完成指令失败！").arg(index).arg(partition));
             sigWriteLog(tr("谱仪[#%1][%2]发送完成指令失败！").arg(index).arg(partition), QtCriticalMsg);
         }
     } else {
+        qCritical() << (tr("谱仪[#%1][%2]更新失败！").arg(index).arg(partition));
         sigWriteLog(tr("谱仪[#%1][%2]更新失败！").arg(index).arg(partition), QtCriticalMsg);
     }
 }
@@ -618,6 +639,7 @@ void OTAUpgradeWindow::slotSendFinished(int index, const QString& partition, boo
 void OTAUpgradeWindow::slotUpgradeFinished()
 {
     // 所有任务完成
+    qDebug() << ("=== 所有OTA任务执行完毕 ===", QtInfoMsg);
     sigWriteLog("=== 所有OTA任务执行完毕 ===", QtInfoMsg);
     ui->pushButton_ok->setEnabled(true);
     ui->pushButton_switch->setEnabled(true);

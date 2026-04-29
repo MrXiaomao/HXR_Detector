@@ -11,7 +11,6 @@ namespace {
 /** 内存中只保留通道 1..DET_NUM，去掉 id=0 等非法键，并强制每路 id 与键一致。 */
 inline void normalizeDetParameterMap(QMap<quint8, DetParameter*>& map)
 {
-    qDebug() << "normalizeDetParameterMap" << QThread::currentThreadId();
     map.remove(0);
     for (quint8 k : map.keys()) {
         if (k > DET_NUM)
@@ -195,14 +194,12 @@ void HDF5Settings::setDetParameter(const QMap<quint8, DetParameter*>& detParamet
     QMutexLocker locker(&mWrite_mutex);
     for (const auto& detParameter : detParameters)
         mMapDetParameter[detParameter->id] = detParameter;
-    qDebug() << "setDetParameter->normalizeDetParameterMap" << this << QThread::currentThreadId();
     normalizeDetParameterMap(mMapDetParameter);
 }
 
 void HDF5Settings::export_LocalDetPara()
 {
     QMutexLocker locker(&mWrite_mutex);
-    qDebug() << "export_LocalDetPara->normalizeDetParameterMap" << this << QThread::currentThreadId();
     normalizeDetParameterMap(mMapDetParameter);
     H5::H5File *mfH5Setting = open_localDetParaFile();
     if (mfH5Setting == nullptr)

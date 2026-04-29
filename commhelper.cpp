@@ -190,6 +190,12 @@ void CommHelper::initSocket()
 
             channel->setContext((void*)(intptr_t)index);
             QMetaObject::invokeMethod(this, "detectorOnline", Qt::QueuedConnection, Q_ARG(quint8, index));
+
+            // 探测器在线，那么POE电源肯定是开启的
+            QHuaWeiSwitcherHelper *switcherHelper = indexOfHuaWeiSwitcher(index);
+            if (switcherHelper){
+                emit  switcherHelper->syncPoePowerStatus(indexOfPort(index), true);
+            }
         }
         else if (channel->isClosed()){//status == hv::SocketChannel::CLOSED){
             QString peerAddress = QString::fromStdString(channel->peerip());
@@ -839,6 +845,33 @@ bool CommHelper::startServer()
     initSocket();
     int ret = this->mTcpServer->createsocket(settings.value("Local/ServerPort", 6000).toUInt(), settings.value("Local/ServerIp", "0.0.0.0").toString().toStdString().c_str());
     if (ret >= 0 ){
+        GlobalSettings settings(DEVICE_CONFIG_FILE);
+        mHuaWeiSwitcherCount =  settings.value("Switcher/Count", 0).toUInt();
+        mHuaWeiSwitcherHelper.reserve(mHuaWeiSwitcherCount);
+        mExtendTimeSynModule.reload();
+        for (int i=0; i<mHuaWeiSwitcherCount; ++i){
+            QString ip = settings.value(QString("Switcher/%1/ip").arg(i+1), "").toString();
+            QString ass = settings.value(QString("Switcher/%1/detector").arg(i+1), "").toString();
+            QHuaWeiSwitcherHelper* huaWeiSwitcherHelper = new QHuaWeiSwitcherHelper(ip);
+            huaWeiSwitcherHelper->setAssociatedDetector(ass);
+            if (mExtendTimeSynModule.switcherIndex == (i+1))
+                huaWeiSwitcherHelper->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
+
+            connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::switcherLogged, this, &CommHelper::switcherLogged);
+            connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::switcherConnected, this, &CommHelper::switcherConnected);
+            connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::switcherDisconnected, this, &CommHelper::switcherDisconnected);
+            //connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::reportPoePowerStatus, this, &CommHelper::reportPoePowerStatus);
+            connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::reportPoePowerStatus, this, [=](quint8 index, bool on){
+                mExtendTimeSynModule.reload();
+                if (huaWeiSwitcherHelper == mHuaWeiSwitcherHelper[mExtendTimeSynModule.switcherIndex-1] && index == mExtendTimeSynModule.poeIndex)
+                    emit reportPoePowerStatus(0, on); // 时间同步模块特殊处理
+                else
+                    emit reportPoePowerStatus(index, on);
+            });
+
+            mHuaWeiSwitcherHelper.push_back(huaWeiSwitcherHelper);
+        }
+
         this->mTcpServer->start();
         return true;
     }
@@ -869,6 +902,14 @@ void CommHelper::stopServer()
         emit connection->disconnected();
     }
 #endif //ENABLE_LIBHV
+
+    for (auto switcherHelper : mHuaWeiSwitcherHelper)
+    {
+        //switcherHelper->logout();
+        switcherHelper->deleteLater();
+        switcherHelper = nullptr;
+    }
+    mHuaWeiSwitcherHelper.clear();
 }
 
 bool CommHelper::isOpen()
@@ -885,41 +926,6 @@ bool CommHelper::isOpen()
 
 void CommHelper::connectSwitcher(bool query)
 {
-    for (auto switcherHelper : mHuaWeiSwitcherHelper)
-    {
-        switcherHelper->logout();
-        switcherHelper->deleteLater();
-        switcherHelper = nullptr;
-    }
-    mHuaWeiSwitcherHelper.clear();
-
-    GlobalSettings settings(DEVICE_CONFIG_FILE);
-    mHuaWeiSwitcherCount =  settings.value("Switcher/Count", 0).toUInt();
-    mHuaWeiSwitcherHelper.reserve(mHuaWeiSwitcherCount);
-    mExtendTimeSynModule.reload();
-    for (int i=0; i<mHuaWeiSwitcherCount; ++i){
-        QString ip = settings.value(QString("Switcher/%1/ip").arg(i+1), "").toString();
-        QString ass = settings.value(QString("Switcher/%1/detector").arg(i+1), "").toString();
-        QHuaWeiSwitcherHelper* huaWeiSwitcherHelper = new QHuaWeiSwitcherHelper(ip);
-        huaWeiSwitcherHelper->setAssociatedDetector(ass);
-        if (mExtendTimeSynModule.switcherIndex == (i+1))
-            huaWeiSwitcherHelper->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
-
-        connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::switcherLogged, this, &CommHelper::switcherLogged);
-        connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::switcherConnected, this, &CommHelper::switcherConnected);
-        connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::switcherDisconnected, this, &CommHelper::switcherDisconnected);
-        //connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::reportPoePowerStatus, this, &CommHelper::reportPoePowerStatus);
-        connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::reportPoePowerStatus, this, [=](quint8 index, bool on){
-            mExtendTimeSynModule.reload();
-            if (huaWeiSwitcherHelper == mHuaWeiSwitcherHelper[mExtendTimeSynModule.switcherIndex-1] && index == mExtendTimeSynModule.poeIndex)
-                emit reportPoePowerStatus(0, on); // 时间同步模块特殊处理
-            else
-                emit reportPoePowerStatus(index, on);
-        });
-
-        mHuaWeiSwitcherHelper.push_back(huaWeiSwitcherHelper);
-    }
-
     for (auto switcherHelper : mHuaWeiSwitcherHelper)
     {
         mExtendTimeSynModule.reload();
