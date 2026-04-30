@@ -573,8 +573,8 @@ void DataProcessor::extractParticleData(quint8 no, const QByteArray& data)
 void DataProcessor::extractTimestampData(quint8 no, const QByteArray& packetData)
 {
     bool ok;
-    quint32 utc = packetData.mid(6, 4).toHex().toUInt(&ok, 32); // utc时间戳
-    quint32 UTCms = packetData.mid(10, 4).toHex().toUInt(&ok, 32);
+    quint32 utc = packetData.mid(6, 4).toHex().toUInt(&ok, 16); // utc时间戳
+    quint32 UTCms = packetData.mid(10, 4).toHex().toUInt(&ok, 16);
     quint64 msecond = static_cast<quint64>(UTCms) * 1000 / std::pow(2,32);//65536; // 毫秒
 
     // UTC转Unix时间戳，也就是从1970年1月1日00：00：00开始计算的整数秒数

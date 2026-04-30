@@ -26,6 +26,25 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     mAutoMeasureDelayTimer->setInterval(1000); // 每秒触发一次
     connect(mAutoMeasureDelayTimer, &QTimer::timeout, this, &MainWindow::onAutoMeasureDelayTimeout);
 
+    mStartMeasureDelayTimer = new QTimer(this);
+    mStartMeasureDelayTimer->setSingleShot(true);
+    mStartMeasureDelayTimer->setInterval(12000);
+    connect(mStartMeasureDelayTimer, &QTimer::timeout, this, [=](){
+        // 自动测量
+        ui->action_stopAllMeasure->setEnabled(true);
+
+        // 记录测量的通道号
+        for(int index =1; index<=DET_NUM; index++){
+            if (mOnlineDetectors.contains(index) && (!m_selectedChannels.contains(index)))
+            {
+                m_selectedChannels.append(index);
+            }
+        }
+
+        // 直接开始测量
+        this->startMeasure();
+    });
+
     // 初始化连接按钮禁用定时器
     mConnectButtonDisableTimer = new QTimer(this);
     mConnectButtonDisableTimer->setSingleShot(true);
@@ -794,7 +813,7 @@ void MainWindow::initUi()
                 ui->dateTimeEdit_startTime->setDateTime(tm.addSecs(coolTimelength));
 
                 mAutoMeasureTimerActive = true;
-                qInfo().noquote().nospace() << "收到打靶信号时间戳：" << tm.toString("yyyy-MM-dd HH:mm:ss") << "，自动测量将在" << coolTimelength << "秒后触发";
+                qInfo().noquote().nospace() << "收到打靶信号时间戳：" << tm.toString("yyyy-MM-dd HH:mm:ss") << "，自动测量将在" << coolTimelength << "秒后开始";
             }
         });
     }, Qt::DirectConnection);
@@ -976,42 +995,34 @@ void MainWindow::clearCustomPlotData(const std::vector<int>& channels)
     }
 }
 
-// 自动测量，定时器检测是否接近测量起始时刻。在起始时刻提前30s做好准备工作：
+// 定时器检测是否接近测量起始时刻。在起始时刻提前30s做好准备工作：
 void MainWindow::onAutoMeasureDelayTimeout()
 {
+    // 接收到外触发信号，则直接返回
     if (!mAutoMeasureTimerActive) return;
 
     QDateTime now = QDateTime::currentDateTime();
-    if (ui->cbb_measureMode->currentIndex() == 0){
-        // 手动测量模式
-        QDateTime tmStart = ui->dateTimeEdit_startTime->dateTime();
-        if (now >= tmStart)
-        {
-            ui->lineEdit_triggerflag->setText("已经触发");
-            mAutoMeasureDelayTimer->stop();
 
-            // 直接开始测量
-            this->startMeasure();
-        }
-    }
-    else{
-        // 自动化测量模式
-        QDateTime tmStart = ui->dateTimeEdit_startTime->dateTime().addSecs(-180);// 提前180秒做好准备工作
-        if (now >= tmStart)
-        {
+    // 自动化测量模式
+    QDateTime tmStart = ui->dateTimeEdit_startTime->dateTime().addSecs(-180);// 提前180秒做好准备工作
+    if (now >= tmStart)
+    {
+        if (!mEnableExtendTrigger)
             ui->lineEdit_triggerflag->setText("已经触发");
 
-            mAutoMeasureDelayTimer->stop();
+        mAutoMeasureDelayTimer->stop();
 
-            // 第一步 先启动服务
-            if (!commHelper->isOpen())
-            {
-                emit ui->action_startServer->trigger();
-            }
-
-            // 第二步 先连接交换机，开启电源
-            commHelper->connectSwitcher(false);
+        // 第一步 先启动服务
+        if (!commHelper->isOpen())
+        {
+            emit ui->action_startServer->trigger();
         }
+
+        // 第二步 先连接交换机，开启电源
+        commHelper->connectSwitcher(false);
+
+        // 延时2分钟，开始发送开始测量指令
+        mStartMeasureDelayTimer->start();//开始测量进入倒计时
     }
 }
 
@@ -1127,17 +1138,12 @@ void MainWindow::onSwitcherLogged(const QString& ip)
     {
         // 打开时钟同步模块电源
         commHelper->openSwitcherExtendPOEPower();
+
         // 打开谱仪设备电源
         commHelper->openPower();
 
         // 第三步 30s之后开始自动测量
         ui->action_stopAllMeasure->setEnabled(false);
-        QTimer::singleShot(30000, this, [=](){
-            ui->action_stopAllMeasure->setEnabled(true);
-
-            /// 开始测量
-            this->startMeasure();
-        });
     }
 }
 
@@ -1160,6 +1166,7 @@ void MainWindow::onDetectorOnline(quint8 index)
     {
         qInfo().nospace() << "谱仪[#" << index << "]上线"; 
     }
+
     //如果该探测器在温度超时报警列表中，则删除
     if (mTemperatureTimeoutDetectors.contains(index)){
         mTemperatureTimeoutDetectors.removeOne(index);
@@ -1599,11 +1606,18 @@ void MainWindow::on_action_startAllMeasure_triggered()
     if (mEnableAutoMeasure)
     {
         //确保测量时刻距离当前时间大于240s，给自动测量模式预留足够的准备时间
-        QDateTime tmStart = ui->dateTimeEdit_startTime->dateTime();
-        QDateTime now = QDateTime::currentDateTime();
-        if (now.secsTo(tmStart) < 240){
-            QMessageBox::information(this, QStringLiteral("提示"), "请确保测量起始时间距离当前时间至少4分钟，以便自动测量模式有足够的准备时间！");
-            return;
+        if (mEnableExtendTrigger){
+            if (ui->spinBox_coolTimeLength->value() < 180){
+                QMessageBox::information(this, QStringLiteral("提示"), "请确保冷却时长至少3分钟，以便自动测量模式有足够的准备时间！");
+                return;
+            }
+        } else {
+            QDateTime tmStart = ui->dateTimeEdit_startTime->dateTime();
+            QDateTime now = QDateTime::currentDateTime();
+            if (now.secsTo(tmStart) < 240){
+                QMessageBox::information(this, QStringLiteral("提示"), "请确保测量起始时间距离当前时间至少4分钟，以便自动测量模式有足够的准备时间！");
+                return;
+            }
         }
 
         qInfo().nospace().noquote() << tr("开启自动化测量");
@@ -1638,8 +1652,12 @@ void MainWindow::on_action_startAllMeasure_triggered()
     ui->action_particalMode->setEnabled(false);
     ui->spinBox_coolTimeLength->setEnabled(false);
 
+    if (mMeasureTimer && mMeasureTimer->isValid())
+        mMeasureTimer->invalidate();
+    ui->edit_measureTime->setText("00:00:00");
+
     for (auto index : mOnlineDetectors){
-        if (index != 0)
+        if ((index != 0) && (!m_selectedChannels.contains(index)))
             m_selectedChannels.append(index);
     }
 
@@ -1651,9 +1669,14 @@ void MainWindow::on_action_startAllMeasure_triggered()
     }
     else{ // 软件触发模式，开始时间=当前时间，外触发模式，开始时间=打靶时间+冷却时间
         ui->lineEdit_triggerflag->setText("软件触发");
-        QDateTime now = QDateTime::currentDateTime();
-        ui->dateTimeEdit_startTime->setDateTime(now);
-        ui->spinBox_coolTimeLength->setValue(ui->dateTime_shotTime->dateTime().secsTo(now));
+        if (mEnableAutoMeasure){
+            ui->spinBox_coolTimeLength->setValue(ui->dateTime_shotTime->dateTime().secsTo(ui->dateTimeEdit_startTime->dateTime()));
+        }
+        else {
+            QDateTime now = QDateTime::currentDateTime();
+            ui->dateTimeEdit_startTime->setDateTime(now);
+            ui->spinBox_coolTimeLength->setValue(ui->dateTime_shotTime->dateTime().secsTo(now));
+        }
     }
 
     if (!mEnableAutoMeasure)
@@ -1674,7 +1697,7 @@ void MainWindow::on_action_startAllMeasure_triggered()
         }
         else{
             // 软件触发及时激活
-            mAutoMeasureTimerActive = true;
+            mAutoMeasureTimerActive = true;            
         }
 
         mAutoMeasureDelayTimer->start();
@@ -1796,7 +1819,9 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
 
                 commHelper->startMeasure(QDateTime::currentDateTime(), CommandAdapter::MeasureMode::mmManual, CommandAdapter::WorkMode::wmWaveform, index);
                 //记录下所选的通道号，保存到成员变量中，停止测量的时候使用并清空
-                m_selectedChannels.append(index);
+                if(!m_selectedChannels.contains(index)){
+                    m_selectedChannels.append(index);
+                }
                 startedChannels.append(QString::number(index));
             }
         }
@@ -1832,7 +1857,9 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
                 }
                 commHelper->startMeasure(QDateTime::currentDateTime(), CommandAdapter::MeasureMode::mmManual, CommandAdapter::WorkMode::wmSpectrum, index);
                 //记录下所选的通道号，保存到成员变量中，停止测量的时候使用并清空
-                m_selectedChannels.append(index);
+                if(!m_selectedChannels.contains(index)){
+                    m_selectedChannels.append(index);
+                }
                 startedChannels.append(QString::number(index));
             }
         }
@@ -1931,6 +1958,9 @@ void MainWindow::on_btn_stopSelectedMeasure_clicked()
 
 void MainWindow::on_action_stopAllMeasure_triggered()
 {
+    mStartMeasureDelayTimer->stop(); // 停止自动测量的发送定时测量指令、测量开始指令
+    mAutoMeasureDelayTimer->stop(); // 停止自动测量的定时上电
+
     ui->action_startAllMeasure->setEnabled(true);
     ui->action_stopAllMeasure->setEnabled(false);
     ui->com_triggerModel->setEnabled(true);
@@ -1962,10 +1992,10 @@ void MainWindow::on_action_stopAllMeasure_triggered()
         qInfo().nospace().noquote() << tr("停止手动测量");
     }
 
+    commHelper->stopMeasure();
     // 停止测量 - 仅停止m_selectedChannels中的探测器
     QStringList stoppedChannels;
     for (quint8 index : m_selectedChannels) {
-        commHelper->stopMeasure(index);
         stoppedChannels.append(QString::number(index));
     }
     
@@ -1981,7 +2011,7 @@ void MainWindow::on_action_stopAllMeasure_triggered()
         // 自动更新发次号
         if (ui->checkBox_autoIncrease->isChecked()){
             ui->lineEdit_shotNum->setText(increaseShotNumSuffix(ui->lineEdit_shotNum->text().trimmed()));
-            GlobalSettings settings(DEVICE_CONFIG_FILE);
+            GlobalSettings settings(SYSTEM_CONFIG_FILE);
             settings.setValue("mainWindow/ShotNumStr", ui->lineEdit_shotNum->text());
         }
 
@@ -1995,6 +2025,9 @@ void MainWindow::on_action_stopAllMeasure_triggered()
 
     mEnableAutoMeasure = false;
     mEnableExtendTrigger = false;
+
+    emit ui->cbb_measureMode->currentIndexChanged(ui->cbb_measureMode->currentIndex());
+    emit ui->com_triggerModel->currentIndexChanged(ui->com_triggerModel->currentIndex());
 }
 
 void MainWindow::onMeasureCountdownTimeout()
@@ -2007,7 +2040,7 @@ void MainWindow::onMeasureCountdownTimeout()
         // 自动更新发次号
         if (ui->checkBox_autoIncrease->isChecked()){
             ui->lineEdit_shotNum->setText(increaseShotNumSuffix(ui->lineEdit_shotNum->text().trimmed()));
-            GlobalSettings settings(DEVICE_CONFIG_FILE);
+            GlobalSettings settings(SYSTEM_CONFIG_FILE);
             settings.setValue("mainWindow/ShotNumStr", ui->lineEdit_shotNum->text());
         }
 
@@ -2091,7 +2124,7 @@ QString MainWindow::increaseShotNumSuffix(QString shotNumStr)
 
 void MainWindow::on_action_powerOn_triggered()
 {
-    qInfo() << "手动打开所有POE电源";
+    qInfo() << "手动打开所有电源";
 
     //清除所有
     commHelper->manualOpenSwitcherPOEPower();
@@ -2103,7 +2136,7 @@ void MainWindow::on_action_powerOn_triggered()
 
 void MainWindow::on_action_powerOff_triggered()
 {
-    qInfo() << "手动关闭所有POE电源";
+    qInfo() << "手动关闭所有电源";
 
     // 关闭电源
     commHelper->closePower();
@@ -2372,6 +2405,7 @@ QList<int> MainWindow::getOnlineDetectors() const {
 
 // 更新能谱图像数据
 void MainWindow::updateSpecPlotData(int detectorId, const quint32 spectrum[]) {
+    QMutexLocker locker(&mPlotLocker);
     // 计算在页面中的索引
     QCustomPlot *customPlot = getCustomPlot(detectorId, true);
     if (!customPlot)
@@ -2428,12 +2462,16 @@ void MainWindow::updateSpecPlotData(int detectorId, const quint32 spectrum[]) {
     }
 
     // 更新图像数据
+    QCPGraph* graph = getGraph(detectorId, true);
+    if(graph==nullptr)
+        qDebug()<<"updateSpecPlotData error";
     getGraph(detectorId, true)->setData(x, y);
     mPlotAlready.store(true);
 }
 
 // 添加计数率显示更新函数
 void MainWindow::updateCountRatePlotData(int detectorId, double fpgaTime, double countRate) {
+    QMutexLocker locker(&mPlotLocker);
     // 计算在页面中的索引
     QCustomPlot *customPlot = getCustomPlot(detectorId, false);
     if (!customPlot)
@@ -2823,6 +2861,7 @@ void MainWindow::startMeasure()
 
     // 启动测量计时器
     mMeasureTimer->start();
+
     // 初始化测量时长显示为 00:00:00
     ui->edit_measureTime->setText("00:00:00");
 
@@ -2850,9 +2889,7 @@ void MainWindow::startMeasure()
         tmStart = ui->dateTimeEdit_startTime->dateTime();
     }
     // 软件触发模式下记录打靶时刻到测量H5文件
-    if (ui->com_triggerModel->currentIndex() == 0) {
-        shotTime = ui->dateTime_shotTime->dateTime().toString("yyyy-MM-dd hh:mm:ss");
-    }
+    shotTime = ui->dateTime_shotTime->dateTime().toString("yyyy-MM-dd hh:mm:ss");
 
     // 再发开始测量指令
     if (ui->action_waveformMode->isChecked())
@@ -2879,7 +2916,7 @@ void MainWindow::stopMeasure()
     // 自动更新发次号
     if (ui->checkBox_autoIncrease->isChecked()){
         ui->lineEdit_shotNum->setText(increaseShotNumSuffix(ui->lineEdit_shotNum->text().trimmed()));
-        GlobalSettings settings(DEVICE_CONFIG_FILE);
+        GlobalSettings settings(SYSTEM_CONFIG_FILE);
         settings.setValue("mainWindow/ShotNumStr", ui->lineEdit_shotNum->text());
     }
 

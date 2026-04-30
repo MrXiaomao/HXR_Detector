@@ -251,7 +251,8 @@ private:
     bool misTimedMeasure = false; // 是否继续测量模式
 
     // 自动化测量定时器
-    QTimer *mAutoMeasureDelayTimer = nullptr;
+    QTimer *mStartMeasureDelayTimer = nullptr;// 开始测量倒计时（多用于自动化测量）
+    QTimer *mAutoMeasureDelayTimer = nullptr;// 自动测量触发倒计时
     bool mAutoMeasureTimerActive = false; // 自动测量定时器是否正在倒计时
     
     // 连续测量计时器
@@ -315,6 +316,8 @@ private:
     void startMeasure();
     void stopMeasure();
     std::atomic<bool> mPlotAlready = false;//数据刷新准备好了
+
+    QMutex mPlotLocker;
 };
 
 #endif // MAINWINDOW_H

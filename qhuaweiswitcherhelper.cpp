@@ -459,6 +459,8 @@ void QHuaWeiSwitcherHelper::forceOpenPower()
     if (mTelnet->state() == QAbstractSocket::ConnectedState)
     {
         restartHeartbeatCheck();
+
+        emit switcherLogged(mIp);
     }
     else
     {
@@ -499,11 +501,11 @@ bool QHuaWeiSwitcherHelper::openSwitcherPOEPower(quint8 port/* = 0*/)
                 // 按照优先级，删除之前未执行的指令，达到快速响应效果
                 mActionsWait.erase(
                     std::remove_if(mActionsWait.begin(), mActionsWait.end(),
-                       [=](const ACTION_WAIT& item){
-                           return item.poeIndex == *iter;
-                       }
-                    ), mActionsWait.end()
-                );
+                                   [=](const ACTION_WAIT& item){
+                                       return item.poeIndex == *iter;
+                                   }
+                                   ), mActionsWait.end()
+                    );
 
                 if (!mMapPoeState.contains(*iter) || !mMapPoeState[*iter]){
                     mActionsWait.push_back(ACTION_WAIT(*iter, acSwitchInterface));

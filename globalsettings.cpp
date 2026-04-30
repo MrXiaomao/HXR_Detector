@@ -366,7 +366,6 @@ void HDF5Settings::load_localDetPara()
                 }
             }
 
-            qDebug() << "load_localDetPara->normalizeDetParameterMap" << this << QThread::currentThreadId();
             normalizeDetParameterMap(mMapDetParameter);
         } catch (H5::FileIException& error) {
             QMessageBox::warning(nullptr, "打开配置文件", "H5配置文件打开失败，文件被占用！");
@@ -502,7 +501,7 @@ H5::DataSet HDF5Settings::createSpecDataSet(H5::H5File* H5File, quint8 index)
     return dataset;
 }
 
-void HDF5Settings::createH5Spectrum(QString filePath, const QString& shotTime)
+void HDF5Settings::createH5Spectrum(QString filePath, const QString& startTime, const QString& shotTime)
 {
     // 创建表格数组
     if (!QFileInfo::exists(filePath))
@@ -537,7 +536,6 @@ void HDF5Settings::createH5Spectrum(QString filePath, const QString& shotTime)
                 dataset.write(dataTemp.data(), mConfigDataType);
 
                 // 写入当前时间到"Config"组中，以字符串的形式写入
-                QString startTime = QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss");
                 std::string timeStr = startTime.toStdString();
 
                 // 1. 创建可变长度字符串类型
@@ -559,7 +557,7 @@ void HDF5Settings::createH5Spectrum(QString filePath, const QString& shotTime)
                 if (!shotTime.isEmpty()) {
                     std::string shotTimeStr = shotTime.toStdString();
                     H5::DataSet shotTimeDataset = cfgGroup.createDataSet(
-                        "shotTime",
+                        "ShotTime",
                         strType,
                         scalarSpace);
                     shotTimeDataset.write(shotTimeStr, strType);
@@ -612,11 +610,11 @@ bool HDF5Settings::writeShotTimeToCurrentH5(const QString& shotTime)
         H5::DataSpace scalarSpace(H5S_SCALAR);
         std::string shotTimeStr = shotTime.toStdString();
 
-        if (H5Lexists(cfgGroup.getId(), "shotTime", H5P_DEFAULT) > 0) {
-            H5::DataSet shotTimeDataset = cfgGroup.openDataSet("shotTime");
+        if (H5Lexists(cfgGroup.getId(), "ShotTime", H5P_DEFAULT) > 0) {
+            H5::DataSet shotTimeDataset = cfgGroup.openDataSet("ShotTime");
             shotTimeDataset.write(shotTimeStr, strType);
         } else {
-            H5::DataSet shotTimeDataset = cfgGroup.createDataSet("shotTime", strType, scalarSpace);
+            H5::DataSet shotTimeDataset = cfgGroup.createDataSet("ShotTime", strType, scalarSpace);
             shotTimeDataset.write(shotTimeStr, strType);
         }
 

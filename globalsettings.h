@@ -861,7 +861,7 @@ public:
     void export_LocalDetPara();
 
     // 创建测量数据 H5文件
-    void createH5Spectrum(QString filePath, const QString& shotTime = QString());
+    void createH5Spectrum(QString filePath,  const QString& startTime, const QString& shotTime = QString());
     
     // 向当前测量H5文件写入/更新打靶时刻（Config/shotTime）
     bool writeShotTimeToCurrentH5(const QString& shotTime);

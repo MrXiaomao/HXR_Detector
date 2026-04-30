@@ -59,7 +59,7 @@ CommHelper::CommHelper(QObject *parent)
     mSpectrumRawFlushThread = new SpectrumRawFlushThread(this);
     mSpectrumRawFlushThread->start();
 
-    connect(this, &CommHelper::settingfinished, this, [=](){        
+    connect(this, &CommHelper::settingfinished, this, [=](){
         //更改了设置，这里需要重新对数据处理器进行关联
         HDF5Settings *settings = HDF5Settings::instance();
         const QMap<quint8, DetParameter*> detParameters = settings->getDetParameters();
@@ -128,6 +128,15 @@ CommHelper::CommHelper(QObject *parent)
             ++it;
         }
     });
+
+    // connect(this, &CommHelper::detectorOnline, this, [=](quint8 index){
+    //     // 探测器在线，那么POE电源肯定是开启的
+    //     QHuaWeiSwitcherHelper *switcherHelper = indexOfHuaWeiSwitcher(index);
+    //     if (nullptr == switcherHelper)
+    //         return false;
+
+    //     emit  switcherHelper->syncPoePowerStatus(indexOfPort(index), true);
+    // });
 }
 
 CommHelper::~CommHelper()
@@ -322,9 +331,9 @@ void CommHelper::initDataProcessor()
         connect(processor, &DataProcessor::reportTemperatureData, this, [=](double temperature){
             emit reportDetectorTemperature(processor->getIndex(), temperature);
         }, Qt::DirectConnection);
-        
+
         //对温度超时报警进行处理
-        connect(processor, &DataProcessor::reportTemperatureTimeout, this, 
+        connect(processor, &DataProcessor::reportTemperatureTimeout, this,
             &CommHelper::onTemperatureTimeout, Qt::DirectConnection);
 
         // 能谱数据（解析后的完整能谱数据）
@@ -344,7 +353,7 @@ void CommHelper::initDataProcessor()
         }, Qt::QueuedConnection);
 
         // 粒子数据（解析后的粒子信息）
-        connect(processor, &DataProcessor::reportParticleInfo, this, 
+        connect(processor, &DataProcessor::reportParticleInfo, this,
             &CommHelper::onParticleInfo, Qt::DirectConnection);
 
         // 触发信号时间戳(解析后的数据)
@@ -352,8 +361,8 @@ void CommHelper::initDataProcessor()
             emit reportTimestampe(triggerTime); //通知界面更新触发时间戳
 
             // 若当前测量H5文件已存在，则将打靶时刻写入Config/shotTime
-            const QString shotTime = triggerTime.toString("yyyy-MM-dd hh:mm:ss");
-            HDF5Settings::instance()->writeShotTimeToCurrentH5(shotTime);
+            // const QString shotTime = triggerTime.toString("yyyy-MM-dd hh:mm:ss");
+            // HDF5Settings::instance()->writeShotTimeToCurrentH5(shotTime);
         }, Qt::DirectConnection);
 
         // 原始OTA升级数据
@@ -362,7 +371,7 @@ void CommHelper::initDataProcessor()
         }, Qt::QueuedConnection);
 
         // 原始网络数据
-        connect(processor, &DataProcessor::reportRawNetData, this, 
+        connect(processor, &DataProcessor::reportRawNetData, this,
             &CommHelper::onRawNetData, Qt::DirectConnection);
 
         // 能谱数据
@@ -370,9 +379,9 @@ void CommHelper::initDataProcessor()
             &CommHelper::onSpectrumData, Qt::DirectConnection);
 
         // 波形数据包
-        connect(processor, &DataProcessor::reportWaveformData, this, 
+        connect(processor, &DataProcessor::reportWaveformData, this,
             &CommHelper::onWaveformData, Qt::DirectConnection);*/
-        
+
         // 配置参数数据包
         connect(processor, &DataProcessor::reportParamterData, this, [=](quint8 detID, const QByteArray& data){
             // 上报配置参数信息
@@ -450,7 +459,7 @@ void CommHelper::onTemperatureTimeout(quint8 detID)
     if (!mDetectFileProcessor.contains(detID)) {
         return;
     }
-    
+
     //断电30min后重新打开供电
     stopMeasure(detID);
     //先停止测量
@@ -505,7 +514,7 @@ void CommHelper::onParticleInfo(quint8 detID, QVector<ParticleData>& particles)
             checkAndFlushDetectFile(detID,bytesWritten);
         }
     }
-    
+
     // 上报计数
     quint32 num = particles.size();
     emit reportParticle(detID, num);
@@ -810,7 +819,7 @@ bool CommHelper::closeSwitcherExtendPOEPower()
 */
 #include <QHostInfo>
 bool CommHelper::startServer()
-{    
+{
     GlobalSettings settings(DEVICE_CONFIG_FILE);
     QString ip = settings.value("Local/ServerIp", "0.0.0.0").toString();
 
@@ -867,6 +876,11 @@ bool CommHelper::startServer()
                     emit reportPoePowerStatus(0, on); // 时间同步模块特殊处理
                 else
                     emit reportPoePowerStatus(index, on);
+
+                if (!on){
+                    //如果是POE电源关闭了，这边被动更新探测器下线源状态
+                    //emit detectorOffline(index);
+                }
             });
 
             mHuaWeiSwitcherHelper.push_back(huaWeiSwitcherHelper);
@@ -1007,13 +1021,13 @@ void CommHelper::setShotInformation(const QString shotDir, const QString shotNum
  * @param mode 波形测量/能谱测量
  * @param index index=0时则认为是全部探测器一起开始测量
  */
-void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode measureMode, 
+void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode measureMode,
     CommandAdapter::WorkMode workMode, quint8 index/* = 0*/, const QString& shotTime/* = QString()*/)
 {
     constexpr int kReserveH5PerDetector = 60; // 每路探测器预留60个能谱数据
     constexpr int kReserveRawBytesPerDetector = 1024 * 1024; // 每路探测器预留1MB网口原始数据，50ms能谱刷新频率下0.625MB/s
 
-    mMeasureStartTime = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
+    mMeasureStartTime = tmStart.toString("yyyy-MM-dd_HHmmss");// QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
     mMeasuring = true;
     // 初始化
     for (int i = 1; i <= DET_NUM; ++i) {
@@ -1031,7 +1045,7 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
         mDataFileList.clear();
         QString filePath = QString("%1/%2/%3.H5").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime);
         HDF5Settings::instance()->closeH5Spectrum();
-        HDF5Settings::instance()->createH5Spectrum(filePath, shotTime);
+        HDF5Settings::instance()->createH5Spectrum(filePath, mMeasureStartTime, shotTime);
 
         for (index = 1; index <= DET_NUM; ++index){
             if (mDetectFileProcessor.contains(index)){
@@ -1141,39 +1155,39 @@ void CommHelper::checkAndFlushDetectFile(quint8 index, qint64 bytesWritten)
     bool triggeredBySize = false;
     bool triggeredByTime = false;
     bool needFlush = false;
-    
+
     // 快速检查：如果写入的数据很小，且还没有初始化flush信息，可能不需要检查
     // 但这需要在锁内检查，所以我们还是需要加锁
-    
+
     // 使用独立的锁来保护flush信息，尽量缩短锁的持有时间
     {
         QMutexLocker flushLocker(&mMutexFileFlush);
-        
+
         // 初始化或更新flush信息（文件创建时已初始化，这里只是确保存在）
         if (!mFileFlushInfo.contains(index)) {
             mFileFlushInfo[index] = FileFlushInfo();
         }
-        
+
         FileFlushInfo& flushInfo = mFileFlushInfo[index];
         flushInfo.bytesSinceLastFlush += bytesWritten;
-        
+
         // 检查是否达到阈值
         triggeredBySize = (flushInfo.bytesSinceLastFlush >= FLUSH_SIZE_THRESHOLD);
         triggeredByTime = (flushInfo.lastFlushTimer.elapsed() >= FLUSH_TIME_THRESHOLD_MS);
         needFlush = triggeredBySize || triggeredByTime;
-        
+
         if (!needFlush) {
             // 不需要flush，直接返回（锁在作用域结束时自动释放）
             return;
         }
-        
+
         // 需要flush，重置计数器（锁仍持有）
         flushInfo.bytesSinceLastFlush = 0;
         flushInfo.lastFlushTimer.restart();
     } // flushLocker在这里释放锁
-    
+
     //打印线程号
-    // qDebug() << "det[" << index << "] checkAndFlushDetectFile thread:" 
+    // qDebug() << "det[" << index << "] checkAndFlushDetectFile thread:"
     //         << QThread::currentThreadId() << " bytesWritten:" << bytesWritten;
     // 在锁外执行flush操作，避免锁持有时间过长
     // 注意：mDetectorFileProcessor的访问由调用者的mMutexFileFlush锁保护
@@ -1204,7 +1218,7 @@ void CommHelper::stopMeasure(quint8 index/* = 0*/)
                 emit measureStop(index);
             }
 
-            if (mDetectFileProcessor.contains(index)){                
+            if (mDetectFileProcessor.contains(index)){
                 //延迟关闭文件，确保尾包数据能够正常存储
                 if (mDetectFileProcessor.contains(index)){
                     QFile* file = mDetectFileProcessor[index];
@@ -1257,24 +1271,23 @@ void CommHelper::stopMeasure(quint8 index/* = 0*/)
                 //先刷新缓冲区，确保已写入的数据被保存
                 file->flush();
             }
-            //延迟500ms关闭文件，等待尾包数据写入完成
-            QTimer::singleShot(500, this, [this, detIndex](){
-                if (mDetectFileProcessor.contains(detIndex)){
-                    QFile* fileToClose = mDetectFileProcessor[detIndex];
-                    if (fileToClose && fileToClose->isOpen()){
-                        fileToClose->flush(); //再次刷新，确保尾包数据写入
-                        fileToClose->close();
-                    }
-                    fileToClose->deleteLater();
-                    mDetectFileProcessor.remove(detIndex);
+
+            //关闭文件
+            if (mDetectFileProcessor.contains(detIndex)){
+                QFile* fileToClose = mDetectFileProcessor[detIndex];
+                if (fileToClose && fileToClose->isOpen()){
+                    fileToClose->flush(); //再次刷新，确保尾包数据写入
+                    fileToClose->close();
                 }
-                // 清理flush信息
-                {
-                    QMutexLocker flushLocker(&mMutexFileFlush);
-                    mFileFlushInfo.remove(detIndex);
-                }
-            });
-            
+                fileToClose->deleteLater();
+                mDetectFileProcessor.remove(detIndex);
+            }
+            // 清理flush信息
+            {
+                QMutexLocker flushLocker(&mMutexFileFlush);
+                mFileFlushInfo.remove(detIndex);
+            }
+
             //关闭能谱文件
             if (mDetectFileProcessor.isEmpty()){
                 mMeasuring = false;
@@ -1297,7 +1310,7 @@ bool CommHelper::openHistoryWaveFile(const QString &filePath)
     if (file.open(QIODevice::ReadWrite)){
         QVector<quint16> rawWaveData;
         QMap<quint8, QVector<quint16>> realCurve;// 4路通道实测曲线数据
-        if (filePath.endsWith(".dat")){                        
+        if (filePath.endsWith(".dat")){
             rawWaveData.resize(512);
             for (int i=1; i<=11; ++i){
                 int rSize = file.read((char *)rawWaveData.data(), rawWaveData.size() * sizeof(quint16));
@@ -1372,7 +1385,7 @@ bool CommHelper::exportFile(QString dstPath)
 void CommHelper::handleDetectorDisconnection(quint8 index)
 {
     QMutexLocker locker(&mPeersMutex);
-    
+
     // 在 mConnectionPeers 中查找对应的连接
     auto it = mConnectionPeers.begin();
     while (it != mConnectionPeers.end()) {
@@ -1424,11 +1437,11 @@ void CommHelper::handleDetectorDisconnection(quint8 index)
         qInfo().nospace() << "谱仪[#" << index << "]下线，已执行断开连接处理";
         return; // 找到并处理完成，退出
     }
-    
+
     // 如果没有找到对应的连接，仍然触发 offline 信号（可能连接已经断开）
     qWarning().nospace() << "谱仪[#" << index << "]下线，但未找到对应的TCP连接";
-    QMetaObject::invokeMethod(this, "detectorOffline", 
-        Qt::QueuedConnection, 
+    QMetaObject::invokeMethod(this, "detectorOffline",
+        Qt::QueuedConnection,
         Q_ARG(quint8, index));
 }
 
