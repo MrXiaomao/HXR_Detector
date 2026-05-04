@@ -167,8 +167,10 @@ private slots:
     // 自定测量定时检查
     void onAutoMeasureDelayTimeout();
 
-    // 处理数据解析后的能谱数据，更新界面相关数据，子线程，而非界面线程
-    void onFullSpectrum(int detID, const FullSpectrum& fullSpectrum);
+    // 处理数据解析后的能谱数据（解析线程）：累积数据；绘图投递到主线程
+    void onFullSpectrum_Thread(int detID, const FullSpectrum& fullSpectrum);
+    // 解析线程上报温度，仅写缓存
+    void onReportDetectorTemperature_Thread(quint8 index, float temperature);
 
     // 系统刷新定时器，暂定于每秒钟刷新1次，刷新内容包括：测量时间、能谱图像、计数率曲线等
     void onSystemTimer();
@@ -244,6 +246,7 @@ private:
     QMap<quint8, bool> mDetectorMeasuring;
     // 探测器数据管理
     QHash<int, DetectorData> m_detectorData;  // 只存储联网探测器的数据
+    mutable QMutex mDetectorDataMutex;       // 保护 m_detectorData（解析线程写、主线程读/绘图）
     CommHelper *commHelper = nullptr;
     
     // 测量倒计时定时器

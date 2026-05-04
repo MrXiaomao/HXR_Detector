@@ -142,10 +142,10 @@ public:
     Q_SIGNAL void reportDetectorTemperature(quint8, float temperature); //探测器温度报告
     Q_SIGNAL void reportTemperatureTimeout(quint8 index); //探测器温度超时报警
     Q_SIGNAL void reportFullSpectrum(quint8 index, const FullSpectrum& fullSpectrum); // 发送完整的能谱数据
-    Q_SIGNAL void reportWaveCurve(quint8, QVector<quint16>& data); // 发送解析后的波形曲线
+    Q_SIGNAL void reportWaveCurve(quint8, const QVector<quint16>& data); // 发送解析后的波形曲线
     Q_SIGNAL void reportParticle(quint8 index, quint32 count); // 发送解析后的粒子个数
     Q_SIGNAL void reportOTAUpgrateData(quint8, QVector<quint16>& data);
-    Q_SIGNAL void reportTimestampe(QDateTime&);
+    Q_SIGNAL void reportTimestampe(const QDateTime triggerTime);
     Q_SIGNAL void reportParamterData(quint8, const QByteArray&);
     Q_SIGNAL void reportPoePowerStatus(quint8, bool); //POE电源开关
     Q_SIGNAL void reportOTAUpgradeData(quint8, const QByteArray& data); // 上报OTA升级数据
@@ -206,20 +206,20 @@ public:
     bool readParamters(quint8 detIndex);
 
 private slots:
-    //网口原始数据
-    void onRawNetData(quint8 index, const QByteArray& data);
+    //网口原始数据（解析线程）
+    void onRawNetData_Thread(quint8 index, const QByteArray& data);
 
-    //处理温度数据超时报警
-    void onTemperatureTimeout(quint8 detID);
+    //处理温度数据超时报警（解析线程）
+    void onTemperatureTimeout_Thread(quint8 detID);
 
-    // 处理分包后的能谱数据包
-    void onSpectrumData(quint8 index, const QByteArray& data);
+    // 处理分包后的能谱数据包（解析线程）
+    void onSpectrumData_Thread(quint8 index, const QByteArray& data);
 
-    // 处理分包后的波形数据包
-    void onWaveformData(quint8 index, const QByteArray& data);
+    // 处理分包后的波形数据包（解析线程）
+    void onWaveformData_Thread(quint8 index, const QByteArray& data);
 
-    // 处理分包后的粒子数据
-    void onParticleInfo(quint8 detId, QVector<ParticleData>& particles);
+    // 处理分包后的粒子数据（解析线程）
+    void onParticleInfo_Thread(quint8 detId, const QVector<ParticleData>& particles);
 
 private:
     // 处理探测器断开连接的统一逻辑

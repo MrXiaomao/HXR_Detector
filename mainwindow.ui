@@ -1518,6 +1518,9 @@
                   <property name="maximum">
                    <number>99999999</number>
                   </property>
+                  <property name="value">
+                   <number>180</number>
+                  </property>
                  </widget>
                 </item>
                 <item row="5" column="2" colspan="2">
@@ -1792,7 +1795,7 @@
      <x>0</x>
      <y>0</y>
      <width>1431</width>
-     <height>18</height>
+     <height>25</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">
@@ -2336,7 +2339,7 @@
   </action>
   <action name="action_picture_reset">
    <property name="icon">
-    <iconset resource="../3rdParty/resource/resource.qrc">
+    <iconset>
      <normaloff>:/picture_reset.png</normaloff>:/picture_reset.png</iconset>
    </property>
    <property name="text">

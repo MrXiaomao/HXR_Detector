@@ -51,9 +51,9 @@ DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
 
     // 直接连接，确保能谱数据处理的线程安全性，能谱解析使其处于解析线程，避免与主线程抢资源。
     connect(this, &CommandAdapter::reportSpectrumData, this, &DataProcessor::mergeSubSpec_Thread, Qt::DirectConnection);
-    connect(this, &CommandAdapter::reportWaveformData, this, &DataProcessor::extractWaveformData, Qt::DirectConnection);
-    connect(this, &CommandAdapter::reportParticleData, this, &DataProcessor::extractParticleData, Qt::DirectConnection);
-    connect(this, &CommandAdapter::reportTimestampData, this, &DataProcessor::extractTimestampData, Qt::DirectConnection);
+    connect(this, &CommandAdapter::reportWaveformData, this, &DataProcessor::extractWaveformData_Thread, Qt::DirectConnection);
+    connect(this, &CommandAdapter::reportParticleData, this, &DataProcessor::extractParticleData_Thread, Qt::DirectConnection);
+    connect(this, &CommandAdapter::reportTimestampData, this, &DataProcessor::extractTimestampData_Thread, Qt::DirectConnection);
 
 #if ENABLE_LIBHV
 #else
@@ -286,7 +286,7 @@ void DataProcessor::stopMeasure()
 {
     //#16 停止测量=1|0|26|1234000FEA1000000000ABCD
     this->sendStopMeasure();
-
+    
     const quint64 packetCount = mMergeSubSpecPacketCount.exchange(0, std::memory_order_relaxed);
     const quint64 totalCostNs = mMergeSubSpecTotalCostNs.exchange(0, std::memory_order_relaxed);
     const qint64 wallMs = mMergeSubSpecWallTimer.isValid() ? mMergeSubSpecWallTimer.elapsed() : 0;
@@ -479,7 +479,7 @@ void DataProcessor::mergeSubSpec_Thread(quint8 no, const QByteArray& data){
 }
 
 // 从波形数据包中提取波形数据
-void DataProcessor::extractWaveformData(quint8 no, const QByteArray& data)
+void DataProcessor::extractWaveformData_Thread(quint8 no, const QByteArray& data)
 {
     // 包结构：包头6字节 + 波形区 + 包尾8字节
     if (data.size() < 14)
@@ -521,7 +521,7 @@ void DataProcessor::extractWaveformData(quint8 no, const QByteArray& data)
 }
 
 // 从粒子数据包中提取粒子数据
-void DataProcessor::extractParticleData(quint8 no, const QByteArray& data)
+void DataProcessor::extractParticleData_Thread(quint8 no, const QByteArray& data)
 {
     // 至少要保证长度够
     if (data.size() < 6 + 130 * 8 + 8)  return;
@@ -570,7 +570,7 @@ void DataProcessor::extractParticleData(quint8 no, const QByteArray& data)
 }
 
 // 解析时间戳数据包
-void DataProcessor::extractTimestampData(quint8 no, const QByteArray& packetData)
+void DataProcessor::extractTimestampData_Thread(quint8 no, const QByteArray& packetData)
 {
     bool ok;
     quint32 utc = packetData.mid(6, 4).toHex().toUInt(&ok, 16); // utc时间戳

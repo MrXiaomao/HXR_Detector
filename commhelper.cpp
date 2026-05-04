@@ -334,7 +334,7 @@ void CommHelper::initDataProcessor()
 
         //对温度超时报警进行处理
         connect(processor, &DataProcessor::reportTemperatureTimeout, this,
-            &CommHelper::onTemperatureTimeout, Qt::DirectConnection);
+            &CommHelper::onTemperatureTimeout_Thread, Qt::DirectConnection);
 
         // 能谱数据（解析后的完整能谱数据）
         connect(processor, &DataProcessor::reportFullSpectrum, this, [=](quint8 detID, const FullSpectrum& fullSpectrum){
@@ -348,16 +348,16 @@ void CommHelper::initDataProcessor()
         }, Qt::DirectConnection);
 
         // 波形数据（解析后的数据）
-        connect(processor, &DataProcessor::reportWaveCurveInfo, this, [=](quint8 detID, QVector<quint16>& wave){
+        connect(processor, &DataProcessor::reportWaveCurveInfo, this, [=](quint8 detID, const QVector<quint16>& wave){
             emit reportWaveCurve(detID, wave); //通知界面更新波形数据
         }, Qt::QueuedConnection);
 
         // 粒子数据（解析后的粒子信息）
         connect(processor, &DataProcessor::reportParticleInfo, this,
-            &CommHelper::onParticleInfo, Qt::DirectConnection);
+            &CommHelper::onParticleInfo_Thread, Qt::DirectConnection);
 
         // 触发信号时间戳(解析后的数据)
-        connect(processor, &DataProcessor::reportTriggerTimeInfo, this, [=](quint8 detID, QDateTime triggerTime){
+        connect(processor, &DataProcessor::reportTriggerTimeInfo, this, [=](quint8 detID, const QDateTime triggerTime){
             emit reportTimestampe(triggerTime); //通知界面更新触发时间戳
 
             // 若当前测量H5文件已存在，则将打靶时刻写入Config/shotTime
@@ -372,15 +372,15 @@ void CommHelper::initDataProcessor()
 
         // 原始网络数据
         connect(processor, &DataProcessor::reportRawNetData, this,
-            &CommHelper::onRawNetData, Qt::DirectConnection);
+            &CommHelper::onRawNetData_Thread, Qt::DirectConnection);
 
         // 能谱数据
         /*connect(processor, &DataProcessor::reportSpectrumData, this,
-            &CommHelper::onSpectrumData, Qt::DirectConnection);
+            &CommHelper::onSpectrumData_Thread, Qt::DirectConnection);
 
         // 波形数据包
         connect(processor, &DataProcessor::reportWaveformData, this,
-            &CommHelper::onWaveformData, Qt::DirectConnection);*/
+            &CommHelper::onWaveformData_Thread, Qt::DirectConnection);*/
 
         // 配置参数数据包
         connect(processor, &DataProcessor::reportParamterData, this, [=](quint8 detID, const QByteArray& data){
@@ -433,7 +433,7 @@ void CommHelper::flushNetRawBuffersOnWorkerThread(bool forceFlushAll)
 }
 
 // 网口原始数据
-void CommHelper::onRawNetData(quint8 detID, const QByteArray& data)
+void CommHelper::onRawNetData_Thread(quint8 detID, const QByteArray& data)
 {
     // 主线程汇总测量数据，后台线程每1s批量写入文件
     if (!mMeasuring || detID < 1 || detID > DET_NUM || data.isEmpty())
@@ -444,7 +444,7 @@ void CommHelper::onRawNetData(quint8 detID, const QByteArray& data)
 }
 
 // 处理温度数据超时报警
-void CommHelper::onTemperatureTimeout(quint8 detID)
+void CommHelper::onTemperatureTimeout_Thread(quint8 detID)
 {
     emit reportTemperatureTimeout(detID);//上报温度超时报警
 
@@ -478,7 +478,7 @@ void CommHelper::onTemperatureTimeout(quint8 detID)
 }
 
 // 处理分包后的能谱数据包
-void CommHelper::onSpectrumData(quint8 detID, const QByteArray& data)
+void CommHelper::onSpectrumData_Thread(quint8 detID, const QByteArray& data)
 {
     // 主线程汇总能谱分包，后台线程每10s批量写入文件
     if (!mMeasuring || detID < 1 || detID > DET_NUM || data.isEmpty())
@@ -489,7 +489,7 @@ void CommHelper::onSpectrumData(quint8 detID, const QByteArray& data)
 }
 
 // 处理分包后的波形数据包
-void CommHelper::onWaveformData(quint8 detID, const QByteArray& data)
+void CommHelper::onWaveformData_Thread(quint8 detID, const QByteArray& data)
 {
     // 保存数据
     if (mDetectFileProcessor[detID]->isOpen()){
@@ -500,7 +500,7 @@ void CommHelper::onWaveformData(quint8 detID, const QByteArray& data)
 }
 
 // 处理解析后的粒子数据信息
-void CommHelper::onParticleInfo(quint8 detID, QVector<ParticleData>& particles)
+void CommHelper::onParticleInfo_Thread(quint8 detID, const QVector<ParticleData>& particles)
 {
     if (mDetectFileProcessor[detID]->isOpen()){
         for (const auto& particle : particles)

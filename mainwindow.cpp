@@ -7,6 +7,9 @@
 #include <QTextStream>
 #include "energycalibration.h"
 #include "qcustomplothelper.h"
+#include <array>
+#include <cstring>
+#include <QMetaObject>
 
 MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     : QMainWindow(parent)
@@ -751,22 +754,9 @@ void MainWindow::initUi()
         layoutRight->addWidget(ui->toolButton_title_2, 0, (DET_NUM/2)+1);
     }
 
-    //更新温度状态
-    connect(commHelper, &CommHelper::reportDetectorTemperature, this, [=](quint8 index, float temperature){
-        if (index < 0 || index > DET_NUM) //注意，index=0对应时间触发模块
-            return;
-
-        // 仅缓存数据：回调里不做文件 IO，由QTimer每10秒统一写盘
-        QDateTime now = QDateTime::currentDateTime();
-        m_mapTemperatur[index] = qMakePair(now.toMSecsSinceEpoch(), temperature);
-
-        const QString ymd = now.toString("yyyy-MM-dd");
-        const QString dtStr = now.toString("yyyy-MM-dd HH:mm:ss"); // 精确到秒
-        TempPoint p{dtStr, temperature};
-
-        QMutexLocker flushLocker(&mMutexTemperature);
-        m_tempPointCache[index][ymd].push_back(p);
-    }, Qt::DirectConnection);
+    //更新温度状态（解析线程）
+    connect(commHelper, &CommHelper::reportDetectorTemperature, this,
+            &MainWindow::onReportDetectorTemperature_Thread, Qt::DirectConnection);
 
     connect(commHelper, &CommHelper::reportTemperatureTimeout, this, [=](quint8 index){
         QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(index, 3));
@@ -775,10 +765,10 @@ void MainWindow::initUi()
     }, Qt::QueuedConnection);
 
     // 接收完整的能谱数据
-    connect(commHelper, &CommHelper::reportFullSpectrum, this, &MainWindow::onFullSpectrum, Qt::DirectConnection);
+    connect(commHelper, &CommHelper::reportFullSpectrum, this, &MainWindow::onFullSpectrum_Thread, Qt::DirectConnection);
 
     // 接收波形曲线数据
-    connect(commHelper, &CommHelper::reportWaveCurve, this, [=](quint8 index, QVector<quint16>& data){
+    connect(commHelper, &CommHelper::reportWaveCurve, this, [=](quint8 index, const QVector<quint16>& data){
         return; // 不显示波形
         QCustomPlot *customPlot = getCustomPlot(index);
         if (!customPlot)
@@ -798,25 +788,22 @@ void MainWindow::initUi()
     });
 
     // 接收触发信号时间戳
-    connect(commHelper, &CommHelper::reportTimestampe, this, [=](QDateTime& tm){
-        // 只有启用了外触发才会接收打靶信号的时间戳，并且只在自动测量未激活时更新界面显示,
-        // 这里进来时是子线程，所以在QTimer里面执行就变成主线程了
-        QTimer::singleShot(0, this, [=]{
-            if (mEnableExtendTrigger && !mAutoMeasureTimerActive)
-            {
-                // 只有开启了自动化测量，才接收自动触发的时间戳，并更新界面显示
-                ui->dateTime_shotTime->setDateTime(tm);
-                ui->lineEdit_triggerflag->setText("已经触发");
+    connect(commHelper, &CommHelper::reportTimestampe, this, [=](const QDateTime triggerTime){
+        // 只有启用了外触发才会接收打靶信号的时间戳，并且只在自动测量未激活时更新界面显示
+        if (mEnableExtendTrigger && !mAutoMeasureTimerActive)
+        {
+            // 只有开启了自动化测量，才接收自动触发的时间戳，并更新界面显示
+            ui->dateTime_shotTime->setDateTime(triggerTime);
+            ui->lineEdit_triggerflag->setText("已经触发");
 
-                // 根据冷却时间设置自动测量的触发时间，单位为秒
-                qint32 coolTimelength = ui->spinBox_coolTimeLength->value();
-                ui->dateTimeEdit_startTime->setDateTime(tm.addSecs(coolTimelength));
+            // 根据冷却时间设置自动测量的触发时间，单位为秒
+            qint32 coolTimelength = ui->spinBox_coolTimeLength->value();
+            ui->dateTimeEdit_startTime->setDateTime(triggerTime.addSecs(coolTimelength));
 
-                mAutoMeasureTimerActive = true;
-                qInfo().noquote().nospace() << "收到打靶信号时间戳：" << tm.toString("yyyy-MM-dd HH:mm:ss") << "，自动测量将在" << coolTimelength << "秒后开始";
-            }
-        });
-    }, Qt::DirectConnection);
+            mAutoMeasureTimerActive = true;
+            qInfo().noquote().nospace() << "收到打靶信号时间戳：" << triggerTime.toString("yyyy-MM-dd HH:mm:ss") << "，自动测量将在" << coolTimelength << "秒后开始";
+        }
+    }, Qt::QueuedConnection);
 }
 
 QPixmap MainWindow::roundPixmap(QSize sz, QColor clrOut)
@@ -1229,45 +1216,75 @@ void MainWindow::onPoePowerStatusReport(quint8 index, bool on)
     cell->setChecked(on);
 }
 
-// 处理数据解析后的能谱数据，更新界面相关数据，子线程，而非界面线程
-void MainWindow::onFullSpectrum(int index, const FullSpectrum& fullSpectrum)
+void MainWindow::onReportDetectorTemperature_Thread(quint8 index, float temperature)
+{
+    if (index < 0 || index > DET_NUM) //注意，index=0对应时间触发模块
+        return;
+
+    // 仅缓存数据：回调里不做文件 IO，由QTimer每10秒统一写盘
+    QDateTime now = QDateTime::currentDateTime();
+    m_mapTemperatur[index] = qMakePair(now.toMSecsSinceEpoch(), temperature);
+
+    const QString ymd = now.toString("yyyy-MM-dd");
+    const QString dtStr = now.toString("yyyy-MM-dd HH:mm:ss"); // 精确到秒
+    TempPoint p{dtStr, temperature};
+
+    QMutexLocker flushLocker(&mMutexTemperature);
+    m_tempPointCache[index][ymd].push_back(p);
+}
+
+// 处理数据解析后的能谱数据：累积在解析线程；改 QCustomPlot 仅在主线程
+void MainWindow::onFullSpectrum_Thread(int index, const FullSpectrum& fullSpectrum)
 {
     if (index < 1 || index > DET_NUM) {
         qWarning() << "Invalid detector ID:" << index;
         return;
     }
 
-    DetectorData &data = m_detectorData[index];
+    std::array<quint32, 8192> spectrumSnap{};
+    double currenTime = 0.0;
+    double fixedCountRate = 0.0;
+    bool needPlotUpdate = false;
 
-    // 累积能谱
-    quint32 currentCount = 0;
-    for (int i = 0; i < 8192; ++i) {
-        currentCount += fullSpectrum.spectrum[i];
-        data.spectrum[i] += fullSpectrum.spectrum[i];
+    {
+        QMutexLocker locker(&mDetectorDataMutex);
+        DetectorData &data = m_detectorData[index];
+
+        // 累积能谱
+        quint32 currentCount = 0;
+        for (int i = 0; i < 8192; ++i) {
+            currentCount += fullSpectrum.spectrum[i];
+            data.spectrum[i] += fullSpectrum.spectrum[i];
+        }
+
+        // 记录累积计数率
+        data.lastAccumulateCount += currentCount;
+        data.lastAccuCountFixed += currentCount * 1.0 * fullSpectrum.measureTime * 1e6
+            / (fullSpectrum.measureTime * 1e6 - fullSpectrum.deathTime * 10); // 死时间修正，注意测量时间单位ms，死时间单位*10ns
+
+        //最快每秒更新一次能谱、计数率,这里不考虑丢包带来的计数率修复
+        const quint32 accuTime = (fullSpectrum.sequence - data.lastSpectrumID) * fullSpectrum.measureTime;//单位ms
+        currenTime = 1.0 * fullSpectrum.sequence * fullSpectrum.measureTime / 1000; //单位s，这里最大数对应2^32/24/3600=49days
+        if (accuTime >= 1000) {
+            const double countRate = 1000.0 * data.lastAccumulateCount * 1.0 / accuTime; //cps
+            fixedCountRate = 1000.0 * data.lastAccuCountFixed * 1.0 / accuTime; //修正后的cps
+            data.lastSpectrumID = fullSpectrum.sequence;
+            data.lastAccumulateCount = 0;
+            data.lastAccuCountFixed = 0;
+            data.countRateHistory.append(countRate);
+
+            std::memcpy(spectrumSnap.data(), data.spectrum, sizeof(spectrumSnap));
+            needPlotUpdate = true;
+        }
     }
 
-    // 记录累积计数率
-    data.lastAccumulateCount += currentCount;
-    data.lastAccuCountFixed += currentCount * 1.0 * fullSpectrum.measureTime *1e6 
-        / (fullSpectrum.measureTime *1e6 - fullSpectrum.deathTime*10); // 死时间修正，注意测量时间单位ms，死时间单位*10ns
+    if (!needPlotUpdate)
+        return;
 
-    //最快每秒更新一次能谱、计数率,这里不考虑丢包带来的计数率修复
-    quint32 accuTime = (fullSpectrum.sequence - data.lastSpectrumID) * fullSpectrum.measureTime;//单位ms
-    double currenTime = 1.0 * fullSpectrum.sequence * fullSpectrum.measureTime / 1000; //单位s，这里最大数对应2^32/24/3600=49days
-    if(accuTime >= 1000) {
-        double countRate = 1000.0*data.lastAccumulateCount * 1.0 / accuTime; //cps
-        double fixedCountRate = 1000.0*data.lastAccuCountFixed * 1.0 / accuTime; //修正后的cps
-        data.lastSpectrumID = fullSpectrum.sequence;
-        data.lastAccumulateCount = 0;
-        data.lastAccuCountFixed = 0;
-        data.countRateHistory.append(countRate);
-        
-        // 更新能谱图像数据
-        updateSpecPlotData(index, data.spectrum);
-
-        // 更新计数率图像数据
+    QMetaObject::invokeMethod(this, [this, index, spectrumSnap, currenTime, fixedCountRate]() {
+        updateSpecPlotData(index, spectrumSnap.data());
         updateCountRatePlotData(index, currenTime, fixedCountRate);
-    }
+    }, Qt::QueuedConnection);
 }
 
 // 将缓存的温度数据写入磁盘，避免丢数据
@@ -2374,6 +2391,7 @@ void MainWindow::restoreSettings()
 
 // 重置能谱
 void MainWindow::resetDetectorSpectrum(int detectorId) {
+    QMutexLocker locker(&mDetectorDataMutex);
     auto it = m_detectorData.find(detectorId);
     if (it == m_detectorData.end())
         return;
@@ -2390,96 +2408,92 @@ void MainWindow::resetDetectorSpectrum(int detectorId) {
 
 // 获取探测器数据
 DetectorData MainWindow::getDetectorData(int detectorId) const {
+    QMutexLocker locker(&mDetectorDataMutex);
     return m_detectorData.value(detectorId, DetectorData{});
 }
 
 // 检查探测器是否在线
 bool MainWindow::isDetectorOnline(int detectorId) const {
+    QMutexLocker locker(&mDetectorDataMutex);
     return m_detectorData.contains(detectorId);
 }
 
 // 获取在线探测器列表
 QList<int> MainWindow::getOnlineDetectors() const {
+    QMutexLocker locker(&mDetectorDataMutex);
     return m_detectorData.keys();
 }
 
 // 更新能谱图像数据
 void MainWindow::updateSpecPlotData(int detectorId, const quint32 spectrum[]) {
-    QMutexLocker locker(&mPlotLocker);
-    // 计算在页面中的索引
-    QCustomPlot *customPlot = getCustomPlot(detectorId, true);
-    if (!customPlot)
+    if (detectorId < 1 || detectorId > DET_NUM)
         return;
 
+    // 在持绘图锁之前完成道压缩与坐标换算（主线程内，避免长时间占用 mPlotLocker）
+    const bool useEnScale = mEnScale.load();
+    const SpectrumPlotSettings specSettings = m_spectrumPlotSettings[detectorId - 1];
+    const int mergebin = (specSettings.multiChannel > 0) ? (8192 / specSettings.multiChannel) : 8192;
+
     QVector<double> x, y;
-    // 针对能量刻度做处理
-    if(mEnScale)
-    {
-        //压缩多道
-        int mergebin = 8192/m_spectrumPlotSettings[detectorId-1].multiChannel;
+    if (useEnScale) {
         for (int i = 0; i < 8192; ++i) {
             double mergeCount = 0.0;
-            for(int mergeID = 0; mergeID<mergebin; mergeID++){
-                if(i<8192){
+            for (int mergeID = 0; mergeID < mergebin; mergeID++) {
+                if (i < 8192) {
                     mergeCount += spectrum[i];
-                }
-                else{
+                } else {
                     break;
                 }
                 i++;
             }
-            int newCh = (i+1)/mergebin;
-            double tempX;
-            if (m_spectrumPlotSettings[detectorId-1].fitType == 1){
-                tempX = m_spectrumPlotSettings[detectorId-1].c0*newCh + m_spectrumPlotSettings[detectorId-1].c1;
-            } else if (m_spectrumPlotSettings[detectorId-1].fitType == 2){
-                //拟合参数赋值
-                tempX = m_spectrumPlotSettings[detectorId-1].c0*newCh*newCh + m_spectrumPlotSettings[detectorId-1].c1*newCh + m_spectrumPlotSettings[detectorId-1].c2;
+            const int newCh = (i + 1) / mergebin;
+            double tempX = 0.0;
+            if (specSettings.fitType == 1) {
+                tempX = specSettings.c0 * newCh + specSettings.c1;
+            } else if (specSettings.fitType == 2) {
+                tempX = specSettings.c0 * newCh * newCh + specSettings.c1 * newCh + specSettings.c2;
             }
             x << tempX;
             y << mergeCount;
         }
-    }
-    else
-    {
-        //压缩多道
-        int mergebin = 8192/m_spectrumPlotSettings[detectorId-1].multiChannel;
+    } else {
         for (int i = 0; i < 8192; ++i) {
             double mergeCount = 0.0;
-            for(int mergeID = 0; mergeID<mergebin; mergeID++){
-                if(i<8192){
+            for (int mergeID = 0; mergeID < mergebin; mergeID++) {
+                if (i < 8192) {
                     mergeCount += spectrum[i];
-                }
-                else{
+                } else {
                     break;
                 }
                 i++;
             }
-            int newCh = (i+1)/mergebin;
-            x << newCh;
+            const int newCh = (i + 1) / mergebin;
+            x << static_cast<double>(newCh);
             y << mergeCount;
         }
     }
 
-    // 更新图像数据
-    QCPGraph* graph = getGraph(detectorId, true);
-    if(graph==nullptr)
-        qDebug()<<"updateSpecPlotData error";
-    getGraph(detectorId, true)->setData(x, y);
+    QMutexLocker locker(&mPlotLocker);
+    QCustomPlot *customPlot = getCustomPlot(detectorId, true);
+    if (!customPlot)
+        return;
+
+    QCPGraph *graph = getGraph(detectorId, true);
+    if (graph == nullptr) {
+        qDebug() << "updateSpecPlotData error";
+        return;
+    }
+    graph->setData(x, y);
     mPlotAlready.store(true);
 }
 
 // 添加计数率显示更新函数
 void MainWindow::updateCountRatePlotData(int detectorId, double fpgaTime, double countRate) {
-    QMutexLocker locker(&mPlotLocker);
-    // 计算在页面中的索引
+    QMutexLocker plotLocker(&mPlotLocker);
     QCustomPlot *customPlot = getCustomPlot(detectorId, false);
     if (!customPlot)
         return;
 
-    DetectorData &data = m_detectorData[detectorId];
-
-    // 获取当前时间（使用相对时间或绝对时间）
     static QElapsedTimer timer;
     if (!timer.isValid()) {
         timer.start();
@@ -2487,54 +2501,64 @@ void MainWindow::updateCountRatePlotData(int detectorId, double fpgaTime, double
 
     getGraph(detectorId, false)->addData(fpgaTime, countRate);
 
-    // 根据设置调整坐标轴范围
-    if (customPlot->property("enableAutoScale").toBool())
+    if (customPlot->property("enableAutoScale").toBool()) {
         customPlot->rescaleAxes(true);
-    else if (customPlot->property("enableFixedScale").toBool()){
-        // 显示最近300秒
-        const int WINDOW = customPlot->property("xAxisFixedRange").toUInt();
-        const int halfDetNum = DET_NUM / 2; // 提取常量，避免重复计算DET_NUM/2
-        // 1. 计算组起始索引（原代码中重复3次的部分）
-        int groupStart = ((detectorId - 1) / halfDetNum) * halfDetNum + 1;
-        // 2. 计算组结束索引（原代码中groupStart + halfDetNum，无需+1，因为循环是<=）
-        int groupEnd = groupStart + halfDetNum - 1;
-
-        // 3. 初始化x_max：取组内第一个探测器的第一个数据点的key
-        QCPGraph* firstGraph = getGraph(groupStart, false);
-        double x_max = (firstGraph && firstGraph->dataCount() > 0)
-                           ? firstGraph->data()->at(0)->key
-                           : 0.0; // 处理空数据的默认值
-
-        // 4. 遍历组内所有探测器，更新x_max
-        for (int detectorIndex = groupStart; detectorIndex <= groupEnd; ++detectorIndex) {
-            QCPGraph* tempGraph = getGraph(detectorIndex, false);
-            if (!tempGraph || tempGraph->dataCount() <= 0) {
-                continue; // 提前判断空指针或无数据，避免后续错误
-            }
-            // 获取该探测器的最后一个数据点的key
-            double lastKey = tempGraph->data()->at(tempGraph->dataCount() - 1)->key;
-            x_max = qMax(x_max, lastKey);
-        }
-        x_max = qMax(x_max, (double)WINDOW);
-        double x_min = qMax(0.0, x_max - WINDOW);
-        customPlot->xAxis->setRange(x_min, x_max);
-
-        // y轴范围只由最近300秒的y决定
-        auto range = calcRecentYRange(data.countRateHistory, WINDOW);
-        double y_min = range.first;
-        double y_max = range.second;
-        // 统计总曲线Y轴最大、最小值范围
-        for (int detectorIndex = groupStart; detectorIndex <= groupEnd; ++detectorIndex) {
-            DetectorData &data = m_detectorData[detectorIndex];
-            auto range = calcRecentYRange(data.countRateHistory, WINDOW);
-            y_min = qMin(y_min, range.first);
-            y_max = qMax(y_max, range.second);
-        }
-
-        // 稍微留点头部空间
-        double pad = (y_max - y_min) * 0.1;
-        customPlot->yAxis->setRange(y_min - pad, y_max + pad);
+        mPlotAlready.store(true);
+        return;
     }
+
+    if (!customPlot->property("enableFixedScale").toBool()) {
+        mPlotAlready.store(true);
+        return;
+    }
+
+    // 显示最近 WINDOW 秒（X 轴仅读 QCPGraph，不读 m_detectorData）
+    const int WINDOW = customPlot->property("xAxisFixedRange").toUInt();
+    const int halfDetNum = DET_NUM / 2;
+    const int groupStart = ((detectorId - 1) / halfDetNum) * halfDetNum + 1;
+    const int groupEnd = groupStart + halfDetNum - 1;
+
+    QCPGraph *firstGraph = getGraph(groupStart, false);
+    double x_max = (firstGraph && firstGraph->dataCount() > 0)
+                       ? firstGraph->data()->at(0)->key
+                       : 0.0;
+
+    for (int detectorIndex = groupStart; detectorIndex <= groupEnd; ++detectorIndex) {
+        QCPGraph *tempGraph = getGraph(detectorIndex, false);
+        if (!tempGraph || tempGraph->dataCount() <= 0) {
+            continue;
+        }
+        const double lastKey = tempGraph->data()->at(tempGraph->dataCount() - 1)->key;
+        x_max = qMax(x_max, lastKey);
+    }
+    x_max = qMax(x_max, static_cast<double>(WINDOW));
+    const double x_min = qMax(0.0, x_max - WINDOW);
+    customPlot->xAxis->setRange(x_min, x_max);
+
+    // 仅在此处短暂读 m_detectorData；calcRecentYRange 只扫尾部 WINDOW 个点，不拷贝整段历史
+    double y_min = 0.0;
+    double y_max = 1.0;
+    {
+        QMutexLocker detLocker(&mDetectorDataMutex);
+        auto it = m_detectorData.find(detectorId);
+        if (it != m_detectorData.end()) {
+            const auto range = calcRecentYRange(it->countRateHistory, WINDOW);
+            y_min = range.first;
+            y_max = range.second;
+        }
+        for (int detectorIndex = groupStart; detectorIndex <= groupEnd; ++detectorIndex) {
+            auto it2 = m_detectorData.find(detectorIndex);
+            if (it2 == m_detectorData.end()) {
+                continue;
+            }
+            const auto detRange = calcRecentYRange(it2->countRateHistory, WINDOW);
+            y_min = qMin(y_min, detRange.first);
+            y_max = qMax(y_max, detRange.second);
+        }
+    }
+
+    const double pad = (y_max - y_min) * 0.1;
+    customPlot->yAxis->setRange(y_min - pad, y_max + pad);
     mPlotAlready.store(true);
 }
 

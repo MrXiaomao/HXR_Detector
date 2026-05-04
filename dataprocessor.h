@@ -82,12 +82,12 @@ public slots:
     void restartTempTimeout();   
     // 解析能谱数据包，并拼接成完整能谱
     void mergeSubSpec_Thread(quint8 no, const QByteArray& data);
-    // 解析波形数据包
-    void extractWaveformData(quint8 no, const QByteArray& packetData);
-    // 解析粒子数据包
-    void extractParticleData(quint8 no, const QByteArray& packetData);
-    // 解析时间戳数据包
-    void extractTimestampData(quint8 no, const QByteArray& packetData);
+    // 解析波形数据包（数据解析线程）
+    void extractWaveformData_Thread(quint8 no, const QByteArray& packetData);
+    // 解析粒子数据包（数据解析线程）
+    void extractParticleData_Thread(quint8 no, const QByteArray& packetData);
+    // 解析时间戳数据包（数据解析线程）
+    void extractTimestampData_Thread(quint8 no, const QByteArray& packetData);
 
 signals:   
     void relayConnected();// 继电器
@@ -104,9 +104,9 @@ signals:
 
     // 上传解析后的数据
     void reportFullSpectrum(quint8 index, const FullSpectrum& fullSpectrum); // 发送完整的能谱数据
-    void reportWaveCurveInfo(quint8, QVector<quint16>& wave); // 发送解析后的波形曲线
-    void reportParticleInfo(quint8 index, QVector<ParticleData>& particles); // 发送解析后的粒子信息
-    void reportTriggerTimeInfo(quint8 index, QDateTime trTime); // 发送解析后的触发时间戳信息
+    void reportWaveCurveInfo(quint8, const QVector<quint16>& wave); // 发送解析后的波形曲线
+    void reportParticleInfo(quint8 index, const QVector<ParticleData>& particles); // 发送解析后的粒子信息
+    void reportTriggerTimeInfo(quint8 index, const QDateTime trTime); // 发送解析后的触发时间戳信息
     void reportTemperatureTimeout(quint8 index); // 温度心跳超时信号
 
 private:
