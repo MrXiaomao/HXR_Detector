@@ -1042,6 +1042,14 @@ void MainWindow::onSystemTimer()
     QString dayOfWeekString = dayNames.at(dayOfWeekNumber);
     this->findChild<QLabel*>("label_systemtime")->setText(QString(QObject::tr("系统时间：")) + currentDateTime.toString("yyyy/MM/dd hh:mm:ss ") + dayOfWeekString);
 
+    // 启用自动测量，当开始时刻等于系统时间，才正式开始自动测量计时
+    if (mEnableAutoMeasure && commHelper->isMeasuring() && !mMeasureTimer->isValid()){
+        if (currentDateTime >= ui->dateTimeEdit_startTime->dateTime()){
+            // 启动测量计时器
+            mMeasureTimer->start();
+        }
+    }
+
     if (mMeasureTimer && mMeasureTimer->isValid())
     {
         ui->edit_measureTime->setText(formatTimeString(mMeasureTimer->elapsed() / 1000));
@@ -2049,6 +2057,9 @@ void MainWindow::on_action_stopAllMeasure_triggered()
 
 void MainWindow::onMeasureCountdownTimeout()
 {
+    if (!mMeasureTimer->isValid())
+        return;// 测量计时还未正式开始
+
     // 计算已测量时长s（总时长 - 剩余倒计时）
     int mRemainingCountdown = mTotalCountdown - mMeasureTimer->elapsed() / 1000; 
 
@@ -2883,8 +2894,10 @@ void MainWindow::startMeasure()
 
     commHelper->setShotInformation(shotDir, shotNumStr);
 
-    // 启动测量计时器
-    mMeasureTimer->start();
+    if (!mEnableAutoMeasure){
+        // 启动测量计时器
+        mMeasureTimer->start();
+    }
 
     // 初始化测量时长显示为 00:00:00
     ui->edit_measureTime->setText("00:00:00");
