@@ -165,6 +165,11 @@ CommHelper::~CommHelper()
 
 #include <winsock2.h>   // WSAIoctl函数定义
 #include <mstcpip.h>    // 包含 TCP_KEEPALIVE 结构体定义
+struct TCP_KEEPLIVE {
+    u_long onoff;
+    u_long keepalivetime;
+    u_long keepaliveinterval;
+};
 void CommHelper::initSocket()
 {
 #if ENABLE_LIBHV
@@ -173,7 +178,31 @@ void CommHelper::initSocket()
     mTcpServer->onConnection = [&](const hv::SocketChannelPtr& channel)
     {
         if (channel->isConnected()){// isOpened()){// ->status == hv::SocketChannel::CONNECTED){
-            channel->setKeepaliveTimeout(10000);// 10s没有数据交互就断开
+            //channel->setKeepaliveTimeout(10000);// 10s没有数据交互就断开(这种方式用的是通过判断最后一次网络数据的读/写时间与系统时钟的时间差来判断)
+
+            // 1. 开启基础保活开关
+            //tcp_keepalive(channel->fd());
+            BOOL keepAliveEnable = TRUE;
+            setsockopt(channel->fd(), SOL_SOCKET, SO_KEEPALIVE, (const char*)&keepAliveEnable, sizeof(keepAliveEnable));
+
+            // 2. 配置自定义保活参数（Windows参数单位为毫秒）
+            TCP_KEEPLIVE keepCfg = {0};
+            keepCfg.onoff = true;//开启keepalive属性
+            keepCfg.keepalivetime = 10 * 1000;  //如果该连接在10秒内没有任何数据往来，则执行TCP层的探测
+            keepCfg.keepaliveinterval = 5 * 1000;//探测发包间隔是5秒
+
+            DWORD retBytes = 0;
+            WSAIoctl(
+                channel->fd(),
+                SIO_KEEPALIVE_VALS,
+                &keepCfg,
+                sizeof(keepCfg),
+                nullptr,
+                0,
+                &retBytes,
+                nullptr,
+                nullptr
+                );
 
             QString peerAddress = QString::fromStdString(channel->peerip());
             quint16 peerPort = channel->peerport();
