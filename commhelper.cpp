@@ -178,7 +178,7 @@ void CommHelper::initSocket()
     mTcpServer->onConnection = [&](const hv::SocketChannelPtr& channel)
     {
         if (channel->isConnected()){// isOpened()){// ->status == hv::SocketChannel::CONNECTED){
-            //channel->setKeepaliveTimeout(10000);// 10s没有数据交互就断开(这种方式用的是通过判断最后一次网络数据的读/写时间与系统时钟的时间差来判断)
+            channel->setKeepaliveTimeout(10000);// 10s没有数据交互就断开(这种方式用的是通过判断最后一次网络数据的读/写时间与系统时钟的时间差来判断)
 
             // 1. 开启基础保活开关
             //tcp_keepalive(channel->fd());
@@ -188,8 +188,8 @@ void CommHelper::initSocket()
             // 2. 配置自定义保活参数（Windows参数单位为毫秒）
             TCP_KEEPLIVE keepCfg = {0};
             keepCfg.onoff = true;//开启keepalive属性
-            keepCfg.keepalivetime = 10 * 1000;  //如果该连接在10秒内没有任何数据往来，则执行TCP层的探测
-            keepCfg.keepaliveinterval = 5 * 1000;//探测发包间隔是5秒
+            keepCfg.keepalivetime = 5 * 1000;  //如果该连接在5秒内没有任何数据往来，则执行TCP层的探测
+            keepCfg.keepaliveinterval = 3 * 1000;//探测发包间隔是3秒
 
             DWORD retBytes = 0;
             WSAIoctl(

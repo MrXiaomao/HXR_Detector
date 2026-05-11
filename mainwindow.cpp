@@ -31,7 +31,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
 
     mStartMeasureDelayTimer = new QTimer(this);
     mStartMeasureDelayTimer->setSingleShot(true);
-    mStartMeasureDelayTimer->setInterval(12000);
+    mStartMeasureDelayTimer->setInterval(120000);
     connect(mStartMeasureDelayTimer, &QTimer::timeout, this, [=](){
         // 自动测量
         ui->action_stopAllMeasure->setEnabled(true);
@@ -789,20 +789,24 @@ void MainWindow::initUi()
 
     // 接收触发信号时间戳
     connect(commHelper, &CommHelper::reportTimestampe, this, [=](const QDateTime triggerTime){
-        // 只有启用了外触发才会接收打靶信号的时间戳，并且只在自动测量未激活时更新界面显示
-        if (mEnableExtendTrigger && !mAutoMeasureTimerActive)
-        {
-            // 只有开启了自动化测量，才接收自动触发的时间戳，并更新界面显示
-            ui->dateTime_shotTime->setDateTime(triggerTime);
-            ui->lineEdit_triggerflag->setText("已经触发");
+        // 只有启用了外触发才会接收打靶信号的时间戳，并且只在自动测量未激活时更新界面显示,
+        // 这里进来时是子线程，所以在QTimer里面执行就变成主线程了
+        qDebug().noquote().nospace() << "mainwindow 收到打靶信号时间戳：" << triggerTime.toString("yyyy-MM-dd HH:mm:ss");
+        // QTimer::singleShot(0, this, [=]{
+            if (mEnableExtendTrigger && !mAutoMeasureTimerActive)
+            {
+                // 只有开启了自动化测量，才接收自动触发的时间戳，并更新界面显示
+                ui->dateTime_shotTime->setDateTime(triggerTime);
+                ui->lineEdit_triggerflag->setText("已经触发");
 
-            // 根据冷却时间设置自动测量的触发时间，单位为秒
-            qint32 coolTimelength = ui->spinBox_coolTimeLength->value();
-            ui->dateTimeEdit_startTime->setDateTime(triggerTime.addSecs(coolTimelength));
+                // 根据冷却时间设置自动测量的触发时间，单位为秒
+                qint32 coolTimelength = ui->spinBox_coolTimeLength->value();
+                ui->dateTimeEdit_startTime->setDateTime(triggerTime.addSecs(coolTimelength));
 
-            mAutoMeasureTimerActive = true;
-            qInfo().noquote().nospace() << "收到打靶信号时间戳：" << triggerTime.toString("yyyy-MM-dd HH:mm:ss") << "，自动测量将在" << coolTimelength << "秒后开始";
-        }
+                mAutoMeasureTimerActive = true;
+                qInfo().noquote().nospace() << "收到打靶信号时间戳：" << triggerTime.toString("yyyy-MM-dd HH:mm:ss") << "，自动测量将在" << coolTimelength << "秒后开始";
+            }
+        // });
     }, Qt::QueuedConnection);
 }
 
@@ -1047,6 +1051,14 @@ void MainWindow::onSystemTimer()
         if (currentDateTime >= ui->dateTimeEdit_startTime->dateTime()){
             // 启动测量计时器
             mMeasureTimer->start();
+
+            misTimedMeasure = true;
+            // 读取倒计时时间（秒）
+            int countdownSeconds = ui->spinBox_measureTime->value();
+            if (countdownSeconds > 0) {
+                mTotalCountdown = countdownSeconds;
+                qInfo().noquote().nospace() << QString("开始测量，倒计时：%1 秒").arg(countdownSeconds);
+            }
         }
     }
 
@@ -1131,11 +1143,11 @@ void MainWindow::onSwitcherLogged(const QString& ip)
     /// 再给设备上电
     if (mEnableAutoMeasure)
     {
-        // 打开时钟同步模块电源
-        commHelper->openSwitcherExtendPOEPower();
-
         // 打开谱仪设备电源
         commHelper->openPower();
+
+        // 打开时钟同步模块电源
+        commHelper->openSwitcherExtendPOEPower();
 
         // 第三步 30s之后开始自动测量
         ui->action_stopAllMeasure->setEnabled(false);
@@ -1633,13 +1645,26 @@ void MainWindow::on_action_startAllMeasure_triggered()
         //确保测量时刻距离当前时间大于240s，给自动测量模式预留足够的准备时间
         if (mEnableExtendTrigger){
             if (ui->spinBox_coolTimeLength->value() < 180){
+                mEnableAutoMeasure = false;
+                mEnableExtendTrigger = false;
                 QMessageBox::information(this, QStringLiteral("提示"), "请确保冷却时长至少3分钟，以便自动测量模式有足够的准备时间！");
                 return;
+            }
+
+            // 提示时间同步触发模块电源是否接通
+            SwitchButton* btn = this->findChild<SwitchButton*>("poeSwitcher0");
+            if (btn && !btn->getChecked()){
+                mEnableAutoMeasure = false;
+                mEnableExtendTrigger = false;
+                QMessageBox::information(this, QStringLiteral("提示"), "请开启时间同步模块电源开关！");
+                return ;
             }
         } else {
             QDateTime tmStart = ui->dateTimeEdit_startTime->dateTime();
             QDateTime now = QDateTime::currentDateTime();
             if (now.secsTo(tmStart) < 240){
+                mEnableAutoMeasure = false;
+                mEnableExtendTrigger = false;
                 QMessageBox::information(this, QStringLiteral("提示"), "请确保测量起始时间距离当前时间至少4分钟，以便自动测量模式有足够的准备时间！");
                 return;
             }
@@ -1649,14 +1674,6 @@ void MainWindow::on_action_startAllMeasure_triggered()
     }
     else
     {
-        if (mEnableExtendTrigger){
-            // 提示时间同步触发模块电源是否接通
-            SwitchButton* btn = this->findChild<SwitchButton*>("poeSwitcher0");
-            if (btn && !btn->getChecked()){
-                QMessageBox::information(this, QStringLiteral("提示"), "请开启时间同步模块电源开关！");
-                return ;
-            }
-        }
         qInfo().nospace().noquote() << tr("开启手动测量");
     }
 
@@ -2030,8 +2047,6 @@ void MainWindow::on_action_stopAllMeasure_triggered()
         // 显示最终测量时长
         int elapsedSeconds = mMeasureTimer->elapsed() / 1000;
         ui->edit_measureTime->setText(formatTimeString(elapsedSeconds));
-        mMeasureTimer->invalidate();
-        misTimedMeasure = false;
 
         // 自动更新发次号
         if (ui->checkBox_autoIncrease->isChecked()){
@@ -2046,6 +2061,8 @@ void MainWindow::on_action_stopAllMeasure_triggered()
         mDetectorMeasuring.clear();
     }
     
+    mMeasureTimer->invalidate();
+    misTimedMeasure = false;
     m_selectedChannels.clear();
 
     mEnableAutoMeasure = false;
@@ -2087,6 +2104,9 @@ void MainWindow::onMeasureCountdownTimeout()
 
             // 关闭所有通道电源
             commHelper->closePower(mEnableAutoMeasure);
+
+            // 关闭时间同步模块电源
+            commHelper->closeSwitcherExtendPOEPower();
 
             qInfo() << "所有测量已停止，所有通道电源已关闭";
         }
@@ -2908,12 +2928,14 @@ void MainWindow::startMeasure()
         misTimedMeasure = false;
     }
     else{
-        misTimedMeasure = true;
-        // 读取倒计时时间（秒）
-        int countdownSeconds = ui->spinBox_measureTime->value();
-        if (countdownSeconds > 0) {
-            mTotalCountdown = countdownSeconds;
-            qInfo().noquote().nospace() << QString("开始测量，倒计时：%1 秒").arg(countdownSeconds);
+        if (!mEnableAutoMeasure){
+            misTimedMeasure = true;
+            // 读取倒计时时间（秒）
+            int countdownSeconds = ui->spinBox_measureTime->value();
+            if (countdownSeconds > 0) {
+                mTotalCountdown = countdownSeconds;
+                qInfo().noquote().nospace() << QString("开始测量，倒计时：%1 秒").arg(countdownSeconds);
+            }
         }
     }
 

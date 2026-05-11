@@ -286,7 +286,7 @@ void DataProcessor::stopMeasure()
 {
     //#16 停止测量=1|0|26|1234000FEA1000000000ABCD
     this->sendStopMeasure();
-    
+
     const quint64 packetCount = mMergeSubSpecPacketCount.exchange(0, std::memory_order_relaxed);
     const quint64 totalCostNs = mMergeSubSpecTotalCostNs.exchange(0, std::memory_order_relaxed);
     const qint64 wallMs = mMergeSubSpecWallTimer.isValid() ? mMergeSubSpecWallTimer.elapsed() : 0;

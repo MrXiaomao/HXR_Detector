@@ -71,8 +71,14 @@ public:
 
     bool extractSpectrumData(const QByteArray& packetData, SubSpectrumPacket& subSpec);
 
-    void startOTAUpgrade(){mIsUpgrading = true;}
-    void endOTAUpgrade(){mIsUpgrading = false;};
+    void startOTAUpgrade(){
+        mIsUpgrading = true;
+        mTempTimeoutTimer.stop();
+    }
+    void endOTAUpgrade(){
+        mIsUpgrading = false;
+        mTempTimeoutTimer.start();
+    };
     bool sendOTAUpgradeData(const QByteArray& data);
     bool isUpgrading() const{return mIsUpgrading;}
 

@@ -455,6 +455,7 @@ void QHuaWeiSwitcherHelper::queryPowerStatus()
 
 void QHuaWeiSwitcherHelper::forceOpenPower()
 {
+    qInfo() << "开启所有谱仪POE电源";
     openSwitcherPOEPower(0x00);
     if (mTelnet->state() == QAbstractSocket::ConnectedState)
     {
@@ -493,7 +494,7 @@ bool QHuaWeiSwitcherHelper::openSwitcherPOEPower(quint8 port/* = 0*/)
 
     {
         QMutexLocker locker(&mActionLocker);
-        if (mBusyStartTimer.elapsed() >= 5000)
+        if (mBusyStartTimer.isValid() && mBusyStartTimer.elapsed() >= 30000 && mActionsWait.size() > 0)
             mActionsWait.clear();// 为了防止指令堵塞，清空闲置指令
 
         if (port == 0){            
@@ -521,7 +522,7 @@ bool QHuaWeiSwitcherHelper::openSwitcherPOEPower(quint8 port/* = 0*/)
         }
     }
 
-    if (!mSwitcherIsBusy.load() || mBusyStartTimer.elapsed() >= 5000/*距离上次指令执行已经超过5s*/){
+    if (!mSwitcherIsBusy.load() || (mBusyStartTimer.isValid() && mBusyStartTimer.elapsed() >= 30000)/*距离上次指令执行已经超过5s*/){
         executeNextAction(true);
     }
 
@@ -538,7 +539,7 @@ bool QHuaWeiSwitcherHelper::closeSwitcherPOEPower(quint8 port/* = 0*/, bool disc
 
     {
         QMutexLocker locker(&mActionLocker);
-        if (mBusyStartTimer.elapsed() >= 5000)
+        if (mBusyStartTimer.isValid() && mBusyStartTimer.elapsed() >= 30000 && mActionsWait.size() > 0)
             mActionsWait.clear();// 为了防止指令堵塞，清空闲置指令
 
         if (port == 0){
@@ -565,7 +566,7 @@ bool QHuaWeiSwitcherHelper::closeSwitcherPOEPower(quint8 port/* = 0*/, bool disc
         }
     }
 
-    if (!mSwitcherIsBusy.load() || mBusyStartTimer.elapsed() >= 5000/*距离上次指令执行已经超过5s*/){
+    if (!mSwitcherIsBusy.load() || (mBusyStartTimer.isValid() && mBusyStartTimer.elapsed() >= 30000)/*距离上次指令执行已经超过5s*/){
         executeNextAction(true);
     }
 
@@ -582,13 +583,13 @@ void QHuaWeiSwitcherHelper::checkLoginAlive()
 
     {
         QMutexLocker locker(&mActionLocker);
-        if (mBusyStartTimer.elapsed() >= 5000)
+        if (mBusyStartTimer.isValid() && mBusyStartTimer.elapsed() >= 30000)
             mActionsWait.clear();// 为了防止指令堵塞，清空闲置指令
 
         mActionsWait.push_back(ACTION_WAIT(0x00, acKeepLive));
     }
 
-    if (!mSwitcherIsBusy.load() || mBusyStartTimer.elapsed() >= 5000/*距离上次指令执行已经超过5s*/){
+    if (!mSwitcherIsBusy.load() || (mBusyStartTimer.isValid() && mBusyStartTimer.elapsed() >= 30000)/*距离上次指令执行已经超过5s*/){
         executeNextAction(true);
     // qDebug().nospace().noquote() << "交换机[" << mIp << "]发送心跳检测命令";
     }
@@ -832,13 +833,14 @@ void QHuaWeiSwitcherHelper::executeNextAction(bool keepFirst)
         mCurrentCommand = QString("interface GigabitEthernet 0/0/%1\r\n").arg(mCurrentPoeIndex);
     }
 
+    mBusyStartTimer.start();
     QTimer::singleShot(0, this, [=](){
         mSwitcherIsBusy.store(true);
         if (mCurrentAction == acKeepLive){
             mWaitingHeartbeatResponse = true;
-            mLastHeartbeatTime.restart();
+            mLastHeartbeatTime.start();
         } else {
-            mBusyStartTimer.restart();
+            mBusyStartTimer.start();
         }
 
         mTelnet->write(mCurrentCommand.toLatin1());

@@ -140,7 +140,7 @@ OTAUpgradeWindow::OTAUpgradeWindow(QWidget *parent)
     });
 
     connect(commHelper, &CommHelper::reportOTAUpgradeData, this, [=](quint8 index, const QByteArray& data){
-        m_returnDataSize[index] += data.size();
+        //m_returnDataSize[index] += data.size();
         //qDebug() << "reportOTAUpgradeData" << m_returnDataSize[index] << data.size();
         // if (m_returnDataSize[index] >= m_currentFileSize[index])
         // {
@@ -531,7 +531,7 @@ void OTAUpgradeWindow::asyncSendOTAData(int index, const QString& filePath, cons
     int sendCount = fileSize / 256;
     bool sendSuccess = true;
     m_currentFileSize[index] = fileSize;
-    m_returnDataSize[index] = 0;
+    //m_returnDataSize[index] = 0;
 
     commHelper->startOTAUpgrade(index);
     for (int i = 0; i < sendCount && sendSuccess; ++i) {
@@ -556,11 +556,6 @@ void OTAUpgradeWindow::asyncSendOTAData(int index, const QString& filePath, cons
     if (!sendSuccess)
     {
         emit sigSendFinished(index, selectedPartition, sendSuccess);
-
-        // 按钮状态
-        if (m_runningTasks == 0) {
-            emit sigUpgradeFinished();
-        }
     }
     else{
         std::thread([=](){
@@ -592,11 +587,6 @@ void OTAUpgradeWindow::asyncSendOTAData(int index, const QString& filePath, cons
             //     else
             //         emit sigWriteLog(tr("谱仪[#%1]数据校验结果正确！").arg(index));
             // }
-
-            // 按钮状态
-            if (m_runningTasks == 0) {
-                emit sigUpgradeFinished();
-            }
         }).join();
     }
 
@@ -633,6 +623,11 @@ void OTAUpgradeWindow::slotSendFinished(int index, const QString& partition, boo
     } else {
         qCritical() << (tr("谱仪[#%1][%2]更新失败！").arg(index).arg(partition));
         sigWriteLog(tr("谱仪[#%1][%2]更新失败！").arg(index).arg(partition), QtCriticalMsg);
+    }
+
+    // 按钮状态
+    if (m_runningTasks == 0) {
+        emit sigUpgradeFinished();
     }
 }
 
