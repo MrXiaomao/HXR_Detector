@@ -249,6 +249,7 @@ private:
 
     QMap<quint8, DataProcessor*> mDetectorDataProcessor;//32路探测器数据处理器
     QMap<quint8, QFile*> mDetectFileProcessor;  //32路探测器的测量数据文件句柄，不包含温度数据的数据包，可以是：能谱数据、波形数据、粒子数据。
+    QMap<quint8, qint64> mTempUpdateTime; // 每个探测器最新温度更新时间
 
     // 每路探测器独立缓冲完整能谱转 H5 后的数据；后台线程每 10s 批量写入 HDF5
     std::array<QVector<H5Spectrum>, DET_NUM + 1> mPendingH5ByDetector;

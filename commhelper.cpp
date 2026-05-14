@@ -234,6 +234,8 @@ void CommHelper::initSocket()
             if (switcherHelper){
                 emit  switcherHelper->syncPoePowerStatus(indexOfPort(index), true);
             }
+
+            mTempUpdateTime[index] = 0;
         }
         else if (channel->isClosed()){//status == hv::SocketChannel::CLOSED){
             QString peerAddress = QString::fromStdString(channel->peerip());
@@ -257,6 +259,19 @@ void CommHelper::initSocket()
                                       Qt::QueuedConnection,
                                       Q_ARG(QString, peerAddress),
                                       Q_ARG(quint16, peerPort));
+
+            // 2. 继续判断上次温度更新时间是否超过10s，如果超过，则断电后重新上电
+            if (mTempUpdateTime.contains(index)){
+                if (QDateTime::fromMSecsSinceEpoch(mTempUpdateTime.value(index, 0)).msecsTo(QDateTime::currentDateTime()) >= 10000){
+                    qInfo().nospace().noquote() << "谱仪[#" << index << QString("]温度心跳超时报警！自动断电重启！");
+
+                    // 2.1 断电处理
+                    closeSwitcherPOEPower(index);
+
+                    // 2.2 上电处理
+                    openSwitcherPOEPower(index);
+                }
+            }
         }
         else {
             return;
@@ -359,6 +374,7 @@ void CommHelper::initDataProcessor()
         // 更新温度数据
         connect(processor, &DataProcessor::reportTemperatureData, this, [=](double temperature){
             emit reportDetectorTemperature(processor->getIndex(), temperature);
+            mTempUpdateTime[processor->getIndex()] = QDateTime::currentMSecsSinceEpoch();
         }, Qt::DirectConnection);
 
         //对温度超时报警进行处理

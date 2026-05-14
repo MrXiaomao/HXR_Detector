@@ -1221,6 +1221,9 @@ void MainWindow::onPoePowerStatusReport(quint8 index, bool on)
         return;
     }
 
+    if (cell->getChecked() == on)
+        return; // 状态已经是一样的，就不用重复刷新
+
     if(on)
     {
         if (row == 0)
