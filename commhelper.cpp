@@ -1,4 +1,4 @@
-#include "commhelper.h"
+﻿#include "commhelper.h"
 #include <QDataStream>
 #include <QNetworkSession>
 #include <QNetworkConfigurationManager>
@@ -179,6 +179,9 @@ void CommHelper::initSocket()
     {
         if (channel->isConnected()){// isOpened()){// ->status == hv::SocketChannel::CONNECTED){
             channel->setKeepaliveTimeout(10000);// 10s没有数据交互就断开(这种方式用的是通过判断最后一次网络数据的读/写时间与系统时钟的时间差来判断)
+
+            // 禁用Nagle算法，降低数据包的传输延迟
+            tcp_nodelay(channel->fd());
 
             // 1. 开启基础保活开关
             //tcp_keepalive(channel->fd());
