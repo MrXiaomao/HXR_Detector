@@ -130,13 +130,13 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
             quint32 onePkgSize = 0;
             quint16 type = qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(cachePool.constData() + pos + 4));
             DataType dataType = static_cast<DataType>(type);
-            if (dataType == dtWaveform)
+            if (dataType == dtWaveform) // len=1038
                 onePkgSize = 4 + 2 + 512*2 + 4 + 4;
-            else if (dataType == dtSpectrum)
+            else if (dataType == dtSpectrum) // len=1060
                 onePkgSize = 4 + 2 + 4 + 4 + 4 + 2 + 256*4 + 4 + 8 + 4;
-            else if (dataType == dtParticle)
+            else if (dataType == dtParticle) // len=1058
                 onePkgSize = 4 + 2 + 4 + 130*8 + 4 + 4;
-            else if (dataType == dtTimestamp)
+            else if (dataType == dtTimestamp) // len=22
                 onePkgSize = 4 + 2 + 8 + 4 + 4;
             else {
                 ++mTypeErrorCount;
@@ -608,7 +608,6 @@ void CommandAdapter::sendWorkMode(bool isRead, WorkMode workMode){
 ***********************************************************/
 //开始测量 波形测量/能谱测量共用一个开始
 void CommandAdapter::sendStartMeasure(CommandAdapter::MeasureMode measureMode){
-    isFirstError = true;
     mAskStopMeasure = false;
     QByteArray askCurrentCmd = QByteArray::fromHex(QString("12 34 00 0F EA 10 00 00 00 01 AB CD").toUtf8());
     if (measureMode == mmAuto)

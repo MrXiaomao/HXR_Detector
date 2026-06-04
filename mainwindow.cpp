@@ -1,4 +1,4 @@
-#include "mainwindow.h"
+﻿#include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "switchbutton.h"
 #include <QTimer>
@@ -1364,10 +1364,6 @@ void MainWindow::flushTemperatureCache()
 }
 
 void MainWindow::closeEvent(QCloseEvent *event) {
-    //确保子对话框都退出
-    mDetSettingWindow->close();
-    mClientPeersWindow->close();
-    mOTAUpgradeWindow->close();
 
     //确认是否退出
     int ret = QMessageBox::question(this, tr("系统退出提示"), tr("确定要退出软件系统吗？"),
@@ -1376,6 +1372,11 @@ void MainWindow::closeEvent(QCloseEvent *event) {
         event->ignore();
         return;
     }
+
+    //确保子对话框都退出
+    mDetSettingWindow->close();
+    mClientPeersWindow->close();
+    mOTAUpgradeWindow->close();
 
     // 关闭前把缓存的温度点写入磁盘，避免丢数据
     flushTemperatureCache();

@@ -108,6 +108,7 @@ void DataProcessor::reallocSocket(const hv::SocketChannelPtr& tcpSocket, DetPara
 {
     mTcpSocket = tcpSocket;
     if (mTcpSocket){
+        isFirstError = false;
         tcpSocket->onread = [=](hv::Buffer* buf){
             if(buf->size()==0) return;
             QByteArray rawData = QByteArray::fromRawData((const char*)buf->data(), buf->size());

@@ -1,4 +1,4 @@
-/*
+﻿/*
  * @Author: MrPan
  * @Date: 2025-11-13 11:36:00
  * @LastEditors: Maoxiaoqing
@@ -230,14 +230,15 @@ private:
     QWaitCondition mCmdWaitCondition;
     QLiteThread* mCmdProcessThread = nullptr;// 处理指令线程
 
-    bool isFirstError = true;
-
     // 统计数据包错误率相关
     quint64 mTailErrorCount = 0;
     quint64 mTypeErrorCount = 0;
     quint64 mResyncDropBytes = 0;
     quint64 mHeaderScanDropBytes = 0;
     // QElapsedTimer mParserStatTimer;
+
+protected:
+    bool isFirstError = true; // 数据第一次重新错误
 };
 
 #endif // COMMANDADAPTER_H

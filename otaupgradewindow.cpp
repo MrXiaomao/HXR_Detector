@@ -394,7 +394,7 @@ void OTAUpgradeWindow::startNextTask()
     // 1. 发送更新数据包和更新地址（原业务逻辑保留）
     QByteArray sectorData = QByteArray::fromHex("12 34 00 0F CA 11 00 00 00 00 AB CD");
     qint64 fileSize = QFileInfo(filePath).size();
-    quint8 sectorCount = fileSize / 262144; // 扇区大小262144
+    quint8 sectorCount = qCeil((double)fileSize / 262144); // 扇区大小262144
     sectorData[9] = sectorCount & 0xFF;
 
     if (!commHelper->sendOTAUpgradeData(index, sectorData)) {
@@ -528,7 +528,7 @@ void OTAUpgradeWindow::asyncSendOTAData(int index, const QString& filePath, cons
     }
 
     qint64 fileSize = QFileInfo(filePath).size();
-    int sendCount = fileSize / 256;
+    int sendCount = qCeil((double)fileSize / 256);
     bool sendSuccess = true;
     m_currentFileSize[index] = fileSize;
     //m_returnDataSize[index] = 0;
