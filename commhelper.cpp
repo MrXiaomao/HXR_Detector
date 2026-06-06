@@ -268,6 +268,7 @@ void CommHelper::initSocket()
             }
 
             mTempUpdateTime[index] = 0;
+            mIntentionalPOECloseIDs.removeOne(index);
         }
         else if (channel->isClosed()){//status == hv::SocketChannel::CLOSED){
             QString peerAddress = QString::fromStdString(channel->peerip());
@@ -293,16 +294,18 @@ void CommHelper::initSocket()
                                       Q_ARG(quint16, peerPort));
 
             // 2. 继续判断上次温度更新时间是否超过10s，如果超过，则断电后重新上电
-            if (mTempUpdateTime.contains(index)){
-                if (QDateTime::fromMSecsSinceEpoch(mTempUpdateTime.value(index, 0)).msecsTo(QDateTime::currentDateTime()) >= 10000){
-                    qInfo().nospace().noquote() << "谱仪[#" << index << QString("]温度心跳超时报警！自动断电重启！");
+            // 主动断电引起的掉线（closeSwitcherPOEPower / closePower / manualClose）不执行自动断电重启
+            if (mIntentionalPOECloseIDs.contains(index)) {
+                mIntentionalPOECloseIDs.removeOne(index);
+            } else if (mTempUpdateTime.contains(index)
+                       && QDateTime::fromMSecsSinceEpoch(mTempUpdateTime.value(index, 0)).msecsTo(QDateTime::currentDateTime()) >= 10000) {
+                qInfo().nospace().noquote() << "谱仪[#" << index << QString("]温度心跳超时报警！自动断电重启！");
 
-                    // 2.1 断电处理
-                    closeSwitcherPOEPower(index);
+                // 2.1 断电处理
+                closeSwitcherPOEPower(index);
 
-                    // 2.2 上电处理
-                    openSwitcherPOEPower(index);
-                }
+                // 2.2 上电处理
+                openSwitcherPOEPower(index);
             }
         }
         else {
@@ -863,6 +866,9 @@ bool CommHelper::openSwitcherPOEPower(quint8 index)
 */
 bool CommHelper::closeSwitcherPOEPower(quint8 index)
 {
+    if (!mIntentionalPOECloseIDs.contains(index))
+        mIntentionalPOECloseIDs.append(index);
+
     QHuaWeiSwitcherHelper *switcherHelper = indexOfHuaWeiSwitcher(index);
     if (nullptr == switcherHelper)
         return false;
@@ -1086,6 +1092,10 @@ void CommHelper::closePower(bool disconnect)
                 // mExtendTimeSynModule.reload();
                 // if (mExtendTimeSynModule.switcherIndex == (i+1))
                 //     switcherHelper->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
+                for (quint8 detIndex = 1; detIndex <= DET_NUM; ++detIndex) {
+                    if (switcherHelper->contains(detIndex) && !mIntentionalPOECloseIDs.contains(detIndex))
+                        mIntentionalPOECloseIDs.append(detIndex);
+                }
                 switcherHelper->closeSwitcherPOEPower(0x00, disconnect);
             }
         }

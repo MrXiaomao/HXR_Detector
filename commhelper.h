@@ -181,11 +181,10 @@ public:
     // 主动关闭POE供电，也就是温度监测被关闭的通道
     void manualCloseSwitcherPOEPower(quint8 index)
     {
-        //如果该通道已经关闭，则不重复关闭
-        if (mManualClosedPOEIDs.contains(index)){
-            return;
-        }
-        mManualClosedPOEIDs.append(index);  
+        if (!mManualClosedPOEIDs.contains(index))
+            mManualClosedPOEIDs.append(index);
+        if (!mIntentionalPOECloseIDs.contains(index))
+            mIntentionalPOECloseIDs.append(index);
     }
 
     // 主动打开POE供电，也就是温度监测被打开的通道
@@ -194,13 +193,15 @@ public:
         //如果port为0，则表示全部打开
         if (port == 0){
             mManualClosedPOEIDs.clear();
+            mIntentionalPOECloseIDs.clear();
             return;
         }
 
         if (mManualClosedPOEIDs.contains(port))
         {
-            mManualClosedPOEIDs.removeOne(port);    
+            mManualClosedPOEIDs.removeOne(port);
         }
+        mIntentionalPOECloseIDs.removeOne(port);
     }
 
     /*
@@ -264,8 +265,10 @@ private:
     std::array<QMutex, DET_NUM + 1> mSpectrumRawMutexByDetector;
     SpectrumRawFlushThread* mSpectrumRawFlushThread = nullptr;
 
-    //记录手动关闭POE供电的探测器ID
+    // 持久：用户主动关闭 POE/温度监测的通道，用于跳过 onTemperatureTimeout_Thread 的 30min 断电恢复
     QVector<quint8> mManualClosedPOEIDs;
+    // 一次性：预期由主动断电引起的掉线，用于跳过 disconnect 时的自动断电重启（处理完即清除）
+    QVector<quint8> mIntentionalPOECloseIDs;
     QVector<QString> mDataFileList;// 保存当前测量数据文件列表
 
     // 文件flush状态跟踪结构
