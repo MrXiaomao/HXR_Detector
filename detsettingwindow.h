@@ -1,4 +1,4 @@
-﻿/*
+/*
  * @Author: MrPan
  * @Date: 2025-11-13 11:36:00
  * @LastEditors: Maoxiaoqing
@@ -149,14 +149,18 @@ private:
     //设置经纬度，这里row从0开始计数
     bool setLonLat(int row, double lon, double lat);
 
-    // 编号从1开始
-    void loadAt(quint8 detId);
+    // 编号从1开始；recordLog 为 true 时记录用户加载表格相关日志
+    void loadAt(quint8 detId, bool recordLog = false);
     // 编号从1开始
     void saveAt(quint8 detId);
     void updateSelectAllState();
+    void logHardwareParameters(const QString &reason, quint8 detId);
+    void logHardwareParametersFromUi(const QString &reason, quint8 detId);
+    quint8 currentSelectedDetId() const;
     Ui::DetSettingWindow *ui;
     CommHelper* mCommhelper = nullptr;
     bool mUpdatingSelectAll = true;
+    bool mBlockParameterLogging = false;
 
     QString queryMsg;
     QEventLoop queryWaitEvent;

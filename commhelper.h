@@ -60,6 +60,9 @@ public:
     */
     void stopServer();
 
+    /** 退出前同步停止后台线程（须在 QApplication 事件循环结束前调用） */
+    void shutdown();
+
     /*
      * 服务是否开启
      */

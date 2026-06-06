@@ -18,6 +18,7 @@ QT_END_NAMESPACE
 class QCustomPlot;
 class QCPGraph;
 class QTimer;
+class QComboBox;
 
 // 探测器数据结构
 struct DetectorData {
@@ -170,7 +171,7 @@ private slots:
     // 处理数据解析后的能谱数据（解析线程）：累积数据；绘图投递到主线程
     void onFullSpectrum_Thread(int detID, const FullSpectrum& fullSpectrum);
     // 解析线程上报温度，仅写缓存
-    void onReportDetectorTemperature_Thread(quint8 index, float temperature);
+    void onReportDetectorTemperature(quint8 index, float temperature);
 
     // 系统刷新定时器，暂定于每秒钟刷新1次，刷新内容包括：测量时间、能谱图像、计数率曲线等
     void onSystemTimer();
@@ -265,10 +266,15 @@ private:
     bool mSwitcherLogged = false;  // 交换机是否已登录
     bool mSwitcherConnected = false;  // 交换机是否已连接
     QTimer *mConnectButtonDisableTimer = nullptr;  // 连接按钮禁用定时器
+    bool mUserActionLogEnabled = false;
+    int m_lastMeasureModeIndex = -1;
+    int m_lastTriggerModeIndex = -1;
 
     QVector<QColor> mGraphisColor;
     // 更新连接按钮状态（文本、图标、启用/禁用）
     void updateConnectButtonState(bool connected);
+    void setupUserActionLogging();
+    bool shouldLogComboUserChange(const QComboBox *combo, int index, int lastIndex) const;
 
     // 固定的24个通道能谱图像属性设置：是否刻度，X/Y坐标轴范围自动与否，坐标轴范围
     struct SpectrumPlotSettings {
@@ -288,7 +294,7 @@ private:
     // 能谱图像属性
     std::atomic<bool> mEnScale = false;// 是否勾选能量刻度
     QVector<SpectrumPlotSettings> m_spectrumPlotSettings = QVector<SpectrumPlotSettings>(DET_NUM);
-    QMap<quint8,QPair<qint64,float>> m_mapTemperatur;// 探测器温度表
+    QMap<quint8,QPair<qint64,float>> m_mapTemperature;// 探测器温度表
 
     // 温度离线/定时写盘缓存（满足：temperature/<yyyy-MM-dd>/<index>.txt；跨午夜按点归档）
     struct TempPoint {
@@ -296,7 +302,7 @@ private:
         float temperature;
     };
     QHash<quint8, QHash<QString, QVector<TempPoint>>> m_tempPointCache; // index -> day(yyyy-MM-dd) -> points
-    QMutex mMutexTemperature; //温度数据缓存锁
+    // QMutex mMutexTemperature; //温度数据缓存锁
     void flushTemperatureCache();
 
     quint32 m_specPlotRefreshTime = 1; // 能谱刷新时长(s)

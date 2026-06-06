@@ -166,8 +166,8 @@ private:
     const double m_energyCalibration[2] = {511.0, 909.0}; //用于能量刻度的特征峰
     const double mStripEnRange[2] = {800.0, 1100.0};//设定剥谱能量范围
 
-    static constexpr int mCHANNEL8192 = 8192; //能谱的道数
-    static constexpr int mCHANNEL2048 = 2048; //做能谱寻峰所用的道数
+    const int mCHANNEL8192 = 8192; //能谱的道数
+    static constexpr int mCHANNEL2048 = 2048; //做能谱寻峰所用的道数（MSVC 栈数组需 constexpr）
     const int specPackLen = 8237;//2050*4 + 9 +13 + 1 + 3*4+2 %完整数据包的长度（解码后长度），1是包头，9是时间信息以及空白，13是大包的帧内容
     qint32 T0_beforeShot = 0; //能谱开测时刻相对于打靶零时刻的时间（单位s，可正数可负数)T0_beforeShot = 开测时刻 - 打靶时刻
 

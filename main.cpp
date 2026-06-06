@@ -1,5 +1,7 @@
 ﻿#include "mainwindow.h"
 #include "globalsettings.h"
+#include "crashhandler.h"
+#include "commhelper.h"
 // #include "commhelper.h"
 #include "countratestatisticswindow.h"
 #include "neutronyieldstatisticswindow.h"
@@ -8,6 +10,7 @@
 // #include "customcolorstyle.h"
 
 #include <QApplication>
+#include <QCoreApplication>
 #include <QStyleFactory>
 #include <QFileInfo>
 #include <QDir>
@@ -15,6 +18,8 @@
 #include <QScreen>
 #include <QMessageBox>
 #include <QTimer>
+
+#include <cstdlib>
 
 #include <log4qt/log4qt.h>
 #include <log4qt/logger.h>
@@ -36,13 +41,19 @@ void AppMessageHandler(QtMsgType type, const QMessageLogContext& context, const 
     if (type == QtWarningMsg && context.file == nullptr && context.function == nullptr)
         return;// 主要用于过滤系统的警告信息
 
-    if (mMainWindow && type != QtDebugMsg){
-        //emit mw->sigWriteLog(msg, type);
-        QMetaObject::invokeMethod(mMainWindow, "sigWriteLog", Qt::QueuedConnection, Q_ARG(QString, msg), Q_ARG(QtMsgType, type));
+    if (type == QtFatalMsg) {
+        CrashHandler::logQtFatal(msg, context.file, context.line, context.function);
+        if (system_default_message_handler)
+            system_default_message_handler(type, context, msg);
+        std::abort();
     }
 
-    if (type == QtFatalMsg){
-        return ;
+    // 退出阶段或 qFatal 递归时勿 invokeMethod（主窗口可能已析构，会再次触发 fatal）
+    const bool shuttingDown = !QCoreApplication::instance()
+            || QCoreApplication::instance()->closingDown();
+    if (!shuttingDown && mMainWindow && type != QtDebugMsg) {
+        QMetaObject::invokeMethod(mMainWindow, "sigWriteLog", Qt::QueuedConnection,
+                                  Q_ARG(QString, msg), Q_ARG(QtMsgType, type));
     }
 
     //这里必须调用，否则消息被拦截，log4qt无法捕获系统日志
@@ -68,6 +79,13 @@ int main(int argc, char *argv[])
     QApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
 
     QApplication a(argc, argv);
+
+    CrashHandler::install(QStringLiteral("logs"));
+    CrashHandler::setApplicationInfo(QStringLiteral(APP_VERSION),
+                                     QStringLiteral(GIT_BRANCH),
+                                     QStringLiteral(GIT_HASH),
+                                     QStringLiteral(GIT_DATE));
+
     QApplication::setApplicationName("溴化镧配套软件");
     QApplication::setOrganizationName("Copyright (c) 2025");
     QApplication::setOrganizationDomain("");
@@ -145,6 +163,7 @@ int main(int argc, char *argv[])
         //输出到文件(如果需要把离线处理单独保存日志文件，可以改这里)        
         Log4Qt::DailyFileAppender *dailiAppender = new Log4Qt::DailyFileAppender(layout, "logs/.log", QString("%1_yyyy-MM-dd").arg(filename));
         dailiAppender->setAppendFile(true);
+        dailiAppender->setImmediateFlush(true);
         dailiAppender->activateOptions();
         dailiAppender->setEncoding(QTextCodec::codecForName("UTF-8"));
         logger->addAppender(dailiAppender);
@@ -156,6 +175,11 @@ int main(int argc, char *argv[])
         dir.mkpath(".");
     }
 
+    QObject::connect(&a, &QCoreApplication::aboutToQuit, &a, [] {
+        qInfo().noquote() << QObject::tr("软件退出");
+        CommHelper::instance()->shutdown();
+    }, Qt::DirectConnection);
+
     QString qlibpath = QLibraryInfo::location(QLibraryInfo::TranslationsPath);
     if(qtTranslator.load("qt_zh_CN.qm",qlibpath))
         qApp->installTranslator(&qtTranslator);
@@ -165,7 +189,6 @@ int main(int argc, char *argv[])
     qRegisterMetaType<QtMsgType>("QtMsgType");
     qRegisterMetaType<FullSpectrum>("FullSpectrum");
     system_default_message_handler = qInstallMessageHandler(AppMessageHandler);
-
     QString darkTheme = "true";
     settingsSystem.beginGroup("Global/Startup");
     if(settingsSystem.contains("darkTheme"))
@@ -201,6 +224,7 @@ int main(int argc, char *argv[])
 
     qInfo().noquote() << QObject::tr("系统启动");
     qInfo().noquote() << QString("软件版本信息：%1, git:%2,%3").arg(GIT_BRANCH, GIT_HASH, GIT_DATE);
+    CRASH_BREADCRUMB(QObject::tr("主界面已启动"));
 
     splash.finish(&w);
 
@@ -210,6 +234,9 @@ int main(int argc, char *argv[])
     w.move(x, y);
     w.setWindowState(w.windowState() | Qt::WindowMaximized);
     w.show();
+
+    // 主界面已显示后再启动看门狗，避免 exec() 前长时间初始化导致误报 GUI 卡死
+    CrashHandler::startGuiWatchdog(8000);
 
     int ret = a.exec();
 

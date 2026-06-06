@@ -22,6 +22,9 @@ SOURCES += \
     dataprocessor.cpp \
     detsettingwindow.cpp \
     energycalibration.cpp \
+    crashhandler.cpp \
+    detparamlogger.cpp \
+    useractionlogger.cpp \
     globalsettings.cpp \
     localsettingwindow.cpp \
     main.cpp \
@@ -60,6 +63,9 @@ HEADERS += \
     qhuaweiswitcherhelper.h \
     qlitethread.h \
     commhelper.h \
+    crashhandler.h \
+    detparamlogger.h \
+    useractionlogger.h \
     globalsettings.h \
     mainwindow.h \
     switchbutton.h \
@@ -132,6 +138,14 @@ exists (./.git) {
     GIT_VERSION     = None
 }
 
+# git 日期含空格时不能直接进 -D，否则 MSVC/clangd 会拆成多个宏（问题项里 Expected ')'）
+GIT_DATE ~= s/ /_/g
+GIT_DATE ~= s/:/-/g
+GIT_DATE ~= s/+//g
+GIT_VERSION ~= s/ /_/g
+GIT_VERSION ~= s/:/-/g
+GIT_VERSION ~= s/+//g
+
 DEFINES += GIT_BRANCH=\"\\\"$$GIT_BRANCH\\\"\"
 DEFINES += GIT_DATE=\"\\\"$$GIT_DATE\\\"\"
 DEFINES += GIT_HASH=\"\\\"$$GIT_HASH\\\"\"
@@ -142,17 +156,22 @@ windows {
     # MinGW
     *-g++* {
         QMAKE_CXXFLAGS += -Wall -Wextra -Wpedantic
+        # 大对象/大翻译单元：避免链接与编译阶段内存峰值过高
+        QMAKE_CXXFLAGS += -Wa,-mbig-obj
+        # Debug 下减少调试信息生成，缓解 cc1plus.exe out of memory
+        QMAKE_CXXFLAGS_DEBUG += -fno-var-tracking -fno-var-tracking-assignments
         #QMAKE_CXXFLAGS += -finput-charset=UTF-8
         #QMAKE_CXXFLAGS += -fexec-charset=UTF-8
         #QMAKE_CXXFLAGS += -fwide-exec-charset=UTF-16
         #设置wchar_t类型数据的编码格式。不同主机值可能不同，编译器运行时根据主机情况会自动识别出最符合
         #主机的方案作为默认值，这个参数是不需要动的。UTF-16 UTF-16BE UTF-16LE UTF-32LE UTF-32BE
     }
-    # MSVC
+    # MSVC（/utf-8 已含源/执行字符集，勿再叠加 /source-charset 会 D8016）
     *-msvc* {
         QMAKE_CXXFLAGS += /utf-8
-        QMAKE_CXXFLAGS += /source-charset:utf-8
-        QMAKE_CXXFLAGS += /execution-charset:utf-8
+        DEFINES += _USE_MATH_DEFINES
+        # HDF5 C++ 包装编入 exe，见 3rdParty/hdf5/C++/include/H5api_adpt.h
+        DEFINES += HDF5_CPP_EMBEDDED_IN_APP
     }
 }
 #QMAKE_MANIFEST += $$PWD/manifest.xml
@@ -168,21 +187,31 @@ include($$PWD/../3rdParty/hdf5/C++/hdf5Wrapper.pri)
 include($$PWD/../3rdParty/alglib-cpp/alglib.pri)
 INCLUDEPATH += $$PWD/../3rdParty/eigen-5.0.0
 
-# 添加config配置
-# CONFIG += precompile_header
-# 指定要使用的预编译头文件
-# PRECOMPILED_HEADER += stable.h
+# 预编译头：降低 MinGW 编译 mainwindow.cpp 等大文件时的内存占用
+#CONFIG += precompile_header
+#PRECOMPILED_HEADER = stable.h
 
 LIBS += -lws2_32
+win32: LIBS += -ldbghelp
 
-# 启用libhv网络库
+# 启用 libhv（MinGW 用 libhv.dll.a；MSVC 需 3rdParty/libhv/lib/hv.lib，否则回退 TcpAgentServer）
 DEFINES += ENABLE_LIBHV=1
 win32 {
-    # libhv
+    *-msvc*:!exists($$PWD/../3rdParty/libhv/lib/hv.lib) {
+        DEFINES -= ENABLE_LIBHV=1
+        !build_pass:message("MSVC: 未找到 hv.lib，ENABLE_LIBHV 已关闭，使用 Qt TcpAgentServer")
+    }
+
     contains(DEFINES, ENABLE_LIBHV=1) {
         message("Including libhv library")
         INCLUDEPATH += $$PWD/../3rdParty/libhv/include
         LIBS += -L$$PWD/../3rdParty/libhv/lib -lhv
+        *-g++* {
+            # MinGW 导入库名 libhv.dll.a，-lhv 可解析
+        }
+        *-msvc* {
+            LIBS += $$PWD/../3rdParty/libhv/lib/hv.lib
+        }
         LIBS += -lws2_32
     }
 
@@ -191,4 +220,32 @@ win32 {
         # include($$PWD/../3rdParty/QNtpClient/QNtpClient.pri) /*时钟同步服务器*/
         include($$PWD/../3rdParty/QTelnet/QTelnet.pri)
     }
+}
+
+# MSVC Release：生成 PDB（供 VS 分析 logs/crash_*.dmp 与现场栈符号）
+# Qt Creator 选 Kit「Desktop Qt x.x.x MSVC20xx 64bit」+ Release 构建即可。
+win32:*-msvc* {
+    # 与 MinGW 产物分目录，避免 exe/pdb 混用导致 dump 符号错乱
+    DESTDIR = $$DESTDIR/msvc
+
+    !build_pass: message("MSVC build output (exe+pdb): $$DESTDIR")
+
+    !CONFIG(debug, debug|release) {
+        QMAKE_CFLAGS_RELEASE += /Zi
+        QMAKE_CXXFLAGS_RELEASE += /Zi
+
+        # 链接生成完整 PDB，与 exe 同目录（CrashHandler / Visual Studio 加载）
+        QMAKE_LFLAGS_RELEASE += /DEBUG
+        QMAKE_LFLAGS_RELEASE += /DEBUG:FULL
+        QMAKE_LFLAGS_RELEASE += /INCREMENTAL:NO
+        QMAKE_LFLAGS_RELEASE += "/PDB:$$shell_path($$DESTDIR)\\$${TARGET}.pdb"
+
+        !build_pass: message("MSVC Release PDB: $$shell_path($$DESTDIR)\\$${TARGET}.pdb")
+    }
+
+    # HDF5 为 DLL，复制到 exe 输出目录（须换行或 & 分隔，勿连续 += 拼成一条 copy）
+    HDF5_LIBDIR = $$shell_path($$PWD/../3rdParty/hdf5/C++/lib)
+    HDF5_OUTDIR = $$shell_path($$DESTDIR)
+    QMAKE_POST_LINK += $$QMAKE_COPY \"$$HDF5_LIBDIR\\hdf5.dll\" \"$$HDF5_OUTDIR\"
+    QMAKE_POST_LINK += $$escape_expand(\\n\\t)$$QMAKE_COPY \"$$HDF5_LIBDIR\\zlib1.dll\" \"$$HDF5_OUTDIR\"
 }

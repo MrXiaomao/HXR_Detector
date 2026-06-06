@@ -1,5 +1,6 @@
 ﻿#include "particalwindow.h"
 #include "ui_particalwindow.h"
+#include "useractionlogger.h"
 #include <QToolButton>
 #include <QFileDialog>
 #include <QMessageBox>
@@ -101,6 +102,7 @@ void ParticalWindow::on_pushButton_save_clicked()
 
     // 保存参数
     if (commHelper->exportFile(exportPath)){
+        UserActionLogger::logMessage(QStringLiteral("粒子模式导出数据 path=%1").arg(exportPath));
         QMessageBox::information(this, tr("提示"), tr("数据导出成功！"), QMessageBox::Ok, QMessageBox::Ok);
     } else {
         QMessageBox::information(this, tr("提示"), tr("数据导出失败！"), QMessageBox::Ok, QMessageBox::Ok);

@@ -11,6 +11,7 @@
 #include <QNetworkInterface>
 #include "globalsettings.h"
 #include "commhelper.h"
+#include "useractionlogger.h"
 
 #include <QStyledItemDelegate>
 #include <QApplication>
@@ -379,6 +380,10 @@ void LocalSettingWindow::on_pushButton_ok_clicked()
     }
 
     updateData();
+    UserActionLogger::logMessage(QStringLiteral("保存网络配置 本地服务 ip=%1 port=%2 交换机1=%3")
+                                     .arg(ui->comboBox_ip->currentText())
+                                     .arg(ui->spinBox_port->value())
+                                     .arg(ui->lineEdit_switcherIp_1->text()));
     this->close();
 }
 

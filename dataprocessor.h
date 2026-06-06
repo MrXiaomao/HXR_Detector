@@ -15,7 +15,6 @@
 #include <QFile>
 #include <QDateTime>
 #include <QTimer>
-#include <QElapsedTimer>
 #include <atomic>
 
 #include "qlitethread.h"
@@ -43,8 +42,7 @@ public:
     //void reallocSocket(const hv::SocketChannelPtr& tcpSocket);
     void reallocSocket(const hv::SocketChannelPtr& tcpSocket, DetParameter* detParameter = nullptr);
 #else
-    void reallocSocket(QTcpSocket *tcpSocket);
-    void reallocSocket(QTcpSocket *tcpSocket, DetParameter& detParameter);
+    void reallocSocket(QTcpSocket *tcpSocket, DetParameter *detParameter = nullptr);
 #endif //ENABLE_LIBHV
     bool isFreeSocket();//是否关联Socket
 
@@ -147,12 +145,7 @@ private:
     quint32 mLastSpectrumSeq = 0;
     FullSpectrum mLastFullSpectrum; // 保存上一个全能谱，做缺包补偿用
     ParseData* m_parseData;
-    std::atomic<quint64> mMergeSubSpecPacketCount {0};   // mergeSubSpec_Thread解包总个数
-    std::atomic<quint64> mMergeSubSpecTotalCostNs {0};   // mergeSubSpec_Thread累计耗时(ns)
-    QElapsedTimer mMergeSubSpecWallTimer;                // start~stop统计窗口
-    std::atomic<quint64> mAnalyzeCommandsCallCount {0};  // analyzeCommands调用次数
-    std::atomic<quint64> mAnalyzeCommandsTotalCostNs {0}; // analyzeCommands累计耗时(ns)
-    
+
     QTimer mTempTimeoutTimer; //心跳检测定时器
 
     QFile *mNetDataFile = nullptr;//网络数据保存文件

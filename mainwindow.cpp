@@ -1,10 +1,17 @@
 ﻿#include "mainwindow.h"
 #include "ui_mainwindow.h"
 #include "switchbutton.h"
+#include "useractionlogger.h"
 #include <QTimer>
 #include <QDir>
 #include <QFile>
 #include <QTextStream>
+#include <QSpinBox>
+#include <QCheckBox>
+#include <QDateTimeEdit>
+#include <QAbstractSpinBox>
+#include <QComboBox>
+#include <QSignalBlocker>
 #include "energycalibration.h"
 #include "qcustomplothelper.h"
 #include <array>
@@ -90,7 +97,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     // 交换机连接状态更新(连接后必须登录才能使用)
     connect(commHelper, &CommHelper::switcherConnected, this, [=](QString ip){
         mSwitcherConnected = true;
-        qDebug().nospace().noquote() << tr("交换机[%1]已连通").arg(ip);
+        UserActionLogger::logMessage(QStringLiteral("交换机已连接 %1").arg(ip));
     }, Qt::QueuedConnection);
 
     // 交换机登录状态更新
@@ -102,7 +109,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
         updateConnectButtonState(false);
         ui->action_powerOn->setEnabled(false);
         ui->action_powerOff->setEnabled(false);
-        qCritical().nospace().noquote() << tr("交换机[%1]连接已断开").arg(ip);
+        UserActionLogger::logMessage(QStringLiteral("交换机已断开 %1").arg(ip));
     }, Qt::QueuedConnection);
 
     // 交换机上POE电源状态更新
@@ -289,6 +296,7 @@ void MainWindow::initUi()
         // 测量模式
         int measureMode = systemSettings.value("MeasureMode", 0).toInt();
         ui->cbb_measureMode->setCurrentIndex(measureMode);
+        m_lastMeasureModeIndex = measureMode;
 
         // 测量发次号是否自动增加
         bool flag = systemSettings.value("ShotNumIsAutoIncrease", true).toBool();
@@ -306,6 +314,7 @@ void MainWindow::initUi()
         // 触发模式
         int triggerMode = systemSettings.value("TriggerMode", 0).toInt();
         ui->com_triggerModel->setCurrentIndex(triggerMode); // 或者从配置文件中读取
+        m_lastTriggerModeIndex = triggerMode;
         onTriggerModelChanged(triggerMode);
         systemSettings.endGroup();
     }
@@ -318,6 +327,9 @@ void MainWindow::initUi()
 
     emit ui->cbb_measureMode->currentIndexChanged(ui->cbb_measureMode->currentIndex());
     emit ui->com_triggerModel->currentIndexChanged(ui->com_triggerModel->currentIndex());
+
+    setupUserActionLogging();
+    mUserActionLogEnabled = true;
 
     // 创建上线客户端页面
     mClientPeersWindow = new ClientPeersWindow();
@@ -756,7 +768,7 @@ void MainWindow::initUi()
 
     //更新温度状态（解析线程）
     connect(commHelper, &CommHelper::reportDetectorTemperature, this,
-            &MainWindow::onReportDetectorTemperature_Thread, Qt::DirectConnection);
+            &MainWindow::onReportDetectorTemperature, Qt::QueuedConnection);
 
     connect(commHelper, &CommHelper::reportTemperatureTimeout, this, [=](quint8 index){
         QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(index, 3));
@@ -1052,12 +1064,15 @@ void MainWindow::onSystemTimer()
             // 启动测量计时器
             mMeasureTimer->start();
 
-            misTimedMeasure = true;
-            // 读取倒计时时间（秒）
-            int countdownSeconds = ui->spinBox_measureTime->value();
-            if (countdownSeconds > 0) {
-                mTotalCountdown = countdownSeconds;
-                qInfo().noquote().nospace() << QString("开始测量，倒计时：%1 秒").arg(countdownSeconds);
+            if (ui->checkBox_continueMeasure->isChecked()) {
+                misTimedMeasure = false;
+            } else {
+                misTimedMeasure = true;
+                int countdownSeconds = ui->spinBox_measureTime->value();
+                if (countdownSeconds > 0) {
+                    mTotalCountdown = countdownSeconds;
+                    qInfo().noquote().nospace() << QString("开始测量，倒计时：%1 秒").arg(countdownSeconds);
+                }
             }
         }
     }
@@ -1071,9 +1086,9 @@ void MainWindow::onSystemTimer()
     if ((t++%2) == 0){
         ui->tableWidget_detector->setUpdatesEnabled(false);
         for (int row=0; row<=DET_NUM; ++row){
-            if (m_mapTemperatur.contains(row)){
-                float temperature = m_mapTemperatur[row].second;
-                QDateTime tmTrigger = QDateTime::fromMSecsSinceEpoch(m_mapTemperatur[row].first);
+            if (m_mapTemperature.contains(row)){
+                float temperature = m_mapTemperature[row].second;
+                QDateTime tmTrigger = QDateTime::fromMSecsSinceEpoch(m_mapTemperature[row].first);
                 bool isTimeout = false;
                 if (tmTrigger.msecsTo(currentDateTime) >= 2000)
                     isTimeout = true;
@@ -1239,20 +1254,20 @@ void MainWindow::onPoePowerStatusReport(quint8 index, bool on)
     cell->setChecked(on);
 }
 
-void MainWindow::onReportDetectorTemperature_Thread(quint8 index, float temperature)
+void MainWindow::onReportDetectorTemperature(quint8 index, float temperature)
 {
     if (index < 0 || index > DET_NUM) //注意，index=0对应时间触发模块
         return;
 
     // 仅缓存数据：回调里不做文件 IO，由QTimer每10秒统一写盘
     QDateTime now = QDateTime::currentDateTime();
-    m_mapTemperatur[index] = qMakePair(now.toMSecsSinceEpoch(), temperature);
+    m_mapTemperature[index] = qMakePair(now.toMSecsSinceEpoch(), temperature);
 
     const QString ymd = now.toString("yyyy-MM-dd");
     const QString dtStr = now.toString("yyyy-MM-dd HH:mm:ss"); // 精确到秒
     TempPoint p{dtStr, temperature};
 
-    QMutexLocker flushLocker(&mMutexTemperature);
+    // QMutexLocker flushLocker(&mMutexTemperature);
     m_tempPointCache[index][ymd].push_back(p);
 }
 
@@ -1315,7 +1330,7 @@ void MainWindow::flushTemperatureCache()
 {
     QHash<quint8, QHash<QString, QVector<TempPoint>>> tempData;
     {
-        QMutexLocker locker(&mMutexTemperature);
+        // QMutexLocker locker(&mMutexTemperature);
         tempData = m_tempPointCache;
         m_tempPointCache.clear();
     }
@@ -1385,7 +1400,7 @@ void MainWindow::closeEvent(QCloseEvent *event) {
     for (quint8 index : m_selectedChannels) {
         commHelper->stopMeasure(index);
     }
-    commHelper->stopServer();
+    commHelper->shutdown();
     event->accept();
 }
 
@@ -1505,6 +1520,7 @@ void MainWindow::on_action_startServer_triggered()
 {
     // 连接网络
     if (commHelper->startServer()){
+        UserActionLogger::logMessage(QStringLiteral("开启本地网络服务，等待探测器连接"));
         ui->action_startServer->setEnabled(false);
         ui->action_stopServer->setEnabled(true);
         ui->action_startAllMeasure->setEnabled(true);
@@ -1516,8 +1532,6 @@ void MainWindow::on_action_startServer_triggered()
         QLabel* label_LocalServer = this->findChild<QLabel*>("label_LocalServer");
         label_LocalServer->setStyleSheet("color:#00ff00;");
         label_LocalServer->setText(tr("本地网络服务：已开启"));
-        //打印日志
-        qInfo().noquote() << tr("本地网络服务已开启，等待探测器连接...");
     }
     else{
         QMessageBox::information(this, tr("提示"), tr("服务开启失败，请检测本地主机地址！"));
@@ -1549,6 +1563,8 @@ void MainWindow::on_action_stopServer_triggered()
     }
     commHelper->stopServer();
 
+    UserActionLogger::logMessage(QStringLiteral("断开本地网络服务"));
+
     ui->action_startServer->setEnabled(true);
     ui->action_stopServer->setEnabled(false);
     ui->action_startAllMeasure->setEnabled(false);
@@ -1559,7 +1575,6 @@ void MainWindow::on_action_stopServer_triggered()
     QLabel* label_LocalServer = this->findChild<QLabel*>("label_LocalServer");
     label_LocalServer->setStyleSheet("color:#ff0000;");
     label_LocalServer->setText(tr("本地网络服务：断开"));
-    qInfo().noquote() << tr("本地网络服务已断开");
     misTimedMeasure = false;
 }
 
@@ -1577,9 +1592,18 @@ void MainWindow::on_actionstatusBar_triggered()
 // 测量模式选择：手动测量/继续测量
 void MainWindow::onMeasureModeChanged(int index)
 {
+    if (shouldLogComboUserChange(ui->cbb_measureMode, index, m_lastMeasureModeIndex)) {
+        UserActionLogger::logMessage(QStringLiteral("切换测量模式 %1").arg(ui->cbb_measureMode->currentText()));
+    }
+
     if(index==0){
         //手动测量模式，只允许软件触发，自动测量既可以软件触发也可以外触发
-        ui->com_triggerModel->setCurrentIndex(0);
+        {
+            QSignalBlocker blocker(ui->com_triggerModel);
+            ui->com_triggerModel->setCurrentIndex(0);
+        }
+        m_lastTriggerModeIndex = 0;
+        onTriggerModelChanged(0);
         ui->com_triggerModel->setEnabled(false);
 
         //手动测量模式，不允许设置开始时刻
@@ -1592,6 +1616,8 @@ void MainWindow::onMeasureModeChanged(int index)
         //自动化测量模式，允许设置开始时刻
         ui->dateTimeEdit_startTime->setEnabled(true);
     }
+
+    m_lastMeasureModeIndex = index;
 }
 
 /**
@@ -1600,6 +1626,10 @@ void MainWindow::onMeasureModeChanged(int index)
  */
 void MainWindow::onTriggerModelChanged(int index)
 {
+    if (shouldLogComboUserChange(ui->com_triggerModel, index, m_lastTriggerModeIndex)) {
+        UserActionLogger::logMessage(QStringLiteral("切换触发模式 %1").arg(ui->com_triggerModel->currentText()));
+    }
+
     if(index==0){
         //软件触发模式
         if(ui->cbb_measureMode->currentIndex() ==  0){
@@ -1623,13 +1653,13 @@ void MainWindow::onTriggerModelChanged(int index)
     // 实时保存触发模式
     GlobalSettings settings;
     settings.setValue("mainWindow/TriggerMode", index);
+
+    m_lastTriggerModeIndex = index;
 }
 
 // 开始测量 全部通道测量
 void MainWindow::on_action_startAllMeasure_triggered()
 {
-    //打印线程编号
-    qDebug() << "MainWindow::on_action_startAllMeasure_triggered(), thread id:" << QThread::currentThreadId();
     clearCustomPlotData();
     updateSpectrumPlotSettings();
     //先检查路径有效性 lineEdit_filePath
@@ -1673,13 +1703,11 @@ void MainWindow::on_action_startAllMeasure_triggered()
                 return;
             }
         }
+    }
 
-        qInfo().nospace().noquote() << tr("开启自动化测量");
-    }
-    else
-    {
-        qInfo().nospace().noquote() << tr("开启手动测量");
-    }
+    UserActionLogger::logMessage(mEnableAutoMeasure
+                                     ? QStringLiteral("点击开始全部测量(自动)")
+                                     : QStringLiteral("点击开始全部测量(手动)"));
 
     ui->action_startAllMeasure->setEnabled(false);
     ui->action_stopAllMeasure->setEnabled(true);
@@ -1761,13 +1789,23 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
 
     // 禁止自动测量模式
     if(ui->cbb_measureMode->currentIndex() == 1){
-        ui->cbb_measureMode->setCurrentIndex(0);
+        {
+            QSignalBlocker blocker(ui->cbb_measureMode);
+            ui->cbb_measureMode->setCurrentIndex(0);
+        }
+        m_lastMeasureModeIndex = 0;
+        onMeasureModeChanged(0);
         qInfo().nospace().noquote() << "自定义通道测量下禁用了自动测量，已自动切换为手动测量模式";
     }
 
     //禁止外触发模式
     if(ui->com_triggerModel->currentIndex() == 1){
-        ui->com_triggerModel->setCurrentIndex(0);
+        {
+            QSignalBlocker blocker(ui->com_triggerModel);
+            ui->com_triggerModel->setCurrentIndex(0);
+        }
+        m_lastTriggerModeIndex = 0;
+        onTriggerModelChanged(0);
         qInfo().nospace().noquote() << "自定义通道测量下禁用了外触发模式，已自动切换为软件触发模式";
     }
 
@@ -1872,7 +1910,7 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
             }
         }
         if (!startedChannels.isEmpty()) {
-            qInfo().noquote().nospace() << QStringLiteral("开始测量(波形模式)，通道号：%1").arg(startedChannels.join(","));
+            UserActionLogger::logMessage(QStringLiteral("点击开始选中通道测量(波形) 通道:%1").arg(startedChannels.join(",")));
         }
     }
     else if (ui->action_spectrumMode->isChecked())
@@ -1910,7 +1948,7 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
             }
         }
         if (!startedChannels.isEmpty()) {
-            qInfo().noquote().nospace() << QStringLiteral("开始测量(能谱模式)，连续测量模式，通道号：%1").arg(startedChannels.join(","));
+            UserActionLogger::logMessage(QStringLiteral("点击开始选中通道测量(能谱) 通道:%1").arg(startedChannels.join(",")));
         }
     }
 
@@ -1977,7 +2015,7 @@ void MainWindow::on_btn_stopSelectedMeasure_clicked()
     }
 
     if (!stoppedChannels.isEmpty()) {
-        qInfo().noquote().nospace() << QStringLiteral("结束（自定义通道）测量，通道号：%1").arg(stoppedChannels.join(","));
+        UserActionLogger::logMessage(QStringLiteral("点击停止选中通道测量 通道:%1").arg(stoppedChannels.join(",")));
     }
 
     if (m_selectedChannels.empty()){
@@ -2029,14 +2067,9 @@ void MainWindow::on_action_stopAllMeasure_triggered()
     // 外触发才允许设置冷却时间
     ui->spinBox_coolTimeLength->setEnabled(mEnableExtendTrigger);
 
-    if (mEnableAutoMeasure)
-    {
-        qInfo().nospace().noquote() << tr("人工停止自动化测量");
-    }
-    else
-    {
-        qInfo().nospace().noquote() << tr("停止手动测量");
-    }
+    const QString stopAllMsg = mEnableAutoMeasure
+        ? QStringLiteral("点击停止全部测量(自动)")
+        : QStringLiteral("点击停止全部测量(手动)");
 
     commHelper->stopMeasure();
     // 停止测量 - 仅停止m_selectedChannels中的探测器
@@ -2044,9 +2077,12 @@ void MainWindow::on_action_stopAllMeasure_triggered()
     for (quint8 index : m_selectedChannels) {
         stoppedChannels.append(QString::number(index));
     }
+
+    UserActionLogger::logMessage(stoppedChannels.isEmpty()
+                                     ? stopAllMsg
+                                     : QStringLiteral("%1 通道:%2").arg(stopAllMsg, stoppedChannels.join(",")));
     
     if (!stoppedChannels.isEmpty()) {
-        qInfo().noquote().nospace() << QStringLiteral("结束(全部测量)，通道号：%1").arg(stoppedChannels.join(","));
 
         // 显示最终测量时长
         int elapsedSeconds = mMeasureTimer->elapsed() / 1000;
@@ -2116,7 +2152,7 @@ void MainWindow::onMeasureCountdownTimeout()
         }
         else
         {
-            qInfo() << "测量倒计时结束，正在停止测量...";
+            qInfo() << "测量倒计时结束，停止测量";
 
             // 停止测量 - 仅停止m_selectedChannels中的探测器
             for (quint8 index : m_selectedChannels) {
@@ -2634,12 +2670,14 @@ QString MainWindow::formatTimeString(int totalSeconds)
 void MainWindow::on_action_connectSwitch_triggered()
 {
      if (mSwitcherConnected) {
+        UserActionLogger::logMessage(QStringLiteral("点击断开交换机"));
         // 当前已连接，执行断开操作
         commHelper->disconnectSwitcher();
         // 禁用按钮10秒
         ui->action_connectSwitch->setEnabled(false);
         mConnectButtonDisableTimer->start();
     } else {
+        UserActionLogger::logMessage(QStringLiteral("点击连接交换机"));
         // 当前未连接，执行连接操作
         commHelper->connectSwitcher(true);
         // 禁用按钮10秒
@@ -3255,6 +3293,48 @@ void MainWindow::on_lineEdit_filePath_editingFinished()
         shotDir = "./cache";
         ui->lineEdit_filePath->setText(shotDir);
     }
+    UserActionLogger::logParamChanged(QStringLiteral("数据保存路径"), shotDir);
+}
+
+
+bool MainWindow::shouldLogComboUserChange(const QComboBox *combo, int index, int lastIndex) const
+{
+    return mUserActionLogEnabled
+        && sender() == combo
+        && index != lastIndex;
+}
+
+
+void MainWindow::setupUserActionLogging()
+{
+    connect(ui->lineEdit_shotNum, &QLineEdit::editingFinished, this, [this]() {
+        UserActionLogger::logParamChanged(QStringLiteral("发次号"), ui->lineEdit_shotNum->text());
+    });
+
+    connect(ui->spinBox_measureTime, &QAbstractSpinBox::editingFinished, this, [this]() {
+        UserActionLogger::logParamChanged(QStringLiteral("测量时长(秒)"),
+                                          QString::number(ui->spinBox_measureTime->value()));
+    });
+    connect(ui->spinBox_coolTimeLength, &QAbstractSpinBox::editingFinished, this, [this]() {
+        UserActionLogger::logParamChanged(QStringLiteral("冷却时长(秒)"),
+                                          QString::number(ui->spinBox_coolTimeLength->value()));
+    });
+    connect(ui->checkBox_continueMeasure, &QCheckBox::toggled, this, [](bool checked) {
+        UserActionLogger::logParamChanged(QStringLiteral("持续测量"),
+                                          checked ? QStringLiteral("开启") : QStringLiteral("关闭"));
+    });
+    connect(ui->checkBox_autoIncrease, &QCheckBox::toggled, this, [](bool checked) {
+        UserActionLogger::logParamChanged(QStringLiteral("发次号自动增加"),
+                                          checked ? QStringLiteral("开启") : QStringLiteral("关闭"));
+    });
+    connect(ui->dateTimeEdit_startTime, &QDateTimeEdit::dateTimeChanged, this, [](const QDateTime &dt) {
+        UserActionLogger::logParamChanged(QStringLiteral("测量开始时刻"),
+                                          dt.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")));
+    });
+    connect(ui->dateTime_shotTime, &QDateTimeEdit::dateTimeChanged, this, [](const QDateTime &dt) {
+        UserActionLogger::logParamChanged(QStringLiteral("打靶时间"),
+                                          dt.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")));
+    });
 }
 
 

@@ -47,8 +47,10 @@ private:
 CommHelper::CommHelper(QObject *parent)
     : QObject{parent}
 {
+#if ENABLE_LIBHV
     //屏蔽libhv日志输出
     hlog_disable();
+#endif
 
     /*初始化网络*/
     initSocket();
@@ -101,12 +103,14 @@ CommHelper::CommHelper(QObject *parent)
             if (connection->property("detectorIndex").isValid())
             {
                 qint8 index = connection->property("detectorIndex").toInt();
-                DetParameter detParameter = detParameters.value(index);
+                DetParameter *detParameter = detParameters.value(index);
+                if (!detParameter)
+                    continue;
 
-                QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
+                QString detectorAddress = QString::fromStdString(detParameter->det_Ip_port);
                 QString peerAddress = connection->peerAddress().toString();
                 if (peerAddress != detectorAddress){
-                    DetParameter detParameter = detParameters.value(index);
+                    detParameter = detParameters.value(index);
                     QMetaObject::invokeMethod(this, "detectorOffline",
                                               Qt::QueuedConnection,
                                               Q_ARG(quint8, index));
@@ -139,28 +143,53 @@ CommHelper::CommHelper(QObject *parent)
     // });
 }
 
+void CommHelper::shutdown()
+{
+    static bool s_done = false;
+    if (s_done)
+        return;
+    s_done = true;
+
+    disconnectSwitcher();
+
+    // for (auto it = mDetectorDataProcessor.constBegin(); it != mDetectorDataProcessor.constEnd(); ++it) {
+    //     if (it.value())
+    //         it.value()->stopMeasure();
+    // }
+
+    flushNetRawBuffersOnWorkerThread(true);
+    flushSpectrumH5BuffersOnWorkerThread(true);
+
+    if (mSpectrumRawFlushThread) {
+        if (mSpectrumRawFlushThread->isRunning()) {
+            mSpectrumRawFlushThread->requestInterruption();
+            while (mSpectrumRawFlushThread->isRunning())
+                mSpectrumRawFlushThread->wait(200);
+        }
+        delete mSpectrumRawFlushThread;
+        mSpectrumRawFlushThread = nullptr;
+    }
+    if (mSpectrumH5FlushThread) {
+        if (mSpectrumH5FlushThread->isRunning()) {
+            mSpectrumH5FlushThread->requestInterruption();
+            while (mSpectrumH5FlushThread->isRunning())
+                mSpectrumH5FlushThread->wait(200);
+        }
+        delete mSpectrumH5FlushThread;
+        mSpectrumH5FlushThread = nullptr;
+    }
+
+    stopServer();
+
+    const QList<DataProcessor *> processors = mDetectorDataProcessor.values();
+    mDetectorDataProcessor.clear();
+    for (DataProcessor *processor : processors)
+        delete processor;
+}
+
 CommHelper::~CommHelper()
 {
-    if (mSpectrumRawFlushThread) {
-        mSpectrumRawFlushThread->requestInterruption();
-        mSpectrumRawFlushThread->wait(30000);
-    }
-    flushNetRawBuffersOnWorkerThread(true);
-
-    if (mSpectrumH5FlushThread) {
-        mSpectrumH5FlushThread->requestInterruption();
-        mSpectrumH5FlushThread->wait(30000);
-    }
-    // flushSpectrumH5BuffersOnWorkerThread();
-
-    this->stopServer();
-
-    for (int index = 1; index <= mDetectorDataProcessor.size() + 1; ++index){
-        DataProcessor* detectorDataProcessor = mDetectorDataProcessor[index];
-        if (detectorDataProcessor)
-            detectorDataProcessor->deleteLater();
-    }
-    mDetectorDataProcessor.clear();
+    shutdown();
 }
 
 #include <winsock2.h>   // WSAIoctl函数定义
@@ -714,7 +743,7 @@ qint8 CommHelper::allocDataProcessor(QTcpSocket *socket)
     }
 
     HDF5Settings *settings = HDF5Settings::instance();
-    QMap<quint8, DetParameter> detParameters = settings->getDetParameters();
+    QMap<quint8, DetParameter *> detParameters = settings->getDetParameters();
     bool needExport = false;
     qint8 assignedIndex = -1;
 
@@ -728,9 +757,9 @@ qint8 CommHelper::allocDataProcessor(QTcpSocket *socket)
     if (socket->property("detectorIndex").isValid())
     {
         qint8 index = socket->property("detectorIndex").toInt();
-        if (index >= 1 && index <= DET_NUM){
-            DetParameter& detParameter = detParameters[index];
-            mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
+        if (index >= 1 && index <= DET_NUM && detParameters.value(index)){
+            DetParameter &detParameter = *detParameters[index];
+            mDetectorDataProcessor[index]->reallocSocket(socket, &detParameter);
             commitAssign(index);
         }
     }
@@ -738,11 +767,14 @@ qint8 CommHelper::allocDataProcessor(QTcpSocket *socket)
     // IP+PORT匹配
     if (assignedIndex < 0) {
         for (int index = 1; index <= DET_NUM; ++index){
-            DetParameter& detParameter = detParameters[index];
+            DetParameter *p = detParameters.value(index);
+            if (!p)
+                continue;
+            DetParameter &detParameter = *p;
             QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
             if (detectorAddress == QString("%1:%2").arg(peerAddress).arg(peerPort) &&
                 mDetectorDataProcessor[index]->isFreeSocket()){
-                mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
+                mDetectorDataProcessor[index]->reallocSocket(socket, &detParameter);
                 commitAssign(index);
                 break;
             }
@@ -752,10 +784,13 @@ qint8 CommHelper::allocDataProcessor(QTcpSocket *socket)
     // IP匹配
     if (assignedIndex < 0) {
         for (int index = 1; index <= DET_NUM; ++index){
-            DetParameter& detParameter = detParameters[index];
+            DetParameter *p = detParameters.value(index);
+            if (!p)
+                continue;
+            DetParameter &detParameter = *p;
             QString detectorAddress = QString::fromStdString(detParameter.det_Ip_port);
             if (detectorAddress == peerAddress && mDetectorDataProcessor[index]->isFreeSocket()){
-                mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
+                mDetectorDataProcessor[index]->reallocSocket(socket, &detParameter);
                 commitAssign(index);
                 break;
             }
@@ -766,9 +801,12 @@ qint8 CommHelper::allocDataProcessor(QTcpSocket *socket)
     if (assignedIndex < 0) {
         for (int index = 1; index <= DET_NUM; ++index){
             if (mDetectorDataProcessor[index]->isFreeSocket()){
-                DetParameter& detParameter = detParameters[index];
+                DetParameter *p = detParameters.value(index);
+                if (!p)
+                    continue;
+                DetParameter &detParameter = *p;
                 qstrcpy(detParameter.det_Ip_port, peerAddress.toStdString().c_str());
-                mDetectorDataProcessor[index]->reallocSocket(socket, detParameter);
+                mDetectorDataProcessor[index]->reallocSocket(socket, &detParameter);
                 commitAssign(index);
                 break;
             }
@@ -788,9 +826,10 @@ void CommHelper::freeDataProcessor(QTcpSocket *socket)
         return;
 
     HDF5Settings *settings = HDF5Settings::instance();
-    const QMap<quint8, DetParameter> detParameters = settings->getDetParameters();
-    DetParameter detParameter = detParameters.value(index);
-    mDetectorDataProcessor[index]->reallocSocket(nullptr, detParameter);
+    const QMap<quint8, DetParameter *> detParameters = settings->getDetParameters();
+    DetParameter *detParameter = detParameters.value(index);
+    if (detParameter)
+        mDetectorDataProcessor[index]->reallocSocket(nullptr, detParameter);
 }
 
 qint8 CommHelper::indexOfAddress(qintptr socketDescriptor/*QString peerAddress, quint16 peerPort*/)

@@ -33,13 +33,7 @@ DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
 
             mCachePool.append(localRaw);
             if (!mTerminatedDataThread.load()) {
-                QElapsedTimer analyzeTimer;
-                analyzeTimer.start();
                 analyzeCommands(mCachePool);
-                mAnalyzeCommandsCallCount.fetch_add(1, std::memory_order_relaxed);
-                mAnalyzeCommandsTotalCostNs.fetch_add(
-                    static_cast<quint64>(analyzeTimer.nsecsElapsed()),
-                    std::memory_order_relaxed);
             }
         }
     });
@@ -215,11 +209,6 @@ void DataProcessor::startMeasure(CommandAdapter::WorkMode workMode)
 {
     /*开始测量之前清空解析缓存，防止野数据存在*/
     requestParserResetOnDataThread();
-    mMergeSubSpecPacketCount.store(0, std::memory_order_relaxed);
-    mMergeSubSpecTotalCostNs.store(0, std::memory_order_relaxed);
-    mAnalyzeCommandsCallCount.store(0, std::memory_order_relaxed);
-    mAnalyzeCommandsTotalCostNs.store(0, std::memory_order_relaxed);
-    mMergeSubSpecWallTimer.restart();
     {
         // QMutexLocker locker(&mSpectrumLocker);
         mFullSpectrums.clear();
@@ -248,11 +237,6 @@ void DataProcessor::startAutoMeasure(QDateTime tmStart, CommandAdapter::WorkMode
 {
     /*开始测量之前清空解析缓存，防止野数据存在*/
     requestParserResetOnDataThread();
-    mMergeSubSpecPacketCount.store(0, std::memory_order_relaxed);
-    mMergeSubSpecTotalCostNs.store(0, std::memory_order_relaxed);
-    mAnalyzeCommandsCallCount.store(0, std::memory_order_relaxed);
-    mAnalyzeCommandsTotalCostNs.store(0, std::memory_order_relaxed);
-    mMergeSubSpecWallTimer.restart();
     {
         // QMutexLocker locker(&mSpectrumLocker);
         mFullSpectrums.clear();
@@ -287,32 +271,6 @@ void DataProcessor::stopMeasure()
 {
     //#16 停止测量=1|0|26|1234000FEA1000000000ABCD
     this->sendStopMeasure();
-
-    const quint64 packetCount = mMergeSubSpecPacketCount.exchange(0, std::memory_order_relaxed);
-    const quint64 totalCostNs = mMergeSubSpecTotalCostNs.exchange(0, std::memory_order_relaxed);
-    const qint64 wallMs = mMergeSubSpecWallTimer.isValid() ? mMergeSubSpecWallTimer.elapsed() : 0;
-    const double totalCostMs = static_cast<double>(totalCostNs) / 1000000.0;
-    const double avgCostUs = (packetCount > 0)
-                                 ? (static_cast<double>(totalCostNs) / 1000.0 / static_cast<double>(packetCount))
-                                 : 0.0;
-    qDebug().nospace().noquote()
-        << "谱仪[#"<< mIndex << "] mergeSubSpec统计: window=" << wallMs
-        << "ms, packets=" << packetCount
-        << ", totalCost=" << totalCostMs << "ms"
-        << ", avg=" << avgCostUs << "us/packet";
-
-    const quint64 analyzeCalls = mAnalyzeCommandsCallCount.exchange(0, std::memory_order_relaxed);
-    const quint64 analyzeCostNs = mAnalyzeCommandsTotalCostNs.exchange(0, std::memory_order_relaxed);
-    const double analyzeTotalMs = static_cast<double>(analyzeCostNs) / 1000000.0;
-    const double analyzeAvgUs = (packetCount > 0)
-                                    ? (static_cast<double>(analyzeCostNs) / 1000.0 / static_cast<double>(packetCount/32))
-                                    : 0.0;
-    qDebug().nospace().noquote()
-        << "谱仪[#"<< mIndex << "] analyzeCommands统计: fullSpec=" << packetCount/32
-        << ", totalCost=" << analyzeTotalMs << "ms"
-        << ", avg=" << analyzeAvgUs << "us/call";
-
-    mMergeSubSpecWallTimer.invalidate();
 
     mTempTimeoutTimer.stop();
 }
@@ -399,16 +357,6 @@ void DataProcessor::restartTempTimeout() {
  * @param data 完整的能谱数据包，传入进来时已经验证了包的完整性
  */
 void DataProcessor::mergeSubSpec_Thread(quint8 no, const QByteArray& data){
-    QElapsedTimer perfTimer;
-    perfTimer.start();
-    auto commitStat = [&](bool countPacket) {
-        mMergeSubSpecTotalCostNs.fetch_add(static_cast<quint64>(perfTimer.nsecsElapsed()), std::memory_order_relaxed);
-        if (countPacket) {
-            mMergeSubSpecPacketCount.fetch_add(1, std::memory_order_relaxed);
-        }
-    };
-    // commitStat(true);
-    // return;
     // 能谱数据：一个能谱数据包长度为256*32bit，但完整的能谱数据为8192*32bit。
     // 1. 提取数据包数据（256道 quint32 数据）
     quint32 spectrumSeq = 0;
@@ -416,7 +364,6 @@ void DataProcessor::mergeSubSpec_Thread(quint8 no, const QByteArray& data){
     if (!extractSpectrumData(data, subSpecPackket)) {
         qWarning() << "Extract sub-spectrum data failed, seq:" << spectrumSeq
                    << ", DetID:" << static_cast<int>(no);
-        commitStat(false);
         return;
     }
     spectrumSeq = subSpecPackket.spectrumSeq;
@@ -426,7 +373,6 @@ void DataProcessor::mergeSubSpec_Thread(quint8 no, const QByteArray& data){
     if (part < 1 || part > 32) {
         qWarning() << "Invalid sub-spectrum part, seq:" << spectrumSeq
                    << ", part:" << static_cast<int>(part);
-        commitStat(true);
         return;
     }
 
@@ -453,7 +399,6 @@ void DataProcessor::mergeSubSpec_Thread(quint8 no, const QByteArray& data){
         {
             qCritical() << "Duplicate sub-spectrum packet, seq:" << spectrumSeq
                         << ", part:" << static_cast<int>(part) << "(ignored)";
-            commitStat(true);
             return;
         }
 
@@ -476,7 +421,6 @@ void DataProcessor::mergeSubSpec_Thread(quint8 no, const QByteArray& data){
         fullSpectrumCopy.spectrum[8191]=0; //将最后一道置零
         emit reportFullSpectrum(mIndex, fullSpectrumCopy);
     }
-    commitStat(true);
 }
 
 // 从波形数据包中提取波形数据

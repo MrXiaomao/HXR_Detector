@@ -2,8 +2,13 @@
 #include "ui_detsettingwindow.h"
 #include "qcomboboxdelegate.h"
 #include "globalsettings.h"
+#include "detparamlogger.h"
+#include "useractionlogger.h"
 #include <QStandardItemModel>
 #include <QMessageBox>
+#include <QDoubleSpinBox>
+#include <QGroupBox>
+#include <QHeaderView>
 
 DetSettingWindow::DetSettingWindow(QWidget *parent)
     : QWidget(parent)
@@ -94,6 +99,7 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
         }
     }
 
+    mBlockParameterLogging = true;
     // 初始化表格时：给每行第0列放checkbox
     for (int row = 0; row < ui->tableWidget->rowCount(); ++row) {
         auto *cb = new QCheckBox(ui->tableWidget);
@@ -102,15 +108,17 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
         updateSelectAllState();
 
         connect(cb, &QCheckBox::stateChanged, this, [=](int){
-            int currentRow = row +1;
-            if(cb->isChecked()){
-                //选中
-                loadAt(currentRow);
-            }
-
-            updateSelectAllState();   // 见下方函数
+            if (mUpdatingSelectAll)
+                return;
+            const quint8 detId = static_cast<quint8>(row + 1);
+            if (cb->isChecked())
+                loadAt(detId, true);
+            updateSelectAllState();
         });
-        cb->setChecked(true); // 初始化全勾选
+        cb->blockSignals(true);
+        cb->setChecked(true);
+        cb->blockSignals(false);
+        loadAt(static_cast<quint8>(row + 1), false);
     }
 
     //从HDF5加载配置信息
@@ -365,6 +373,8 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
             qInfo().noquote() << "是否测试版本：" << (isTest ? "是" : "否");
         }
     });
+
+    mBlockParameterLogging = false;
 }
 
 DetSettingWindow::~DetSettingWindow()
@@ -400,6 +410,71 @@ void DetSettingWindow::updateSelectAllState()
         ui->checkBox_selectAll->setCheckState(Qt::PartiallyChecked);
     }
     mUpdatingSelectAll = false;
+}
+
+quint8 DetSettingWindow::currentSelectedDetId() const
+{
+    for (int row = 0; row < ui->tableWidget->rowCount(); ++row) {
+        if (auto *cb = qobject_cast<QCheckBox *>(ui->tableWidget->cellWidget(row, 0))) {
+            if (cb->isChecked())
+                return static_cast<quint8>(row + 1);
+        }
+    }
+    return 1;
+}
+
+void DetSettingWindow::logHardwareParametersFromUi(const QString &reason, quint8 detId)
+{
+    if (mBlockParameterLogging)
+        return;
+    if (detId < 1 || detId > DET_NUM)
+        return;
+
+    DetParameter snapshot;
+    snapshot.id = detId;
+
+    const int row = detId - 1;
+    QAbstractItemModel *model = ui->tableWidget->model();
+    double lon = 0.0;
+    double lat = 0.0;
+    getLonLat(row, lon, lat);
+    snapshot.longitude = lon;
+    snapshot.latitude = lat;
+
+    const QString detIp = model->data(model->index(row, 1)).toString();
+    memset(snapshot.det_Ip_port, 0, IP_LENGTH);
+    qstrncpy(snapshot.det_Ip_port, detIp.toLatin1().constData(), IP_LENGTH - 1);
+
+    snapshot.gain = model->data(model->index(row, 4)).toDouble();
+    snapshot.triggerThold = static_cast<quint16>(model->data(model->index(row, 5)).toUInt());
+    snapshot.deathTime = static_cast<quint8>(model->data(model->index(row, 6)).toUInt());
+    snapshot.highVoltageOutLevel = static_cast<quint16>(model->data(model->index(row, 7)).toUInt());
+    snapshot.highVoltageEnable =
+        static_cast<Qt::CheckState>(model->data(model->index(row, 7), Qt::CheckStateRole).toInt()) == Qt::Checked;
+
+    snapshot.spectrumRefreshTime = static_cast<quint32>(ui->spinBox_spectrumRefreshTime->value());
+    snapshot.spectrumLength = static_cast<quint32>(ui->comboBox_spectrumLength->currentText().toUInt());
+    snapshot.spectrumPlotEnMin = ui->dsp_spectrumPlotEnMin->value();
+    snapshot.spectrumPlotEnMax = ui->dsp_spectrumPlotEnMax->value();
+    snapshot.waveformTriggerMode = static_cast<quint8>(ui->comboBox_waveformTriggerMode->currentIndex());
+    snapshot.waveformLength = static_cast<quint32>(ui->comboBox_waveformLength->currentText().toUInt());
+    snapshot.trapShapeEnable = ui->trapShapeEnable->isChecked();
+    snapshot.trapShapeTimeConstD1 = static_cast<quint16>(ui->sb_trapShapeTimeConstD1->value());
+    snapshot.trapShapeTimeConstD2 = static_cast<quint16>(ui->sb_trapShapeTimeConstD2->value());
+    snapshot.trapShapeRisePoint = static_cast<quint8>(ui->spinBox_trapShapeRisePoint->value());
+    snapshot.trapShapePeakPoint = static_cast<quint8>(ui->spinBox_trapShapePeakPoint->value());
+    snapshot.trapShapeFallPoint = static_cast<quint8>(ui->spinBox_trapShapeFallPoint->value());
+
+    DetParamLogger::logDetParameters(reason + QStringLiteral(" (界面快照 det#%1)").arg(detId), &snapshot);
+}
+
+void DetSettingWindow::logHardwareParameters(const QString &reason, quint8 detId)
+{
+    const QMap<quint8, DetParameter *> detParameters = HDF5Settings::instance()->getDetParameters();
+    const DetParameter *detParameter = detParameters.value(detId);
+    if (!detParameter)
+        return;
+    DetParamLogger::logDetParameters(reason + QStringLiteral(" (已存配置 det#%1)").arg(detId), detParameter);
 }
 
 void DetSettingWindow::on_pushButton_save_clicked()
@@ -562,10 +637,15 @@ void DetSettingWindow::saveAt(quint8 detId)
     detParameters[detId] = detParameter;
     settings->setDetParameter(detParameters);
     settings->export_LocalDetPara();
+
+    UserActionLogger::logMessage(QStringLiteral("DetSetting 保存 det#%1 %2")
+                                     .arg(detId)
+                                     .arg(DetParamLogger::formatDetParameter(detParameter)));
 }
 
-void DetSettingWindow::loadAt(quint8 detId)
+void DetSettingWindow::loadAt(quint8 detId, bool recordLog)
 {
+    mBlockParameterLogging = true;
     //从HDF5加载配置信息
     HDF5Settings *settings = HDF5Settings::instance();
     const QMap<quint8, DetParameter*> detParameters = settings->getDetParameters();
@@ -633,6 +713,10 @@ void DetSettingWindow::loadAt(quint8 detId)
     //DAC高压输出电平
     //ui->spinBox_highVoltageOutLevel->setValue(detParameter->highVoltageOutLevel);
     model->setData(model->index(row, 7), QString::number(detParameter->highVoltageOutLevel));
+
+    mBlockParameterLogging = false;
+    if (!recordLog)
+        return;
 }
 
 void DetSettingWindow::on_pushButton_read_clicked()
@@ -705,6 +789,7 @@ void DetSettingWindow::on_tableWidget_itemChanged(QTableWidgetItem *item)
 
 void DetSettingWindow::showEvent(QShowEvent */*event*/)
 {
+    mBlockParameterLogging = true;
     ui->pushButton_read->setEnabled(!mCommhelper->isMeasuring());
     ui->pushButton_save->setEnabled(!mCommhelper->isMeasuring());
 
@@ -722,4 +807,6 @@ void DetSettingWindow::showEvent(QShowEvent */*event*/)
         ui->tableWidget->item(i - 1, 7)->setText(QString::number(detParameter->highVoltageOutLevel));
         ui->tableWidget->item(i - 1, 7)->setCheckState(detParameter->highVoltageEnable ? Qt::Checked : Qt::Unchecked);
     }
+
+    mBlockParameterLogging = false;
 }

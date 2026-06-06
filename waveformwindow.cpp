@@ -1,5 +1,6 @@
 ﻿#include "waveformwindow.h"
 #include "ui_waveformwindow.h"
+#include "useractionlogger.h"
 #include <QToolButton>
 #include <QFileDialog>
 #include <QMessageBox>
@@ -101,6 +102,7 @@ void WaveformWindow::on_pushButton_save_clicked()
 
     // 保存参数
     if (commHelper->exportFile(exportPath)){
+        UserActionLogger::logMessage(QStringLiteral("波形模式导出数据 path=%1").arg(exportPath));
         QMessageBox::information(this, tr("提示"), tr("数据导出成功！"), QMessageBox::Ok, QMessageBox::Ok);
     } else {
         QMessageBox::information(this, tr("提示"), tr("数据导出失败！"), QMessageBox::Ok, QMessageBox::Ok);
