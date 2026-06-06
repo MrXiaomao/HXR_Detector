@@ -802,23 +802,20 @@ void MainWindow::initUi()
     // 接收触发信号时间戳
     connect(commHelper, &CommHelper::reportTimestampe, this, [=](const QDateTime triggerTime){
         // 只有启用了外触发才会接收打靶信号的时间戳，并且只在自动测量未激活时更新界面显示,
-        // 这里进来时是子线程，所以在QTimer里面执行就变成主线程了
         qDebug().noquote().nospace() << "mainwindow 收到打靶信号时间戳：" << triggerTime.toString("yyyy-MM-dd HH:mm:ss");
-        // QTimer::singleShot(0, this, [=]{
-            if (mEnableExtendTrigger && !mAutoMeasureTimerActive)
-            {
-                // 只有开启了自动化测量，才接收自动触发的时间戳，并更新界面显示
-                ui->dateTime_shotTime->setDateTime(triggerTime);
-                ui->lineEdit_triggerflag->setText("已经触发");
+        if (mEnableExtendTrigger && !mAutoMeasureTimerActive)
+        {
+            // 只有开启了自动化测量，才接收自动触发的时间戳，并更新界面显示
+            ui->dateTime_shotTime->setDateTime(triggerTime);
+            ui->lineEdit_triggerflag->setText("已经触发");
 
-                // 根据冷却时间设置自动测量的触发时间，单位为秒
-                qint32 coolTimelength = ui->spinBox_coolTimeLength->value();
-                ui->dateTimeEdit_startTime->setDateTime(triggerTime.addSecs(coolTimelength));
+            // 根据冷却时间设置自动测量的触发时间，单位为秒
+            qint32 coolTimelength = ui->spinBox_coolTimeLength->value();
+            ui->dateTimeEdit_startTime->setDateTime(triggerTime.addSecs(coolTimelength));
 
-                mAutoMeasureTimerActive = true;
-                qInfo().noquote().nospace() << "收到打靶信号时间戳：" << triggerTime.toString("yyyy-MM-dd HH:mm:ss") << "，自动测量将在" << coolTimelength << "秒后开始";
-            }
-        // });
+            mAutoMeasureTimerActive = true;
+            qInfo().noquote().nospace() << "收到打靶信号时间戳：" << triggerTime.toString("yyyy-MM-dd HH:mm:ss") << "，自动测量将在" << coolTimelength << "秒后开始";
+        }
     }, Qt::QueuedConnection);
 }
 

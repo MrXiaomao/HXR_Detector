@@ -5,6 +5,7 @@
 // #include "commhelper.h"
 #include "countratestatisticswindow.h"
 #include "neutronyieldstatisticswindow.h"
+#include "useractionlogger.h"
 #include "lightstyle.h"
 #include "darkstyle.h"
 // #include "customcolorstyle.h"
@@ -51,7 +52,8 @@ void AppMessageHandler(QtMsgType type, const QMessageLogContext& context, const 
     // 退出阶段或 qFatal 递归时勿 invokeMethod（主窗口可能已析构，会再次触发 fatal）
     const bool shuttingDown = !QCoreApplication::instance()
             || QCoreApplication::instance()->closingDown();
-    if (!shuttingDown && mMainWindow && type != QtDebugMsg) {
+    if (!shuttingDown && mMainWindow && type != QtDebugMsg
+        && !UserActionLogger::shouldExcludeFromUiLog(msg)) {
         QMetaObject::invokeMethod(mMainWindow, "sigWriteLog", Qt::QueuedConnection,
                                   Q_ARG(QString, msg), Q_ARG(QtMsgType, type));
     }

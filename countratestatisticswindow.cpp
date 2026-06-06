@@ -23,14 +23,19 @@
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QPainter>
-#include <QSignalBlocker>
-#include <math.h>
+#include <QProgressDialog>
+#include <QTextCodec>
+#include <vector>
+#include <limits>
 
 namespace {
 constexpr int kDetectorsPerPlot = 16;
 constexpr int kSpectrumPointCount = 8192;
 /** 统计表每行高度（与 setFixedHeight 计算一致） */
 constexpr int kStatsTableRowHeight = 25;
+constexpr hsize_t kH5SpectrumColumnCount = sizeof(H5Spectrum) / sizeof(quint32);
+/** 单通道解析结果点数上限（约 24h @ 50ms/帧），超出则中止该通道并提示 */
+constexpr int kMaxCountPointsPerDetector = 2'000'000;
 }
 
 CountRateStatisticsWindow::CountRateStatisticsWindow(bool isDarkTheme, QWidget *parent)
@@ -235,6 +240,7 @@ void CountRateStatisticsWindow::initUi()
     ui->tableWidget->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
     ui->tableWidget->setColumnWidth(0, 40);
 
+    updateTableRowCount();
     for (int column=0; column<ui->tableWidget->columnCount(); ++column)
     {
         //ui->tableWidget->horizontalHeader()->setSectionResizeMode(column, QHeaderView::Fixed);
@@ -257,7 +263,6 @@ void CountRateStatisticsWindow::initUi()
         }
     }
 
-    updateTableRowCount();
     for (int row=0; row<ui->tableWidget->rowCount(); ++row)
     {
         ui->tableWidget->setRowHeight(row, kStatsTableRowHeight);
@@ -289,6 +294,13 @@ void CountRateStatisticsWindow::initUi()
     ui->tableWidget->item(0, 3)->setBackground(Qt::gray);
     ui->tableWidget->item(0, 5)->setBackground(Qt::gray);
     ui->tableWidget->item(0, 7)->setBackground(Qt::gray);
+
+    for (int row = 0; row < ui->tableWidget->rowCount(); ++row) {
+        for (int column = 0; column < ui->tableWidget->columnCount(); ++column) {
+            if (QTableWidgetItem *item = ui->tableWidget->item(row, column))
+                item->setTextAlignment(Qt::AlignCenter);
+        }
+    }
 
     initCustomPlot(ui->plot_up, tr("时间/s"), tr("计数率/cps"), 1, kDetectorsPerPlot);
     initCustomPlot(ui->plot_down, tr("时间/s"), tr("计数率/cps"), kDetectorsPerPlot + 1, DET_NUM);
@@ -957,173 +969,229 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
     mMapCountCorrect.clear();
     clearAllPlots();
     qApp->setOverrideCursor(QCursor(Qt::WaitCursor));
-    quint32 tmStart = ui->spinBox_timeStart->value();
-    quint32 tmEnd = ui->spinBox_timeEnd->value();
-    QString filePath = ui->textBrowser_filepath->toPlainText();
-
-    // 1. 打开文件
-    QTextCodec* gbk_codec = QTextCodec::codecForName("GBK");
-    QByteArray filePathBytes = gbk_codec->fromUnicode(filePath);
-    H5::H5File file(filePathBytes.toStdString(), H5F_ACC_RDONLY);
-
-    for (int index = 1; index <= DET_NUM; ++index)
-    {
-        if (mInterrupted)
-        {
-            emit reporWriteLog(tr("解析被中断！"));
-            break;
-        }
-
-        try
-        {
-            // 2. 打开分组核数据集
-            H5::Group group = file.openGroup(QString("Detector#%1").arg(index).toStdString().c_str());
-            H5::DataSet dataset = group.openDataSet("Spectrum");
-
-            // 3. 确认数据类型匹配（可选，用于错误检查）
-            H5::CompType fileType = dataset.getCompType();
-            if (fileType != H5::PredType::NATIVE_UINT)
-            {
-                emit reporWriteLog(tr("通道#%1 数据类型不匹配，跳过").arg(index), QtWarningMsg);
-                continue;
-            }
-
-            // 4. 初始文件空间
-            H5::DataSpace file_space = dataset.getSpace();
-            hsize_t current_dims[2];
-            file_space.getSimpleExtentDims(current_dims, NULL);
-            hsize_t rows = current_dims[0];
-            hsize_t cols = current_dims[1];
-            if (rows <= 0)
-            {
-                emit reporWriteLog(tr("通道#%1 无可用数据，跳过").arg(index), QtWarningMsg);
-                continue;
-            }
-
-            // 5. 内存空间：每次读取一行
-            hsize_t mem_dims[2] = {1, cols};
-            H5::DataSpace mem_space(2, mem_dims);
-            uint32_t* row_data = new uint32_t[cols];
-            double minV = 0.0;
-            double maxV = 0;
-            double minVAdjust = 0.0;
-            double maxVAdjust = 0;
-            double minVDeathTime = 0.0;
-            double maxVDeathTime = 0;
-            quint32 ref = 0;
-            quint64 total = 0;
-            double totalDeathTime = 0;
-            double totalAdjust = 0;// 修正后
-
-            mMapCount[index].reserve(rows);
-            mMapCountCorrect[index].reserve(rows);
-            for (hsize_t i = 0; i < rows;/* ++i*/) {
-                if (mInterrupted)
-                {
-                    emit reporWriteLog(tr("解析被中断！"));
-                    break;
-                }
-
-                // 6. 指定数据读取位置
-                hsize_t start[2] = {i, 0};
-                hsize_t count[2] = {1, cols};
-                file_space.selectHyperslab(H5S_SELECT_SET, count, start);
-
-                // 7. 读取数据
-                dataset.read(row_data, H5::PredType::NATIVE_UINT, mem_space, file_space);
-                FullSpectrum* data = reinterpret_cast<FullSpectrum*>(row_data);
-                if (data->sequence >= tmStart && data->sequence <= tmEnd)
-                {
-                    // 8. 对数据按秒进行重新分类
-                    double totalTemp = 0.0; //计数
-                    double totalTempDeathT = 0;//死时间率，单位%
-                    quint8 step = qMax<quint8>(1, 1000 / data->measureTime);
-                    QVector<quint32> spectrum(kSpectrumPointCount, 0);// 能谱/s
-                    quint32 deathTime = 0;// 死时间/s
-                    for (int t = 0; t < step; ++t)
-                    {
-                        for (int j=0; j<kSpectrumPointCount; ++j)
-                        {
-                            spectrum[j] += data->spectrum[j];
-                        }
-
-                        deathTime += data->deathTime;
-                    }
-                    spectrum[kSpectrumPointCount-1]=0; //最后一道置零
-                    i += step;
-
-                    for (int j = 0; j < kSpectrumPointCount; ++j)
-                        totalTemp += spectrum[j];
-
-                    // 计数率 cps
-                    double countRate = totalTemp * 1.0 / data->measureTime*1000;
-
-                    // 死时间率统计
-                    totalTempDeathT = deathTime * 10.0 / (data->measureTime*10e6) *100;
-                    minVDeathTime = qMin(minVDeathTime, totalTempDeathT);
-                    maxVDeathTime = qMax(maxVDeathTime, totalTempDeathT);
-                    totalDeathTime += totalTempDeathT;
-
-                    // 9. 修正后的计数率cps
-                    double countRateCorrect = 0;
-                    countRateCorrect = totalTemp * data->measureTime * 10e6 / (data->measureTime*10e6 - data->deathTime*10);
-
-                    ++ref;
-                    minV = qMin(minV, totalTemp);
-                    maxV = qMax(maxV, totalTemp);
-                    total += (quint64)totalTemp;
-
-                    minVAdjust = qMin(minVAdjust, countRateCorrect);
-                    maxVAdjust = qMax(maxVAdjust, countRateCorrect);
-                    totalAdjust += countRateCorrect;
-                    
-                    double timeSec = data->sequence * data->measureTime / 1000.0;
-                    mMapCount[index].push_back(QPair(timeSec, countRate));
-                    mMapCountCorrect[index].push_back(QPair(timeSec, countRateCorrect));
-                }
-                else{
-                    ++i;
-                }
-
-                // 释放文件空间
-                file_space.selectNone();
-            }
-
-            if (ref > 0)
-            {
-                if (!ui->tableWidget->item(index + 1, 1)) ui->tableWidget->setItem(index + 1, 1, new QTableWidgetItem(""));
-                if (!ui->tableWidget->item(index + 1, 2)) ui->tableWidget->setItem(index + 1, 2, new QTableWidgetItem(""));
-                if (!ui->tableWidget->item(index + 1, 3)) ui->tableWidget->setItem(index + 1, 3, new QTableWidgetItem(""));
-                if (!ui->tableWidget->item(index + 1, 4)) ui->tableWidget->setItem(index + 1, 4, new QTableWidgetItem(""));
-                if (!ui->tableWidget->item(index + 1, 5)) ui->tableWidget->setItem(index + 1, 5, new QTableWidgetItem(""));
-                if (!ui->tableWidget->item(index + 1, 6)) ui->tableWidget->setItem(index + 1, 6, new QTableWidgetItem(""));
-                if (!ui->tableWidget->item(index + 1, 7)) ui->tableWidget->setItem(index + 1, 7, new QTableWidgetItem(""));
-                if (!ui->tableWidget->item(index + 1, 8)) ui->tableWidget->setItem(index + 1, 8, new QTableWidgetItem(""));
-                if (!ui->tableWidget->item(index + 1, 9)) ui->tableWidget->setItem(index + 1, 9, new QTableWidgetItem(""));
-
-                ui->tableWidget->item(index + 1, 1)->setText(QString::number(minV));
-                ui->tableWidget->item(index + 1, 2)->setText(QString::number(minVAdjust));
-                ui->tableWidget->item(index + 1, 3)->setText(QString::number(maxV));
-                ui->tableWidget->item(index + 1, 4)->setText(QString::number(maxVAdjust));
-                ui->tableWidget->item(index + 1, 5)->setText(QString::number(total / ref));
-                ui->tableWidget->item(index + 1, 6)->setText(QString::number(totalAdjust / ref));
-
-                ui->tableWidget->item(index + 1, 7)->setText(QString::number(minVDeathTime, 'e', 2));
-                ui->tableWidget->item(index + 1, 8)->setText(QString::number(maxVDeathTime, 'e', 2));
-                ui->tableWidget->item(index + 1, 9)->setText(QString::number(totalDeathTime / ref, 'e', 2));
-            }
-
-            delete[] row_data;
-            dataset.close();
-            group.close();
-        }
-        catch (...)
-        {
-            emit reporWriteLog(tr("通道#%1 读取失败，已跳过").arg(index), QtWarningMsg);
-        }
+    const quint32 tmStart = ui->spinBox_timeStart->value();
+    const quint32 tmEnd = ui->spinBox_timeEnd->value();
+    const QString filePath = ui->textBrowser_filepath->toPlainText();
+    if (filePath.isEmpty()) {
+        qApp->restoreOverrideCursor();
+        emit reporWriteLog(tr("请先打开测量文件"), QtWarningMsg);
+        return;
     }
 
-    file.close();
+    try {
+        QTextCodec* gbk_codec = QTextCodec::codecForName("GBK");
+        QByteArray filePathBytes = gbk_codec->fromUnicode(filePath);
+        H5::H5File file(filePathBytes.toStdString(), H5F_ACC_RDONLY);
+
+        // 预扫描各通道行数，用于进度条总量
+        hsize_t totalRowsAll = 0;
+        for (int index = 1; index <= DET_NUM; ++index) {
+            try {
+                H5::Group group = file.openGroup(QString("Detector#%1").arg(index).toStdString());
+                H5::DataSet dataset = group.openDataSet("Spectrum");
+                H5::DataSpace fileSpace = dataset.getSpace();
+                hsize_t dims[2] = {0, 0};
+                fileSpace.getSimpleExtentDims(dims, nullptr);
+                totalRowsAll += dims[0];
+                dataset.close();
+                group.close();
+            } catch (...) {
+            }
+        }
+
+        const int progressMax = static_cast<int>(qMin(totalRowsAll, static_cast<hsize_t>(std::numeric_limits<int>::max())));
+        QProgressDialog progress(tr("正在解析测量数据..."), tr("取消"), 0,
+                                 qMax(1, progressMax), this);
+        progress.setWindowModality(Qt::WindowModal);
+        progress.setMinimumDuration(0);
+        progress.setAutoClose(true);
+        progress.setAutoReset(true);
+        progress.setValue(0);
+
+        hsize_t processedRows = 0;
+        auto updateProgress = [&](int detectorIndex, hsize_t rowIndex, hsize_t rowTotal) {
+            progress.setLabelText(tr("通道 #%1：%2 / %3")
+                                      .arg(detectorIndex)
+                                      .arg(rowIndex)
+                                      .arg(rowTotal));
+            progress.setValue(qMin(static_cast<int>(processedRows), progressMax));
+            if (progress.wasCanceled()) {
+                mInterrupted = true;
+            }
+            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        };
+
+        for (int index = 1; index <= DET_NUM; ++index)
+        {
+            if (mInterrupted)
+            {
+                emit reporWriteLog(tr("解析被中断！"));
+                break;
+            }
+
+            try
+            {
+                H5::Group group = file.openGroup(QString("Detector#%1").arg(index).toStdString().c_str());
+                H5::DataSet dataset = group.openDataSet("Spectrum");
+
+                H5::CompType fileType = dataset.getCompType();
+                if (fileType != H5::PredType::NATIVE_UINT)
+                {
+                    emit reporWriteLog(tr("通道#%1 数据类型不匹配，跳过").arg(index), QtWarningMsg);
+                    continue;
+                }
+
+                H5::DataSpace file_space = dataset.getSpace();
+                hsize_t current_dims[2];
+                file_space.getSimpleExtentDims(current_dims, NULL);
+                const hsize_t rows = current_dims[0];
+                const hsize_t cols = current_dims[1];
+                if (rows <= 0)
+                {
+                    emit reporWriteLog(tr("通道#%1 无可用数据，跳过").arg(index), QtWarningMsg);
+                    continue;
+                }
+                if (cols != kH5SpectrumColumnCount) {
+                    emit reporWriteLog(tr("通道#%1 列数异常（%2，期望 %3），跳过")
+                                           .arg(index).arg(cols).arg(kH5SpectrumColumnCount), QtWarningMsg);
+                    continue;
+                }
+                if (rows > static_cast<hsize_t>(std::numeric_limits<int>::max())) {
+                    emit reporWriteLog(tr("通道#%1 数据行数超过程序上限，跳过").arg(index), QtWarningMsg);
+                    continue;
+                }
+
+                hsize_t mem_dims[2] = {1, cols};
+                H5::DataSpace mem_space(2, mem_dims);
+                std::vector<uint32_t> row_data(cols);
+                double minV = 0.0;
+                double maxV = 0;
+                double minVAdjust = 0.0;
+                double maxVAdjust = 0;
+                double minVDeathTime = 0.0;
+                double maxVDeathTime = 0;
+                quint32 ref = 0;
+                quint64 total = 0;
+                double totalDeathTime = 0;
+                double totalAdjust = 0;
+
+                mMapCount[index].clear();
+                mMapCountCorrect[index].clear();
+                mMapCount[index].reserve(static_cast<int>(qMin(rows, static_cast<hsize_t>(1024))));
+                mMapCountCorrect[index].reserve(static_cast<int>(qMin(rows, static_cast<hsize_t>(1024))));
+
+                for (hsize_t i = 0; i < rows;) {
+                    if (mInterrupted)
+                    {
+                        emit reporWriteLog(tr("解析被中断！"));
+                        break;
+                    }
+
+                    hsize_t start[2] = {i, 0};
+                    hsize_t count[2] = {1, cols};
+                    file_space.selectHyperslab(H5S_SELECT_SET, count, start);
+
+                    dataset.read(row_data.data(), H5::PredType::NATIVE_UINT, mem_space, file_space);
+                    const H5Spectrum* data = reinterpret_cast<const H5Spectrum*>(row_data.data());
+                    file_space.selectNone();
+
+                    hsize_t rowAdvance = 1;
+                    if (data->measureTime == 0) {
+                        emit reporWriteLog(tr("通道#%1 第 %2 行 measureTime 为 0，跳过").arg(index).arg(i + 1), QtWarningMsg);
+                    } else if (data->sequence >= tmStart && data->sequence <= tmEnd)
+                    {
+                        double totalTemp = 0.0;
+                        double totalTempDeathT = 0;
+                        const quint8 step = qMax<quint8>(1, static_cast<quint8>(1000 / data->measureTime));
+                        QVector<quint32> spectrum(kSpectrumPointCount, 0);
+                        quint32 deathTime = 0;
+                        for (int t = 0; t < step; ++t)
+                        {
+                            for (int j = 0; j < kSpectrumPointCount; ++j)
+                            {
+                                spectrum[j] += data->spectrum[j];
+                            }
+                            deathTime += data->deathTime;
+                        }
+                        spectrum[kSpectrumPointCount - 1] = 0;
+                        rowAdvance = step;
+
+                        for (int j = 0; j < kSpectrumPointCount; ++j)
+                            totalTemp += spectrum[j];
+
+                        const double countRate = totalTemp * 1.0 / data->measureTime * 1000;
+                        totalTempDeathT = deathTime * 10.0 / (data->measureTime * 10e6) * 100;
+                        minVDeathTime = qMin(minVDeathTime, totalTempDeathT);
+                        maxVDeathTime = qMax(maxVDeathTime, totalTempDeathT);
+                        totalDeathTime += totalTempDeathT;
+
+                        const double countRateCorrect =
+                            totalTemp * data->measureTime * 10e6 / (data->measureTime * 10e6 - data->deathTime * 10);
+
+                        ++ref;
+                        minV = qMin(minV, totalTemp);
+                        maxV = qMax(maxV, totalTemp);
+                        total += static_cast<quint64>(totalTemp);
+
+                        minVAdjust = qMin(minVAdjust, countRateCorrect);
+                        maxVAdjust = qMax(maxVAdjust, countRateCorrect);
+                        totalAdjust += countRateCorrect;
+
+                        if (mMapCount[index].size() >= kMaxCountPointsPerDetector) {
+                            emit reporWriteLog(tr("通道#%1 解析点数超过上限 %2，已截断")
+                                                   .arg(index).arg(kMaxCountPointsPerDetector), QtWarningMsg);
+                            i += rowAdvance;
+                            processedRows += rowAdvance;
+                            break;
+                        }
+
+                        const double timeSec = data->sequence * data->measureTime / 1000.0;
+                        mMapCount[index].push_back(qMakePair(timeSec, countRate));
+                        mMapCountCorrect[index].push_back(qMakePair(timeSec, countRateCorrect));
+                    }
+
+                    i += rowAdvance;
+                    processedRows += rowAdvance;
+                    if ((processedRows & 0xFF) == 0 || i >= rows) {
+                        updateProgress(index, qMin(i, rows), rows);
+                    }
+                }
+
+                if (ref > 0)
+                {
+                    auto ensureCell = [&](int row, int col) -> QTableWidgetItem* {
+                        if (!ui->tableWidget->item(row, col))
+                            ui->tableWidget->setItem(row, col, new QTableWidgetItem(""));
+                        QTableWidgetItem *item = ui->tableWidget->item(row, col);
+                        item->setTextAlignment(Qt::AlignCenter);
+                        return item;
+                    };
+
+                    ensureCell(index + 1, 1)->setText(QString::number(minV));
+                    ensureCell(index + 1, 2)->setText(QString::number(minVAdjust));
+                    ensureCell(index + 1, 3)->setText(QString::number(maxV));
+                    ensureCell(index + 1, 4)->setText(QString::number(maxVAdjust));
+                    ensureCell(index + 1, 5)->setText(QString::number(total / ref));
+                    ensureCell(index + 1, 6)->setText(QString::number(totalAdjust / ref));
+                    ensureCell(index + 1, 7)->setText(QString::number(minVDeathTime, 'e', 2));
+                    ensureCell(index + 1, 8)->setText(QString::number(maxVDeathTime, 'e', 2));
+                    ensureCell(index + 1, 9)->setText(QString::number(totalDeathTime / ref, 'e', 2));
+                }
+
+                dataset.close();
+                group.close();
+            }
+            catch (...)
+            {
+                emit reporWriteLog(tr("通道#%1 读取失败，已跳过").arg(index), QtWarningMsg);
+            }
+        }
+
+        file.close();
+    } catch (...) {
+        emit reporWriteLog(tr("打开或解析文件失败"), QtWarningMsg);
+    }
+
     plotAllDetectors();
     qApp->restoreOverrideCursor();
 
