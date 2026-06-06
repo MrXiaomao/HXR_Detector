@@ -208,6 +208,7 @@ public:
      * 读取网络参数
      */
     bool readParamters(quint8 detIndex);
+    bool isDetectorConnected(quint8 detIndex);
 
 private slots:
     //网口原始数据（解析线程）

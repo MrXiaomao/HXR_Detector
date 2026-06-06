@@ -6,6 +6,8 @@
 #include "useractionlogger.h"
 #include <QStandardItemModel>
 #include <QMessageBox>
+#include <QProgressDialog>
+#include <QApplication>
 #include <QDoubleSpinBox>
 #include <QGroupBox>
 #include <QHeaderView>
@@ -127,8 +129,8 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
     for (int i=1; i<=DET_NUM; ++i){
         DetParameter *detParameter = detParameters[i];
         ui->tableWidget->item(i - 1, 1)->setText(detParameter->det_Ip_port);
-        ui->tableWidget->item(i - 1, 2)->setText(QString::number(detParameter->latitude));
-        ui->tableWidget->item(i - 1, 3)->setText(QString::number(detParameter->longitude));
+        ui->tableWidget->item(i - 1, 2)->setText(QString::number(detParameter->longitude));
+        ui->tableWidget->item(i - 1, 3)->setText(QString::number(detParameter->latitude));
         ui->tableWidget->item(i - 1, 4)->setText(QString::number(detParameter->gain));
         ui->tableWidget->item(i - 1, 5)->setText(QString::number(detParameter->triggerThold));
         ui->tableWidget->item(i - 1, 6)->setText(QString::number(detParameter->deathTime));
@@ -487,21 +489,39 @@ void DetSettingWindow::on_pushButton_save_clicked()
     }
 
     QString savedDetectors;
+    bool hasOnlineSaved = false;
     //对选中的部分保存参数
     for (int row = 0; row < ui->tableWidget->rowCount(); ++row) {
         if (auto *cb = qobject_cast<QCheckBox*>(ui->tableWidget->cellWidget(row, 0))) {
             if (cb->isChecked()) {
-                saveAt(row + 1);
-                savedDetectors += QString("#%1, ").arg(row + 1);
+                const quint8 detId = static_cast<quint8>(row + 1);
+                saveAt(detId);
+                savedDetectors += QString("#%1, ").arg(detId);
+                if (mCommhelper->isDetectorConnected(detId))
+                    hasOnlineSaved = true;
             }
         }
     }
 
+    QProgressDialog configDialog(tr("参数配置中"), QString(), 0, 0, this);
+    if (hasOnlineSaved) {
+        configDialog.setWindowTitle(tr("参数配置中，请勿操作！"));
+        configDialog.setWindowModality(Qt::WindowModal);
+        configDialog.setMinimumDuration(0);
+        configDialog.setCancelButton(nullptr);
+        configDialog.setRange(0, 0);
+        configDialog.show();
+        QApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+    }
+
+    // 联网探测器同步配置（settingfinished 在当前线程同步下发指令）
+    emit settingfinished();
+
+    if (hasOnlineSaved)
+        configDialog.close();
+
     //弹出提示，提示哪些通道号的设置已保存成功
     QMessageBox::information(this, tr("保存参数设置"), tr("已保存成功！\n已保存的谱仪编号：%1").arg(savedDetectors));
-
-    // 更改探测器的数据处理器与IP的绑定关系，以便新IP生效
-    QMetaObject::invokeMethod(this, "settingfinished", Qt::QueuedConnection);
 }
 
 
@@ -671,7 +691,7 @@ void DetSettingWindow::loadAt(quint8 detId, bool recordLog)
     setLonLat(detId-1, detParameter->longitude, detParameter->latitude);
     //网络设置
     //IP地址
-    model->setData(model->index(row, 2), QString::fromLatin1(detParameter->det_Ip_port));
+    model->setData(model->index(row, 1), QString::fromLatin1(detParameter->det_Ip_port));
 
     //能谱设置
     //能谱刷新时间（毫秒）
@@ -799,8 +819,8 @@ void DetSettingWindow::showEvent(QShowEvent */*event*/)
     for (int i=1; i<=DET_NUM; ++i){
         DetParameter *detParameter = detParameters[i];
         ui->tableWidget->item(i - 1, 1)->setText(detParameter->det_Ip_port);
-        ui->tableWidget->item(i - 1, 2)->setText(QString::number(detParameter->latitude));
-        ui->tableWidget->item(i - 1, 3)->setText(QString::number(detParameter->longitude));
+        ui->tableWidget->item(i - 1, 2)->setText(QString::number(detParameter->longitude));
+        ui->tableWidget->item(i - 1, 3)->setText(QString::number(detParameter->latitude));
         ui->tableWidget->item(i - 1, 4)->setText(QString::number(detParameter->gain));
         ui->tableWidget->item(i - 1, 5)->setText(QString::number(detParameter->triggerThold));
         ui->tableWidget->item(i - 1, 6)->setText(QString::number(detParameter->deathTime));

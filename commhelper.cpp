@@ -1555,6 +1555,14 @@ bool CommHelper::readParamters(quint8 detIndex)
     }
 }
 
+bool CommHelper::isDetectorConnected(quint8 detIndex)
+{
+    if (detIndex < 1 || detIndex > DET_NUM)
+        return false;
+    DataProcessor *processor = mDetectorDataProcessor.value(detIndex);
+    return processor && !processor->isFreeSocket();
+}
+
 void CommHelper::startOTAUpgrade(quint8 index)
 {
     mDetectorDataProcessor[index]->startOTAUpgrade();
