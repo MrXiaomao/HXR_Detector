@@ -74,11 +74,12 @@ CommHelper::CommHelper(QObject *parent)
             qint8 index =  (qint8)(intptr_t)(connection->context());
             if (index >= 1 && index <= DET_NUM){
                 DetParameter *detParameter = detParameters.value(index);
+                if (!detParameter)
+                    continue;
 
                 QString detectorAddress = QString::fromStdString(detParameter->det_Ip_port);
                 QString peerAddress = QString::fromStdString(connection->peerip());
                 if (peerAddress != detectorAddress){
-                    DetParameter *detParameter = detParameters.value(index);
                     QMetaObject::invokeMethod(this, "detectorOffline",
                                               Qt::QueuedConnection,
                                               Q_ARG(quint8, index));
@@ -110,7 +111,6 @@ CommHelper::CommHelper(QObject *parent)
                 QString detectorAddress = QString::fromStdString(detParameter->det_Ip_port);
                 QString peerAddress = connection->peerAddress().toString();
                 if (peerAddress != detectorAddress){
-                    detParameter = detParameters.value(index);
                     QMetaObject::invokeMethod(this, "detectorOffline",
                                               Qt::QueuedConnection,
                                               Q_ARG(quint8, index));

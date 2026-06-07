@@ -1007,9 +1007,6 @@ void MainWindow::onAutoMeasureDelayTimeout()
     QDateTime tmStart = ui->dateTimeEdit_startTime->dateTime().addSecs(-180);// 提前180秒做好准备工作
     if (now >= tmStart)
     {
-        if (!mEnableExtendTrigger)
-            ui->lineEdit_triggerflag->setText("已经触发");
-
         mAutoMeasureDelayTimer->stop();
 
         // 第一步 先启动服务
@@ -1060,6 +1057,8 @@ void MainWindow::onSystemTimer()
         if (currentDateTime >= ui->dateTimeEdit_startTime->dateTime()){
             // 启动测量计时器
             mMeasureTimer->start();
+            if (!mEnableExtendTrigger)
+                ui->lineEdit_triggerflag->setText("已经触发");
 
             if (ui->checkBox_continueMeasure->isChecked()) {
                 misTimedMeasure = false;
