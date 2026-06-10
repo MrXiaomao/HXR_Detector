@@ -530,7 +530,7 @@ void OTAUpgradeWindow::asyncSendOTAData(int index, const QString& filePath, cons
     qint64 fileSize = QFileInfo(filePath).size();
     int sendCount = qCeil((double)fileSize / 256);
     bool sendSuccess = true;
-    m_currentFileSize[index] = fileSize;
+    //m_currentFileSize[index] = fileSize;
     //m_returnDataSize[index] = 0;
 
     commHelper->startOTAUpgrade(index);

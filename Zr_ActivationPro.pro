@@ -110,6 +110,7 @@ CONFIG -= debug_and_release
 CONFIG(debug, debug|release) {
     TARGET = Zr_ActivationProd
 } else {
+    DEFINES += QT_MESSAGELOGCONTEXT #定义之后Release版qWarning()输出的消息才能够捕获到
     TARGET = Zr_ActivationPro
 }
 

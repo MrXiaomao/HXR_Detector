@@ -102,7 +102,7 @@ void DataProcessor::reallocSocket(const hv::SocketChannelPtr& tcpSocket, DetPara
 {
     mTcpSocket = tcpSocket;
     if (mTcpSocket){
-        isFirstError = false;
+        isFirstError = true;
         tcpSocket->onread = [=](hv::Buffer* buf){
             if(buf->size()==0) return;
             QByteArray rawData = QByteArray::fromRawData((const char*)buf->data(), buf->size());
@@ -278,7 +278,7 @@ void DataProcessor::stopMeasure()
 void DataProcessor::sendCmdToSocket(CommandItem cmdItem, bool delayflag) const
 {
 #if ENABLE_LIBHV
-    if (mTcpSocket->isOpened()){
+    if (mTcpSocket && mTcpSocket->isConnected()){
         mTcpSocket->write(cmdItem.data.constData(), cmdItem.data.size());
         qDebug().noquote()<< QString("[%1]Send HEX: %2 [%3]")
                                   .arg(mIndex)
@@ -555,7 +555,7 @@ bool DataProcessor::extractSpectrumData(const QByteArray& packetData, SubSpectru
 
 bool DataProcessor::sendOTAUpgradeData(const QByteArray& data)
 {
-    if (mTcpSocket){
+    if (mTcpSocket && mTcpSocket->isConnected()){
 #if ENABLE_LIBHV
         mTcpSocket->write(data.constData(), data.size());
 #else

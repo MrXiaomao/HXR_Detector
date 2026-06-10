@@ -194,11 +194,19 @@ CommHelper::~CommHelper()
 
 #include <winsock2.h>   // WSAIoctl函数定义
 #include <mstcpip.h>    // 包含 TCP_KEEPALIVE 结构体定义
+#include <ws2ipdef.h>
 struct TCP_KEEPLIVE {
     u_long onoff;
     u_long keepalivetime;
     u_long keepaliveinterval;
 };
+// 补充SDK缺失的宏，引用自C:\Program Files (x86)\Windows Kits\10\Include\10.0.26100.0\shared\ws2ipdef.h
+#if !defined(TCP_KEEPIDLE) && defined(_WIN32)
+#define TCP_KEEPALIVE       	 3
+#define TCP_KEEPCNT              16
+#define TCP_KEEPIDLE             TCP_KEEPALIVE
+#define TCP_KEEPINTVL            17
+#endif
 void CommHelper::initSocket()
 {
 #if ENABLE_LIBHV
@@ -207,21 +215,31 @@ void CommHelper::initSocket()
     mTcpServer->onConnection = [&](const hv::SocketChannelPtr& channel)
     {
         if (channel->isConnected()){// isOpened()){// ->status == hv::SocketChannel::CONNECTED){
-            channel->setKeepaliveTimeout(10000);// 10s没有数据交互就断开(这种方式用的是通过判断最后一次网络数据的读/写时间与系统时钟的时间差来判断)
+            channel->setKeepaliveTimeout(30000);// 10s没有数据交互就断开(这种方式用的是通过判断最后一次网络数据的读/写时间与系统时钟的时间差来判断)
 
             // 禁用Nagle算法，降低数据包的传输延迟
             tcp_nodelay(channel->fd());
 
-            // 1. 开启基础保活开关
+            // 1. 开启基础保活开关,缺省值:0(关闭)
             //tcp_keepalive(channel->fd());
             BOOL keepAliveEnable = TRUE;
             setsockopt(channel->fd(), SOL_SOCKET, SO_KEEPALIVE, (const char*)&keepAliveEnable, sizeof(keepAliveEnable));
 
-            // 2. 配置自定义保活参数（Windows参数单位为毫秒）
+            // 2. 设置最大探测次数为3次，仅对当前socket生效,缺省值:9(次)
+            int keepcnt = 3;
+            setsockopt(channel->fd(), IPPROTO_TCP, TCP_KEEPCNT, (char*)&keepcnt, sizeof(keepcnt));
+
+            // 修改空闲等待时间和探测间隔
+            // int idle = 5;  // 空闲5秒后开始探测（单位：秒），缺省值:7200(s)
+            // int interval = 3; // 探测间隔3秒（单位：秒）,缺省值:75(s)
+            // setsockopt(channel->fd(), IPPROTO_TCP, TCP_KEEPIDLE, (char*)&idle, sizeof(idle));
+            // setsockopt(channel->fd(), IPPROTO_TCP, TCP_KEEPINTVL, (char*)&interval, sizeof(interval));
+
+            // 3. 配置自定义保活参数（Windows参数单位为毫秒）
             TCP_KEEPLIVE keepCfg = {0};
             keepCfg.onoff = true;//开启keepalive属性
-            keepCfg.keepalivetime = 5 * 1000;  //如果该连接在5秒内没有任何数据往来，则执行TCP层的探测
-            keepCfg.keepaliveinterval = 3 * 1000;//探测发包间隔是3秒
+            keepCfg.keepalivetime = 500;  //如果该连接在500ms内没有任何数据往来，则执行TCP层的探测，缺省值:7200(s)
+            keepCfg.keepaliveinterval = 500;//探测发包间隔是500ms,缺省值:75(s)
 
             DWORD retBytes = 0;
             WSAIoctl(
