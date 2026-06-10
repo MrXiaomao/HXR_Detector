@@ -60,7 +60,7 @@ DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
         if (mIsUpgrading)
             return ;// 升级过程中不做温度心跳检测
 
-        if (this->mTcpSocket && this->mTcpSocket->isConnected()){
+        if (this->mTcpSocket && this->mTcpSocket->isConnected()){// 正常情况下，这个条件应该为true，加上这个条件就当当是双保险吧（^-^）
             qWarning().noquote().nospace() << tr("谱仪[#%1]超过%2秒未收到温度数据，触发报警！").arg(mIndex).arg(mTempTimeoutTimer.interval() / 1000);
 
             // 给CommHelper模块上报温度超时报警
@@ -346,9 +346,13 @@ void DataProcessor::restartTempTimeout() {
     return;
 #endif //
 
-    //从HDF5加载配置信息
-    HDF5Settings *settings = HDF5Settings::instance();
-    mTempTimeoutTimer.start(settings->pluseTime()*1000);
+    // 这里对探测器在线状态进行判断，只有设备在线了才重启心跳检测
+    if (mTcpSocket && mTcpSocket->isConnected())
+    {
+        //从HDF5加载配置信息
+        HDF5Settings *settings = HDF5Settings::instance();
+        mTempTimeoutTimer.start(settings->pluseTime()*1000);
+    }
 }
 
 /**

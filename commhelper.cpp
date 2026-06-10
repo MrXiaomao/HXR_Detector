@@ -215,7 +215,7 @@ void CommHelper::initSocket()
     mTcpServer->onConnection = [&](const hv::SocketChannelPtr& channel)
     {
         if (channel->isConnected()){// isOpened()){// ->status == hv::SocketChannel::CONNECTED){
-            channel->setKeepaliveTimeout(30000);// 10s没有数据交互就断开(这种方式用的是通过判断最后一次网络数据的读/写时间与系统时钟的时间差来判断)
+            channel->setKeepaliveTimeout(30000);// 30s没有数据交互就断开(这种方式用的是通过判断最后一次网络数据的读/写时间与系统时钟的时间差来判断)
 
             // 禁用Nagle算法，降低数据包的传输延迟
             tcp_nodelay(channel->fd());
@@ -317,13 +317,14 @@ void CommHelper::initSocket()
                 mIntentionalPOECloseIDs.removeOne(index);
             } else if (mTempUpdateTime.contains(index)
                        && QDateTime::fromMSecsSinceEpoch(mTempUpdateTime.value(index, 0)).msecsTo(QDateTime::currentDateTime()) >= 10000) {
-                qInfo().nospace().noquote() << "谱仪[#" << index << QString("]温度心跳超时报警！自动断电重启！");
+                //这里还是改回之前的实现逻辑，心跳异常交给 onTemperatureTimeout_Thread 去处理吧
+                //qInfo().nospace().noquote() << "谱仪[#" << index << QString("]温度心跳超时报警！自动断电重启！");
 
                 // 2.1 断电处理
-                closeSwitcherPOEPower(index);
+                //closeSwitcherPOEPower(index);
 
                 // 2.2 上电处理
-                openSwitcherPOEPower(index);
+                //openSwitcherPOEPower(index);
             }
         }
         else {

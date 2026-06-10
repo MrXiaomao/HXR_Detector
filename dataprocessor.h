@@ -1,4 +1,4 @@
-/*
+﻿/*
  * @Author: MrPan
  * @Date: 2025-11-13 11:36:00
  * @LastEditors: Maoxiaoqing
@@ -75,7 +75,7 @@ public:
     }
     void endOTAUpgrade(){
         mIsUpgrading = false;
-        mTempTimeoutTimer.start();
+        restartTempTimeout();
     };
     bool sendOTAUpgradeData(const QByteArray& data);
     bool isUpgrading() const{return mIsUpgrading;}
@@ -149,7 +149,7 @@ private:
     QTimer mTempTimeoutTimer; //心跳检测定时器
 
     QFile *mNetDataFile = nullptr;//网络数据保存文件
-    bool mIsUpgrading = false; // 是否正在进行OTA升级
+    std::atomic_bool mIsUpgrading = false; // 是否正在进行OTA升级
 
     QMutex mSocketLocker;
 };
