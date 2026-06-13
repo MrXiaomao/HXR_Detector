@@ -83,15 +83,18 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
             }
 
             // Step 2: 发完第二个 quit，通常对端会断开连接
-            if (mLogoutStep == 2) {                
+            if (mLogoutStep == 2) {
                 QTimer::singleShot(100, this, [=](){
                     mTelnet->disconnectFromHost();
                 });
 
+                stopHeartbeatCheck();
                 mIsLoggingOut = false;
                 mLogoutStep = 0;
+                mIsReconnecting = false;
                 mSwitcherIsLoginOk = false;
                 mSwitcherInSystemView = false;
+                mSwitcherIsBusy.store(false);
                 mRespondString.clear();
                 emit switcherDisconnected(mIp);
                 return;
@@ -352,6 +355,8 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
             qDebug().nospace().noquote() << "交换机[" << mIp << "]连接断开[QTelnet::stateChanged]";
             mSwitcherIsLoginOk = false;
             mSwitcherInSystemView = false;
+            mIsReconnecting = false;
+            mSwitcherIsBusy.store(false);
             QMutexLocker locker(&mActionLocker);
             mActionsWait.clear();// 交换机都下线了，就把之前的动作都清空吧
         } else if (socketState == QAbstractSocket::ConnectedState && mSwitcherInSystemView) {
@@ -737,6 +742,8 @@ void QHuaWeiSwitcherHelper::logout()
         mSwitcherInSystemView = false;
         mIsLoggingOut = false;
         mLogoutStep = 0;
+        mIsReconnecting = false;
+        mSwitcherIsBusy.store(false);
         mRespondString.clear();
         emit switcherDisconnected(mIp);
         return;
@@ -746,6 +753,7 @@ void QHuaWeiSwitcherHelper::logout()
     if (mIsLoggingOut)
         return;
 
+    stopHeartbeatCheck();
     // 停止其它业务指令，避免退出过程中还在发 poe/query 等命令
     mSwitcherIsBusy.store(true);
     mCurrentCommand.clear();
@@ -778,6 +786,7 @@ void QHuaWeiSwitcherHelper::logout()
 #endif
             mIsLoggingOut = false;
             mLogoutStep = 0;
+            mIsReconnecting = false;
             mSwitcherIsLoginOk = false;
             mSwitcherInSystemView = false;
             mSwitcherIsBusy.store(false);
