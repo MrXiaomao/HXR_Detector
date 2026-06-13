@@ -27,7 +27,8 @@ public:
     ~CountRateStatisticsWindow();
 
     void initUi();
-    void initCustomPlot(QCustomPlot* customPlot, QString axisXLabel, QString axisYLabel, int startDetector, int endDetector);
+    void initCustomPlot(QCustomPlot* customPlot, QString axisXLabel, QString axisYLabel, int startDetector, int endDetector,
+                        const QString &plotTitle = QString(), double xAxisMax = 1000.0);
     void applyColorTheme();
     void restoreSettings();
 
@@ -79,6 +80,9 @@ private:
     /** 每通道：时间(s) -> 原始/修正计数率(cps)，用于曲线绘制 */
     QMap<quint8, QVector<QPair<double, double>>> mMapCount;
     QMap<quint8, QVector<QPair<double, double>>> mMapCountCorrect;
+    /** 每通道累积能谱（原始 / 死时间修正），8192 道 */
+    QMap<quint8, QVector<quint64>> mMapSpectrum;
+    QMap<quint8, QVector<quint64>> mMapSpectrumCorrect;
 
     // 图例/表格单通道的开关状态（顶部两个复选框仅用于全选/全不选，不参与与运算）
     QVector<bool> mOriginalEnabled;

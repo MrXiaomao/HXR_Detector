@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2026-01-14 09:21:28
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-04-19 21:54:07
+ * @LastEditTime: 2026-06-08 21:58:41
  * @Description: 计数率统计
  */
 #include "countratestatisticswindow.h"
@@ -284,16 +284,20 @@ void CountRateStatisticsWindow::initUi()
     ui->tableWidget->setItem(0, 5, new QTableWidgetItem("均值(计数率cps)"));
     ui->tableWidget->setSpan(0, 7, 1, 3);
     ui->tableWidget->setItem(0, 7, new QTableWidgetItem("死时间率％"));
+    ui->tableWidget->setSpan(0, 10, 1, 3);
+    ui->tableWidget->setItem(0, 10, new QTableWidgetItem("死时间(ms)"));
 
     ui->tableWidget->item(0, 1)->setTextAlignment(Qt::AlignCenter);
     ui->tableWidget->item(0, 3)->setTextAlignment(Qt::AlignCenter);
     ui->tableWidget->item(0, 5)->setTextAlignment(Qt::AlignCenter);
     ui->tableWidget->item(0, 7)->setTextAlignment(Qt::AlignCenter);
+    ui->tableWidget->item(0, 10)->setTextAlignment(Qt::AlignCenter);
 
     ui->tableWidget->item(0, 1)->setBackground(Qt::gray);
     ui->tableWidget->item(0, 3)->setBackground(Qt::gray);
     ui->tableWidget->item(0, 5)->setBackground(Qt::gray);
     ui->tableWidget->item(0, 7)->setBackground(Qt::gray);
+    ui->tableWidget->item(0, 10)->setBackground(Qt::gray);
 
     for (int row = 0; row < ui->tableWidget->rowCount(); ++row) {
         for (int column = 0; column < ui->tableWidget->columnCount(); ++column) {
@@ -302,8 +306,14 @@ void CountRateStatisticsWindow::initUi()
         }
     }
 
-    initCustomPlot(ui->plot_up, tr("时间/s"), tr("计数率/cps"), 1, kDetectorsPerPlot);
-    initCustomPlot(ui->plot_down, tr("时间/s"), tr("计数率/cps"), kDetectorsPerPlot + 1, DET_NUM);
+    initCustomPlot(ui->plot_up, tr("时间/s"), tr("计数率/cps"), 1, kDetectorsPerPlot,
+                   tr("计数曲线（通道1-16）"), 1000.0);
+    initCustomPlot(ui->plot_down, tr("时间/s"), tr("计数率/cps"), kDetectorsPerPlot + 1, DET_NUM,
+                   tr("计数曲线（通道17-32）"), 1000.0);
+    initCustomPlot(ui->spec_plot_up, tr("道址"), tr("计数"), 1, kDetectorsPerPlot,
+                   tr("累积能谱（通道1-16）"), kSpectrumPointCount);
+    initCustomPlot(ui->spec_plot_down, tr("道址"), tr("计数"), kDetectorsPerPlot + 1, DET_NUM,
+                   tr("累积能谱（通道17-32）"), kSpectrumPointCount);
 
     // 默认：32通道原始/修正曲线都开启
     mOriginalEnabled = QVector<bool>(DET_NUM + 1, true);
@@ -599,6 +609,9 @@ void CountRateStatisticsWindow::applyColorTheme()
         customPlot->xAxis2->setSubTicks(false);
         customPlot->yAxis2->setSubTicks(false);
 
+        if (QCPItemText *titleItem = customPlot->findChild<QCPItemText*>("title"))
+            titleItem->setColor(palette.color(QPalette::WindowText));
+
         customPlot->replot();
     }
 }
@@ -683,7 +696,7 @@ void CountRateStatisticsWindow::updateTableRowCount()
 
 void CountRateStatisticsWindow::clearAllPlots()
 {
-    for (QCustomPlot* plot : {ui->plot_up, ui->plot_down})
+    for (QCustomPlot* plot : {ui->plot_up, ui->plot_down, ui->spec_plot_up, ui->spec_plot_down})
     {
         for (int i = 0; i < plot->graphCount(); ++i)
             plot->graph(i)->data()->clear();
@@ -715,56 +728,89 @@ void CountRateStatisticsWindow::updateAllPlotVisibility()
 {
     updatePlotVisibility(ui->plot_up, 1, kDetectorsPerPlot);
     updatePlotVisibility(ui->plot_down, kDetectorsPerPlot + 1, DET_NUM);
+    updatePlotVisibility(ui->spec_plot_up, 1, kDetectorsPerPlot);
+    updatePlotVisibility(ui->spec_plot_down, kDetectorsPerPlot + 1, DET_NUM);
     ui->plot_up->replot(QCustomPlot::rpQueuedReplot);
     ui->plot_down->replot(QCustomPlot::rpQueuedReplot);
+    ui->spec_plot_up->replot(QCustomPlot::rpQueuedReplot);
+    ui->spec_plot_down->replot(QCustomPlot::rpQueuedReplot);
 }
 
 
 void CountRateStatisticsWindow::plotAllDetectors()
 {
+    static QVector<double> channelKeys;
+    if (channelKeys.size() != kSpectrumPointCount) {
+        channelKeys.resize(kSpectrumPointCount);
+        for (int j = 0; j < kSpectrumPointCount; ++j)
+            channelKeys[j] = j + 1;
+    }
+
     for (int det = 1; det <= DET_NUM; ++det)
     {
-        if (!mMapCount.contains(det) || mMapCount[det].isEmpty())
-            continue;
-        if (!mMapCountCorrect.contains(det) || mMapCountCorrect[det].size() != mMapCount[det].size())
-            continue;
+        const bool hasCount = mMapCount.contains(det) && !mMapCount[det].isEmpty()
+            && mMapCountCorrect.contains(det) && mMapCountCorrect[det].size() == mMapCount[det].size();
+        const bool hasSpectrum = mMapSpectrum.contains(det) && mMapSpectrum[det].size() == kSpectrumPointCount
+            && mMapSpectrumCorrect.contains(det) && mMapSpectrumCorrect[det].size() == kSpectrumPointCount;
 
-        const QVector<QPair<double, double>> &origPairs = mMapCount[det];
-        const QVector<QPair<double, double>> &corrPairs = mMapCountCorrect[det];
-        const int n = origPairs.size();
-
-        QVector<double> timeSec;
-        QVector<double> yOriginal;
-        QVector<double> yCorrect;
-        timeSec.reserve(n);
-        yOriginal.reserve(n);
-        yCorrect.reserve(n);
-        for (int i = 0; i < n; ++i)
-        {
-            timeSec << origPairs[i].first;
-            yOriginal << origPairs[i].second;
-            yCorrect << corrPairs[i].second;
-        }
-
-        QCustomPlot* targetPlot = det <= kDetectorsPerPlot ? ui->plot_up : ui->plot_down;
+        QCustomPlot* countPlot = det <= kDetectorsPerPlot ? ui->plot_up : ui->plot_down;
+        QCustomPlot* specPlot = det <= kDetectorsPerPlot ? ui->spec_plot_up : ui->spec_plot_down;
         const int localIndex = (det <= kDetectorsPerPlot ? det - 1 : det - kDetectorsPerPlot - 1);
         const int originalGraphIndex = localIndex;
         const int correctedGraphIndex = kDetectorsPerPlot + localIndex;
 
-        if (correctedGraphIndex >= targetPlot->graphCount())
-            continue;
+        if (hasCount)
+        {
+            const QVector<QPair<double, double>> &origPairs = mMapCount[det];
+            const QVector<QPair<double, double>> &corrPairs = mMapCountCorrect[det];
+            const int n = origPairs.size();
 
-        targetPlot->graph(originalGraphIndex)->setData(timeSec, yOriginal);
-        targetPlot->graph(correctedGraphIndex)->setData(timeSec, yCorrect);
+            QVector<double> timeSec;
+            QVector<double> yOriginal;
+            QVector<double> yCorrect;
+            timeSec.reserve(n);
+            yOriginal.reserve(n);
+            yCorrect.reserve(n);
+            for (int i = 0; i < n; ++i)
+            {
+                timeSec << origPairs[i].first;
+                yOriginal << origPairs[i].second;
+                yCorrect << corrPairs[i].second;
+            }
+
+            if (correctedGraphIndex < countPlot->graphCount())
+            {
+                countPlot->graph(originalGraphIndex)->setData(timeSec, yOriginal);
+                countPlot->graph(correctedGraphIndex)->setData(timeSec, yCorrect);
+            }
+        }
+
+        if (hasSpectrum && correctedGraphIndex < specPlot->graphCount())
+        {
+            QVector<double> yOriginalSpec;
+            QVector<double> yCorrectSpec;
+            yOriginalSpec.reserve(kSpectrumPointCount);
+            yCorrectSpec.reserve(kSpectrumPointCount);
+            for (int j = 0; j < kSpectrumPointCount; ++j)
+            {
+                yOriginalSpec << static_cast<double>(mMapSpectrum[det][j]);
+                yCorrectSpec << static_cast<double>(mMapSpectrumCorrect[det][j]);
+            }
+            specPlot->graph(originalGraphIndex)->setData(channelKeys, yOriginalSpec);
+            specPlot->graph(correctedGraphIndex)->setData(channelKeys, yCorrectSpec);
+        }
     }
 
     ui->plot_up->rescaleAxes(true);
     ui->plot_down->rescaleAxes(true);
+    ui->spec_plot_up->rescaleAxes(true);
+    ui->spec_plot_down->rescaleAxes(true);
     updateAllPlotVisibility();
 }
 
 
-void CountRateStatisticsWindow::initCustomPlot(QCustomPlot* customPlot, QString axisXLabel, QString axisYLabel, int startDetector, int endDetector)
+void CountRateStatisticsWindow::initCustomPlot(QCustomPlot* customPlot, QString axisXLabel, QString axisYLabel, int startDetector, int endDetector,
+                                               const QString &plotTitle, double xAxisMax)
 {
     // QCustomPlotHelper* customPlotHelper = new QCustomPlotHelper(customPlot, this);
     customPlot->setAntialiasedElements(QCP::aeAll);
@@ -774,8 +820,19 @@ void CountRateStatisticsWindow::initCustomPlot(QCustomPlot* customPlot, QString 
     customPlot->xAxis->rescale(true);
     customPlot->yAxis->rescale(true);
 
+    if (!plotTitle.isEmpty())
+    {
+        QCPItemText *textLabel = new QCPItemText(customPlot);
+        textLabel->setObjectName("title");
+        textLabel->setPositionAlignment(Qt::AlignTop | Qt::AlignHCenter);
+        textLabel->position->setType(QCPItemPosition::ptAxisRectRatio);
+        textLabel->position->setCoords(0.5, 0);
+        textLabel->setText(plotTitle);
+        textLabel->setColor(mIsDarkTheme ? Qt::white : Qt::black);
+    }
+
     // 设置刻度范围
-    customPlot->xAxis->setRange(0, 1000);
+    customPlot->xAxis->setRange(0, xAxisMax);
     customPlot->yAxis->setRange(0, 2000);
     customPlot->yAxis->ticker()->setTickCount(5);
     customPlot->xAxis->ticker()->setTickCount(10);
@@ -967,6 +1024,8 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
     mInterrupted = false;
     mMapCount.clear();
     mMapCountCorrect.clear();
+    mMapSpectrum.clear();
+    mMapSpectrumCorrect.clear();
     clearAllPlots();
     qApp->setOverrideCursor(QCursor(Qt::WaitCursor));
     const quint32 tmStart = ui->spinBox_timeStart->value();
@@ -1064,6 +1123,18 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                 hsize_t mem_dims[2] = {1, cols};
                 H5::DataSpace mem_space(2, mem_dims);
                 std::vector<uint32_t> row_data(cols);
+
+                quint32 measureInterval = 0;
+                {
+                    hsize_t firstStart[2] = {0, 0};
+                    hsize_t firstCount[2] = {1, cols};
+                    file_space.selectHyperslab(H5S_SELECT_SET, firstCount, firstStart);
+                    dataset.read(row_data.data(), H5::PredType::NATIVE_UINT, mem_space, file_space);
+                    const H5Spectrum* firstRow = reinterpret_cast<const H5Spectrum*>(row_data.data());
+                    measureInterval = firstRow->measureTime;
+                    file_space.selectNone();
+                }
+
                 double minV = 0.0;
                 double maxV = 0;
                 double minVAdjust = 0.0;
@@ -1077,6 +1148,8 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
 
                 mMapCount[index].clear();
                 mMapCountCorrect[index].clear();
+                mMapSpectrum[index] = QVector<quint64>(kSpectrumPointCount, 0);
+                mMapSpectrumCorrect[index] = QVector<quint64>(kSpectrumPointCount, 0);
                 mMapCount[index].reserve(static_cast<int>(qMin(rows, static_cast<hsize_t>(1024))));
                 mMapCountCorrect[index].reserve(static_cast<int>(qMin(rows, static_cast<hsize_t>(1024))));
 
@@ -1128,6 +1201,16 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                         const double countRateCorrect =
                             totalTemp * data->measureTime * 10e6 / (data->measureTime * 10e6 - data->deathTime * 10);
 
+                        const double deathTimeCorrectFactor =
+                            (data->measureTime * 10e6 > data->deathTime * 10)
+                                ? data->measureTime * 10e6 / (data->measureTime * 10e6 - data->deathTime * 10)
+                                : 1.0;
+                        for (int j = 0; j < kSpectrumPointCount; ++j)
+                        {
+                            mMapSpectrum[index][j] += spectrum[j];
+                            mMapSpectrumCorrect[index][j] += static_cast<quint64>(spectrum[j] * deathTimeCorrectFactor);
+                        }
+
                         ++ref;
                         minV = qMin(minV, totalTemp);
                         maxV = qMax(maxV, totalTemp);
@@ -1176,6 +1259,11 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                     ensureCell(index + 1, 7)->setText(QString::number(minVDeathTime, 'e', 2));
                     ensureCell(index + 1, 8)->setText(QString::number(maxVDeathTime, 'e', 2));
                     ensureCell(index + 1, 9)->setText(QString::number(totalDeathTime / ref, 'e', 2));
+
+                    const double deadTimeScale = measureInterval / 100.0;
+                    ensureCell(index + 1, 10)->setText(QString::number(minVDeathTime * deadTimeScale, 'e', 2));
+                    ensureCell(index + 1, 11)->setText(QString::number(maxVDeathTime * deadTimeScale, 'e', 2));
+                    ensureCell(index + 1, 12)->setText(QString::number(totalDeathTime / ref * deadTimeScale, 'e', 2));
                 }
 
                 dataset.close();
@@ -1215,16 +1303,11 @@ void CountRateStatisticsWindow::on_tableWidget_cellClicked(int row, int column)
     if (detector < 1 || detector > DET_NUM)
         return;
 
-    QCustomPlot* targetPlot = detector <= kDetectorsPerPlot ? ui->plot_up : ui->plot_down;
-    const int plotStart = detector <= kDetectorsPerPlot ? 1 : (kDetectorsPerPlot + 1);
-    const int plotEnd = detector <= kDetectorsPerPlot ? kDetectorsPerPlot : DET_NUM;
-
     const bool newEnabled = !mOriginalEnabled[detector];
     mOriginalEnabled[detector] = newEnabled;
     mCorrectEnabled[detector] = newEnabled;
 
     syncDetectorCheckboxes();
-    updatePlotVisibility(targetPlot, plotStart, plotEnd);
-    targetPlot->replot(QCustomPlot::rpQueuedReplot);
+    updateAllPlotVisibility();
 }
 
