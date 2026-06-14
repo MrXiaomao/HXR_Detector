@@ -5,6 +5,8 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFileInfo>
+#include <QMap>
+#include <QObject>
 #include <QRegularExpression>
 #include <algorithm>
 
@@ -158,9 +160,69 @@ static bool resolveMeasureParamFile(const QDir &dir, const QString &shotDir, con
     return true;
 }
 
-bool SpectrumH5Rebuilder::scanShotDirectory(const QString &shotDir, RebuildScanResult &result, QString *errorMessage)
+static bool collectDatEntries(const QDir &dir,
+                              const QString &shotDirPath,
+                              const QString &shotNum,
+                              const QString &onlyStartTime,
+                              QVector<SpectrumDatEntry> &outEntries,
+                              QString *errorMessage)
 {
-    result = RebuildScanResult{};
+    outEntries.clear();
+
+    const QStringList datNames = dir.entryList(
+        QStringList{QStringLiteral("*_能谱.dat")},
+        QDir::Files,
+        QDir::Name);
+    if (datNames.isEmpty()) {
+        if (errorMessage) {
+            *errorMessage = QObject::tr(
+                "未找到符合命名规则的能谱 dat 文件（格式：{yyyy-MM-dd_HHmmss}_{探测器编号}_能谱.dat）。");
+        }
+        return false;
+    }
+
+    for (const QString &name : datNames) {
+        QString startTime;
+        quint8 detectorId = 0;
+        if (!SpectrumH5Rebuilder::parseSpectrumDatFileName(name, &startTime, &detectorId))
+            continue;
+
+        if (!onlyStartTime.isEmpty() && startTime != onlyStartTime)
+            continue;
+
+        SpectrumDatEntry entry;
+        entry.filePath = dir.absoluteFilePath(name);
+        entry.detectorId = detectorId;
+        entry.measureStartTime = startTime;
+
+        const QString expectedPath = SpectrumH5Rebuilder::spectrumDatFilePath(
+            shotDirPath, shotNum, startTime, detectorId);
+        if (QDir::cleanPath(entry.filePath) != QDir::cleanPath(expectedPath))
+            continue;
+
+        outEntries.append(entry);
+    }
+
+    if (outEntries.isEmpty()) {
+        if (errorMessage) {
+            *errorMessage = QObject::tr(
+                "未识别到有效的能谱 dat 文件。\n"
+                "期望路径：{保存路径}/{发次号}/{yyyy-MM-dd_HHmmss}_{探测器编号}_能谱.dat");
+        }
+        return false;
+    }
+
+    std::sort(outEntries.begin(), outEntries.end(),
+              [](const SpectrumDatEntry &a, const SpectrumDatEntry &b) {
+                  return a.detectorId < b.detectorId;
+              });
+    return true;
+}
+
+static bool fillShotDirectoryInfo(const QString &shotDir,
+                                  RebuildScanResult &result,
+                                  QString *errorMessage)
+{
     const QFileInfo dirInfo(shotDir);
     if (!dirInfo.exists() || !dirInfo.isDir()) {
         if (errorMessage)
@@ -171,70 +233,183 @@ bool SpectrumH5Rebuilder::scanShotDirectory(const QString &shotDir, RebuildScanR
     result.shotDirectory = QDir(dirInfo.absoluteFilePath()).absolutePath();
     result.shotNum = dirInfo.fileName();
     result.shotDir = dirInfo.dir().absolutePath();
+    return true;
+}
 
-    QDir dir(result.shotDirectory);
-
-    const QStringList datNames = dir.entryList(
-        QStringList{QStringLiteral("*_能谱.dat")},
-        QDir::Files,
-        QDir::Name);
-    if (datNames.isEmpty()) {
+bool SpectrumH5Rebuilder::tryMakeDatEntry(const QString &filePath,
+                                          const QString &shotDirPath,
+                                          const QString &shotNum,
+                                          SpectrumDatEntry &entry,
+                                          QString *errorMessage)
+{
+    entry = SpectrumDatEntry{};
+    const QFileInfo info(filePath);
+    if (!info.exists() || !info.isFile()) {
         if (errorMessage)
-            *errorMessage = QObject::tr("未找到符合命名规则的能谱 dat 文件（格式：{yyyy-MM-dd_HHmmss}_{探测器编号}_能谱.dat）。");
+            *errorMessage = QObject::tr("文件不存在：%1").arg(filePath);
         return false;
     }
 
-    QString commonStartTime;
-    for (const QString &name : datNames) {
-        QString startTime;
-        quint8 detectorId = 0;
-        if (!parseSpectrumDatFileName(name, &startTime, &detectorId))
-            continue;
-
-        if (commonStartTime.isEmpty())
-            commonStartTime = startTime;
-        else if (commonStartTime != startTime)
-            continue;
-
-        SpectrumDatEntry entry;
-        entry.filePath = dir.absoluteFilePath(name);
-        entry.detectorId = detectorId;
-        entry.measureStartTime = startTime;
-
-        // 校验完整路径是否与 CommHelper 生成规则一致
-        const QString expectedPath = spectrumDatFilePath(result.shotDir, result.shotNum,
-                                                         startTime, detectorId);
-        if (QDir::cleanPath(entry.filePath) != QDir::cleanPath(expectedPath))
-            continue;
-
-        result.datFiles.append(entry);
-    }
-
-    if (result.datFiles.isEmpty()) {
+    QString startTime;
+    quint8 detectorId = 0;
+    if (!parseSpectrumDatFileName(info.fileName(), &startTime, &detectorId)) {
         if (errorMessage) {
             *errorMessage = QObject::tr(
-                "未识别到有效的能谱 dat 文件。\n"
-                "期望路径：{保存路径}/{发次号}/{yyyy-MM-dd_HHmmss}_{探测器编号}_能谱.dat");
+                "文件名不符合规则：{yyyy-MM-dd_HHmmss}_{探测器编号}_能谱.dat");
         }
         return false;
     }
 
-    std::sort(result.datFiles.begin(), result.datFiles.end(),
-              [](const SpectrumDatEntry &a, const SpectrumDatEntry &b) {
-                  return a.detectorId < b.detectorId;
-              });
+    const QString expectedPath = spectrumDatFilePath(shotDirPath, shotNum, startTime, detectorId);
+    if (QDir::cleanPath(info.absoluteFilePath()) != QDir::cleanPath(expectedPath)) {
+        if (errorMessage) {
+            *errorMessage = QObject::tr(
+                "文件路径不符合规则：\n%1").arg(expectedPath);
+        }
+        return false;
+    }
 
-    result.measureStartTime = commonStartTime;
-    // 默认 H5 路径：由 dat 文件名中的 measureStartTime 推导，与 CommHelper 在线生成规则一致
-    result.defaultOutputH5Path = spectrumH5FilePath(result.shotDir, result.shotNum, commonStartTime);
+    entry.filePath = info.absoluteFilePath();
+    entry.detectorId = detectorId;
+    entry.measureStartTime = startTime;
+    return true;
+}
 
-    const QString preferredParamTimestamp = measureStartTimeToParamTimestamp(commonStartTime);
+bool SpectrumH5Rebuilder::tryMakeMeasureParamPath(const QString &filePath,
+                                                  const QString &shotDirPath,
+                                                  const QString &shotNum,
+                                                  QString *outPath,
+                                                  QString *outTimestamp,
+                                                  QString *errorMessage)
+{
+    const QFileInfo info(filePath);
+    if (!info.exists() || !info.isFile()) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("文件不存在：%1").arg(filePath);
+        return false;
+    }
+
+    QString timestamp;
+    if (!parseMeasureParamFileName(info.fileName(), &timestamp)) {
+        if (errorMessage) {
+            *errorMessage = QObject::tr(
+                "文件名不符合规则：{yyyyMMdd_HHmmss}_measureParam.h5");
+        }
+        return false;
+    }
+
+    const QString expectedPath = measureParamFilePath(shotDirPath, shotNum, timestamp);
+    if (QDir::cleanPath(info.absoluteFilePath()) != QDir::cleanPath(expectedPath)) {
+        if (errorMessage) {
+            *errorMessage = QObject::tr(
+                "文件路径不符合规则：\n%1").arg(expectedPath);
+        }
+        return false;
+    }
+
+    if (outPath)
+        *outPath = info.absoluteFilePath();
+    if (outTimestamp)
+        *outTimestamp = timestamp;
+    return true;
+}
+
+bool SpectrumH5Rebuilder::buildBatchScanResult(const QString &shotDirectory,
+                                               const QString &measureStartTime,
+                                               RebuildScanResult &result,
+                                               QString *errorMessage)
+{
+    result = RebuildScanResult{};
+    if (measureStartTime.isEmpty()) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("未指定测量批次。");
+        return false;
+    }
+
+    if (!fillShotDirectoryInfo(shotDirectory, result, errorMessage))
+        return false;
+
+    QDir dir(result.shotDirectory);
+    if (!collectDatEntries(dir, result.shotDir, result.shotNum, measureStartTime,
+                           result.datFiles, errorMessage)) {
+        return false;
+    }
+
+    result.measureStartTime = measureStartTime;
+    result.defaultOutputH5Path = spectrumH5FilePath(result.shotDir, result.shotNum, measureStartTime);
+
+    const QString preferredParamTimestamp = measureStartTimeToParamTimestamp(measureStartTime);
     if (!resolveMeasureParamFile(dir, result.shotDir, result.shotNum, preferredParamTimestamp,
                                  &result.measureParamPath, &result.measureParamTimestamp, errorMessage)) {
         return false;
     }
 
     return true;
+}
+
+bool SpectrumH5Rebuilder::scanShotDirectoryBatches(const QString &shotDir,
+                                                  QString &shotDirectory,
+                                                  QString &shotDirPath,
+                                                  QString &shotNum,
+                                                  QVector<RebuildBatchSummary> &batches,
+                                                  QString *errorMessage)
+{
+    batches.clear();
+
+    RebuildScanResult baseInfo;
+    if (!fillShotDirectoryInfo(shotDir, baseInfo, errorMessage))
+        return false;
+
+    shotDirectory = baseInfo.shotDirectory;
+    shotDirPath = baseInfo.shotDir;
+    shotNum = baseInfo.shotNum;
+
+    QDir dir(shotDirectory);
+    QVector<SpectrumDatEntry> allEntries;
+    if (!collectDatEntries(dir, shotDirPath, shotNum, QString(), allEntries, errorMessage))
+        return false;
+
+    QMap<QString, QVector<SpectrumDatEntry>> grouped;
+    for (const SpectrumDatEntry &entry : allEntries)
+        grouped[entry.measureStartTime].append(entry);
+
+    for (auto it = grouped.constBegin(); it != grouped.constEnd(); ++it) {
+        RebuildBatchSummary summary;
+        summary.measureStartTime = it.key();
+        summary.datFileCount = it.value().size();
+        summary.defaultOutputH5Path = spectrumH5FilePath(shotDirPath, shotNum, summary.measureStartTime);
+
+        const QString preferredParamTimestamp = measureStartTimeToParamTimestamp(summary.measureStartTime);
+        resolveMeasureParamFile(dir, shotDirPath, shotNum, preferredParamTimestamp,
+                                &summary.measureParamPath, &summary.measureParamTimestamp, nullptr);
+
+        batches.append(summary);
+    }
+
+    std::sort(batches.begin(), batches.end(),
+              [](const RebuildBatchSummary &a, const RebuildBatchSummary &b) {
+                  return a.measureStartTime < b.measureStartTime;
+              });
+
+    if (batches.isEmpty()) {
+        if (errorMessage)
+            *errorMessage = QObject::tr("目录中未找到有效的测量批次。");
+        return false;
+    }
+
+    return true;
+}
+
+bool SpectrumH5Rebuilder::scanShotDirectory(const QString &shotDir, RebuildScanResult &result, QString *errorMessage)
+{
+    QVector<RebuildBatchSummary> batches;
+    QString shotDirectory;
+    QString shotDirPath;
+    QString shotNum;
+    if (!scanShotDirectoryBatches(shotDir, shotDirectory, shotDirPath, shotNum, batches, errorMessage))
+        return false;
+
+    return buildBatchScanResult(shotDirectory, batches.last().measureStartTime, result, errorMessage);
 }
 
 bool SpectrumH5Rebuilder::applyMeasureParameters(const QString &measureParamPath, QString *errorMessage)

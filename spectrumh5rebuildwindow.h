@@ -35,6 +35,10 @@ private slots:
     void on_bt_browseDir_clicked();
     void on_bt_startRebuild_clicked();
     void on_bt_stopRebuild_clicked();
+    void on_bt_addDat_clicked();
+    void on_bt_addParam_clicked();
+    void on_bt_removeFile_clicked();
+    void on_comboBox_batch_currentIndexChanged(int index);
 
     void onRebuildProgress(int percent, const QString &message);
     void onRebuildLogMessage(const QString &msg, QtMsgType type);
@@ -42,9 +46,19 @@ private slots:
     void onWorkerThreadFinished();
 
 private:
+    enum FileRowKind {
+        RowKindParam = 0,
+        RowKindDat = 1
+    };
+
     void setBusy(bool busy);
-    void refreshScanResult();
+    void scanDirectoryAndSelectBatch();
+    void populateBatchCombo();
+    void applyBatch(const QString &measureStartTime);
+    void populateFileTable();
+    bool syncScanResultFromTable(QString *errorMessage = nullptr);
     void appendLog(const QString &msg, QtMsgType type = QtInfoMsg);
+    static QString batchDisplayText(const RebuildBatchSummary &batch);
 
     Ui::SpectrumH5RebuildWindow *ui;
     bool mIsDarkTheme = true;
@@ -52,7 +66,13 @@ private:
     QColor mThemeColor = QColor(255, 255, 255);
     QGoodWindowHelper *mainWindow = nullptr;
 
+    QString mShotDirectory;
+    QString mShotDirPath;
+    QString mShotNum;
+    QVector<RebuildBatchSummary> mBatches;
     RebuildScanResult mScanResult;
+    bool mUpdatingBatchUi = false;
+
     SpectrumH5Rebuilder *mRebuilder = nullptr;
     QThread *mWorkerThread = nullptr;
 };

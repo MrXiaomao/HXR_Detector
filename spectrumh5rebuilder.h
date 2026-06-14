@@ -26,6 +26,15 @@ struct RebuildScanResult {
     QString defaultOutputH5Path; // {shotDir}/{shotNum}/{measureStartTime}.H5，与 CommHelper 一致
 };
 
+/** @brief 目录内按开测时刻划分的一个测量批次 */
+struct RebuildBatchSummary {
+    QString measureStartTime; // yyyy-MM-dd_HHmmss
+    int datFileCount = 0;
+    QString measureParamPath;
+    QString measureParamTimestamp;
+    QString defaultOutputH5Path;
+};
+
 struct RebuildJob {
     QString shotDirectory;
     QString measureParamPath;
@@ -43,6 +52,35 @@ public:
     explicit SpectrumH5Rebuilder(QObject *parent = nullptr);
 
     static bool scanShotDirectory(const QString &shotDir, RebuildScanResult &result, QString *errorMessage = nullptr);
+
+    /** @brief 扫描目录内全部测量批次（按能谱 dat 开测时刻分组） */
+    static bool scanShotDirectoryBatches(const QString &shotDir,
+                                         QString &shotDirectory,
+                                         QString &shotDirPath,
+                                         QString &shotNum,
+                                         QVector<RebuildBatchSummary> &batches,
+                                         QString *errorMessage = nullptr);
+
+    /** @brief 构建指定批次的扫描结果（dat 列表为目录内该时刻的全部有效文件） */
+    static bool buildBatchScanResult(const QString &shotDirectory,
+                                     const QString &measureStartTime,
+                                     RebuildScanResult &result,
+                                     QString *errorMessage = nullptr);
+
+    /** @brief 校验并解析单个能谱 dat 完整路径 */
+    static bool tryMakeDatEntry(const QString &filePath,
+                                const QString &shotDirPath,
+                                const QString &shotNum,
+                                SpectrumDatEntry &entry,
+                                QString *errorMessage = nullptr);
+
+    /** @brief 校验并解析测量参数 h5 完整路径 */
+    static bool tryMakeMeasureParamPath(const QString &filePath,
+                                          const QString &shotDirPath,
+                                          const QString &shotNum,
+                                          QString *outPath,
+                                          QString *outTimestamp,
+                                          QString *errorMessage = nullptr);
 
     /** @brief 与 CommHelper 生成规则一致：{measureStartTime}_{index}_能谱.dat */
     static QString spectrumDatFileName(const QString &measureStartTime, quint8 detectorId);

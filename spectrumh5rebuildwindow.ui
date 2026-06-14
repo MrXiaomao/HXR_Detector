@@ -44,9 +44,30 @@
      </layout>
     </item>
     <item>
+     <layout class="QHBoxLayout" name="horizontalLayout_batch">
+      <item>
+       <widget class="QLabel" name="label_batch">
+        <property name="text">
+         <string>测量批次</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QComboBox" name="comboBox_batch">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </item>
+    <item>
      <widget class="QGroupBox" name="groupBox_files">
       <property name="title">
-       <string>检测到的文件</string>
+       <string>批次文件（可增删）</string>
       </property>
       <layout class="QVBoxLayout" name="verticalLayout_files">
        <item>
@@ -76,6 +97,44 @@
           </property>
          </column>
         </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="horizontalLayout_fileActions">
+         <item>
+          <widget class="QPushButton" name="bt_addDat">
+           <property name="text">
+            <string>添加能谱 dat...</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="bt_addParam">
+           <property name="text">
+            <string>添加参数 h5...</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="bt_removeFile">
+           <property name="text">
+            <string>移除选中</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="horizontalSpacer_files">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint" stdset="0">
+            <size>
+             <width>40</width>
+             <height>20</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+        </layout>
        </item>
       </layout>
      </widget>
