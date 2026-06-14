@@ -75,9 +75,6 @@ static QTranslator appTranslator;
 int main(int argc, char *argv[])
 {
     QGoodWindow::setup();
-    QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
-    QApplication::setAttribute(Qt::AA_DontUseNativeMenuBar);
-    QApplication::setAttribute(Qt::AA_DontCreateNativeWidgetSiblings);
     QApplication::setHighDpiScaleFactorRoundingPolicy(Qt::HighDpiScaleFactorRoundingPolicy::PassThrough);
 
     QApplication a(argc, argv);
