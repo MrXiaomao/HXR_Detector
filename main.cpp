@@ -65,6 +65,28 @@ void AppMessageHandler(QtMsgType type, const QMessageLogContext& context, const 
     }
 }
 
+static QString resolveAppModuleKey(const QStringList &args)
+{
+    if (args.contains(QStringLiteral("-m")) && args.contains(QStringLiteral("countRateStatistics")))
+        return QStringLiteral("countRateStatistics");
+    if (args.contains(QStringLiteral("-m")) && args.contains(QStringLiteral("neutronYieldStatistics")))
+        return QStringLiteral("neutronYieldStatistics");
+    if (args.contains(QStringLiteral("-m")) && args.contains(QStringLiteral("spectrumH5Rebuild")))
+        return QStringLiteral("spectrumH5Rebuild");
+    return QStringLiteral("main");
+}
+
+static QString exitLogMessage(const QString &moduleKey)
+{
+    if (moduleKey == QStringLiteral("countRateStatistics"))
+        return QObject::tr("计数率统计模块退出");
+    if (moduleKey == QStringLiteral("neutronYieldStatistics"))
+        return QObject::tr("中子产额统计模块退出");
+    if (moduleKey == QStringLiteral("spectrumH5Rebuild"))
+        return QObject::tr("能谱H5重建模块退出");
+    return QObject::tr("主程序退出");
+}
+
 bool gMatlabInited = false;
 #include <locale.h>
 #include <QTextCodec>
@@ -135,6 +157,8 @@ int main(int argc, char *argv[])
     // 启用新的日子记录类
     QString filename = QFileInfo(QCoreApplication::applicationFilePath()).baseName();
     QStringList args = QCoreApplication::arguments();
+    const QString appModuleKey = resolveAppModuleKey(args);
+    const QString appExitLogMessage = exitLogMessage(appModuleKey);
     if (args.contains("-m") && args.contains("offline")){
         filename += ".offline";
     }
@@ -175,8 +199,8 @@ int main(int argc, char *argv[])
         dir.mkpath(".");
     }
 
-    QObject::connect(&a, &QCoreApplication::aboutToQuit, &a, [] {
-        qInfo().noquote() << QObject::tr("软件退出");
+    QObject::connect(&a, &QCoreApplication::aboutToQuit, &a, [appExitLogMessage] {
+        qInfo().noquote() << appExitLogMessage;
         CommHelper::instance()->shutdown();
     }, Qt::DirectConnection);
 
@@ -222,8 +246,10 @@ int main(int argc, char *argv[])
         QApplication::setApplicationName("溴化镧配套软件离线数据分析-能谱H5重建");
         mMainWindow = new SpectrumH5RebuildWindow(isDarkTheme, &w);
     }
-    else
+    else {
+        QApplication::setApplicationName("溴化镧配套软件");
         mMainWindow = new MainWindow(isDarkTheme, &w);
+    }
     w.setupUiHelper(mMainWindow, isDarkTheme);
 
     qInfo().noquote() << QObject::tr("系统启动");

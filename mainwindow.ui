@@ -1795,7 +1795,7 @@
      <x>0</x>
      <y>0</y>
      <width>1431</width>
-     <height>25</height>
+     <height>21</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">
@@ -2298,7 +2298,7 @@
      <normaloff>:/open.png</normaloff>:/open.png</iconset>
    </property>
    <property name="text">
-    <string>计数率统计</string>
+    <string>计数率和死时间统计</string>
    </property>
    <property name="menuRole">
     <enum>QAction::NoRole</enum>
@@ -2352,7 +2352,7 @@
   </action>
   <action name="action_picture_reset">
    <property name="icon">
-    <iconset>
+    <iconset resource="../3rdParty/resource/resource.qrc">
      <normaloff>:/picture_reset.png</normaloff>:/picture_reset.png</iconset>
    </property>
    <property name="text">

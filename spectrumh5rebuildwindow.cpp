@@ -38,6 +38,8 @@ SpectrumH5RebuildWindow::SpectrumH5RebuildWindow(bool isDarkTheme, QWidget *pare
 
     connect(this, &SpectrumH5RebuildWindow::reporWriteLog,
             this, &SpectrumH5RebuildWindow::replyWriteLog);
+    connect(this, &SpectrumH5RebuildWindow::sigWriteLog,
+            this, &SpectrumH5RebuildWindow::replyWriteLog);
     connect(ui->comboBox_batch, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &SpectrumH5RebuildWindow::on_comboBox_batch_currentIndexChanged);
 

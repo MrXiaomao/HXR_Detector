@@ -415,7 +415,6 @@ bool SpectrumH5Rebuilder::scanShotDirectory(const QString &shotDir, RebuildScanR
 bool SpectrumH5Rebuilder::applyMeasureParameters(const QString &measureParamPath, QString *errorMessage)
 {
     mLoadedParameters.clear();
-    mParameterPtrMap.clear();
 
     if (!HDF5Settings::loadMeasureParametersFromH5(measureParamPath, mLoadedParameters)) {
         if (errorMessage)
@@ -427,10 +426,8 @@ bool SpectrumH5Rebuilder::applyMeasureParameters(const QString &measureParamPath
     for (int i = 0; i < DET_NUM; ++i) {
         if (mLoadedParameters[i].id == 0)
             mLoadedParameters[i].id = static_cast<quint8>(i + 1);
-        mParameterPtrMap.insert(mLoadedParameters[i].id, &mLoadedParameters[i]);
     }
 
-    HDF5Settings::instance()->setDetParameter(mParameterPtrMap);
     return true;
 }
 
@@ -465,7 +462,8 @@ bool SpectrumH5Rebuilder::rebuild(const RebuildJob &job)
     emit progress(5, tr("创建 H5 文件..."));
     emit logMessage(tr("输出：%1").arg(job.outputH5Path));
 
-    HDF5Settings::instance()->createH5Spectrum(job.outputH5Path, job.startTime, job.shotTime);
+    HDF5Settings::instance()->createH5Spectrum(job.outputH5Path, job.startTime, job.shotTime,
+                                                 mLoadedParameters);
 
     const int total = job.datFiles.size();
     int index = 0;

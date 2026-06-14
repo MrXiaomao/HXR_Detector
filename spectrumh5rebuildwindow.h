@@ -25,6 +25,7 @@ public:
     void restoreSettings();
 
     Q_SIGNAL void reporWriteLog(const QString &msg, QtMsgType msgType = QtDebugMsg);
+    Q_SIGNAL void sigWriteLog(const QString &msg, QtMsgType msgType = QtDebugMsg);
     Q_SLOT void replyWriteLog(const QString &msg, QtMsgType msgType = QtDebugMsg);
 
 private slots:

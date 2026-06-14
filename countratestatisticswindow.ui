@@ -7,11 +7,11 @@
     <x>0</x>
     <y>0</y>
     <width>1431</width>
-    <height>966</height>
+    <height>1032</height>
    </rect>
   </property>
   <property name="windowTitle">
-   <string>溴化镧配套软件离线数据分析-计数率统计</string>
+   <string>溴化镧配套软件离线数据分析-计数率和死时间统计</string>
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QHBoxLayout" name="horizontalLayout_2">

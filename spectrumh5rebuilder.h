@@ -4,7 +4,6 @@
 #include <QObject>
 #include <QString>
 #include <QVector>
-#include <QMap>
 #include <atomic>
 
 #include "globalsettings.h"
@@ -127,7 +126,6 @@ private:
 
     std::atomic<bool> mCancelled{false};
     QVector<DetParameter> mLoadedParameters;
-    QMap<quint8, DetParameter*> mParameterPtrMap;
 };
 
 #endif // SPECTRUMH5REBUILDER_H

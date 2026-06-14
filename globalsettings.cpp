@@ -501,14 +501,13 @@ H5::DataSet HDF5Settings::createSpecDataSet(H5::H5File* H5File, quint8 index)
     return dataset;
 }
 
-void HDF5Settings::createH5Spectrum(QString filePath, const QString& startTime, const QString& shotTime)
+void HDF5Settings::createH5Spectrum(QString filePath, const QString& startTime, const QString& shotTime,
+                                    const QVector<DetParameter>& configuration)
 {
-    // 创建表格数组
     if (!QFileInfo::exists(filePath))
     {
-        // 文件不存在，创建新文件
         H5::FileAccPropList fapl;
-        fapl.setFcloseDegree(H5F_CLOSE_STRONG);  // 关闭时强制同步所有数据
+        fapl.setFcloseDegree(H5F_CLOSE_STRONG);
 
         try {
             mSpectrumRef = 0;
@@ -516,52 +515,31 @@ void HDF5Settings::createH5Spectrum(QString filePath, const QString& startTime, 
             mSpectrumFilePath = filePath;
             QTextCodec* gbk_codec = QTextCodec::codecForName("GBK");
             QByteArray filePathBytes = gbk_codec->fromUnicode(filePath);
-            mfH5Spectrum = new H5::H5File(filePathBytes.toStdString(), H5F_ACC_TRUNC);//, H5::FileCreatPropList::DEFAULT, fapl);
+            mfH5Spectrum = new H5::H5File(filePathBytes.toStdString(), H5F_ACC_TRUNC);
 
-            // 写入配置信息分组
-            {                
-                normalizeDetParameterMap(mMapDetParameter);
-                const QVector<DetParameter*> data = configurationRowsForWrite(mMapDetParameter);
+            QVector<DetParameter> dataTemp = configuration;
+            dataTemp.resize(DET_NUM);
+            for (int i = 0; i < DET_NUM; ++i) {
+                if (dataTemp[i].id == 0)
+                    dataTemp[i].id = static_cast<quint8>(i + 1);
+            }
 
-                QVector<DetParameter> dataTemp;
-                dataTemp.reserve(DET_NUM);
-                for (int i = 0; i < data.size(); ++i) {
-                    dataTemp.push_back(*data[i]);
-                }
+            hsize_t dims[1] = {DET_NUM};
+            H5::DataSpace dataspace(1, dims);
+            H5::Group cfgGroup = mfH5Spectrum->createGroup("Config");
+            H5::DataSet dataset = cfgGroup.createDataSet("Configuration", mConfigDataType, dataspace);
+            dataset.write(dataTemp.data(), mConfigDataType);
 
-                hsize_t dims[1] = {DET_NUM};
-                H5::DataSpace dataspace(1, dims);
-                H5::Group cfgGroup = mfH5Spectrum->createGroup("Config");
-                H5::DataSet dataset = cfgGroup.createDataSet("Configuration", mConfigDataType, dataspace);
-                dataset.write(dataTemp.data(), mConfigDataType);
+            std::string timeStr = startTime.toStdString();
+            H5::StrType strType(H5::PredType::C_S1, H5T_VARIABLE);
+            H5::DataSpace scalarSpace(H5S_SCALAR);
+            H5::DataSet dataset2 = cfgGroup.createDataSet("StartTime", strType, scalarSpace);
+            dataset2.write(timeStr, strType);
 
-                // 写入当前时间到"Config"组中，以字符串的形式写入
-                std::string timeStr = startTime.toStdString();
-
-                // 1. 创建可变长度字符串类型
-                H5::StrType strType(H5::PredType::C_S1, H5T_VARIABLE);
-
-                // 2. 创建标量 dataspace（不是数组！）
-                H5::DataSpace scalarSpace(H5S_SCALAR);
-
-                // 3. 创建数据集
-                H5::DataSet dataset2 = cfgGroup.createDataSet(
-                    "StartTime",
-                    strType,
-                    scalarSpace);
-
-                // 4. 写入
-                dataset2.write(timeStr, strType);
-
-                // 软件触发模式下写入打靶时刻
-                if (!shotTime.isEmpty()) {
-                    std::string shotTimeStr = shotTime.toStdString();
-                    H5::DataSet shotTimeDataset = cfgGroup.createDataSet(
-                        "ShotTime",
-                        strType,
-                        scalarSpace);
-                    shotTimeDataset.write(shotTimeStr, strType);
-                }
+            if (!shotTime.isEmpty()) {
+                std::string shotTimeStr = shotTime.toStdString();
+                H5::DataSet shotTimeDataset = cfgGroup.createDataSet("ShotTime", strType, scalarSpace);
+                shotTimeDataset.write(shotTimeStr, strType);
             }
         } catch (H5::FileIException& error) {
             QMessageBox::warning(nullptr, "打开配置文件", "H5能谱数据文件打开失败，文件被占用！");
@@ -571,6 +549,19 @@ void HDF5Settings::createH5Spectrum(QString filePath, const QString& startTime, 
             QMessageBox::warning(nullptr, "打开配置文件", "H5能谱数据文件打开失败，数据空间已损坏！");
         }
     }
+}
+
+void HDF5Settings::createH5Spectrum(QString filePath, const QString& startTime, const QString& shotTime)
+{
+    normalizeDetParameterMap(mMapDetParameter);
+    const QVector<DetParameter*> data = configurationRowsForWrite(mMapDetParameter);
+
+    QVector<DetParameter> dataTemp;
+    dataTemp.reserve(DET_NUM);
+    for (int i = 0; i < data.size(); ++i)
+        dataTemp.push_back(*data[i]);
+
+    createH5Spectrum(filePath, startTime, shotTime, dataTemp);
 }
 
 void HDF5Settings::closeH5Spectrum()

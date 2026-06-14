@@ -57,6 +57,7 @@ NeutronYieldStatisticsWindow::NeutronYieldStatisticsWindow(bool isDarkTheme, QWi
     restoreSettings();
     applyColorTheme();
     connect(this, SIGNAL(reporWriteLog(const QString&,QtMsgType)), this, SLOT(replyWriteLog(const QString&,QtMsgType)));
+    connect(this, SIGNAL(sigWriteLog(const QString&,QtMsgType)), this, SLOT(replyWriteLog(const QString&,QtMsgType)));
     qRegisterMetaType<std::vector<FullSpectrum>>("std::vector<FullSpectrum>");
     connect(this, SIGNAL(sigStart()), this, SLOT(slotStart()));
     connect(this, SIGNAL(sigFail()), this, SLOT(slotFail()));//, Qt::QueuedConnection);
