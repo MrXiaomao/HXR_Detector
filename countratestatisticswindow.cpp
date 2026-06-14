@@ -276,28 +276,28 @@ void CountRateStatisticsWindow::initUi()
     ui->leftStackedWidget->setMinimumWidth(582);
 
     ui->tableWidget->setSpan(0, 0, 2, 1);
-    ui->tableWidget->setSpan(0, 1, 1, 2);
+    ui->tableWidget->setSpan(0, 1, 2, 1);
     ui->tableWidget->setItem(0, 1, new QTableWidgetItem("最小值(计数率cps)"));
-    ui->tableWidget->setSpan(0, 3, 1, 2);
-    ui->tableWidget->setItem(0, 3, new QTableWidgetItem("最大值(计数率cps)"));
-    ui->tableWidget->setSpan(0, 5, 1, 2);
-    ui->tableWidget->setItem(0, 5, new QTableWidgetItem("均值(计数率cps)"));
+    ui->tableWidget->setSpan(0, 2, 2, 1);
+    ui->tableWidget->setItem(0, 2, new QTableWidgetItem("最大值(计数率cps)"));
+    ui->tableWidget->setSpan(0, 3, 2, 1);
+    ui->tableWidget->setItem(0, 3, new QTableWidgetItem("均值(计数率cps)"));
+    ui->tableWidget->setSpan(0, 4, 1, 3);
+    ui->tableWidget->setItem(0, 4, new QTableWidgetItem("死时间率％"));
     ui->tableWidget->setSpan(0, 7, 1, 3);
-    ui->tableWidget->setItem(0, 7, new QTableWidgetItem("死时间率％"));
-    ui->tableWidget->setSpan(0, 10, 1, 3);
-    ui->tableWidget->setItem(0, 10, new QTableWidgetItem("死时间(ms)"));
+    ui->tableWidget->setItem(0, 7, new QTableWidgetItem("死时间(ms)"));
 
     ui->tableWidget->item(0, 1)->setTextAlignment(Qt::AlignCenter);
+    ui->tableWidget->item(0, 2)->setTextAlignment(Qt::AlignCenter);
     ui->tableWidget->item(0, 3)->setTextAlignment(Qt::AlignCenter);
-    ui->tableWidget->item(0, 5)->setTextAlignment(Qt::AlignCenter);
+    ui->tableWidget->item(0, 4)->setTextAlignment(Qt::AlignCenter);
     ui->tableWidget->item(0, 7)->setTextAlignment(Qt::AlignCenter);
-    ui->tableWidget->item(0, 10)->setTextAlignment(Qt::AlignCenter);
 
     ui->tableWidget->item(0, 1)->setBackground(Qt::gray);
+    ui->tableWidget->item(0, 2)->setBackground(Qt::gray);
     ui->tableWidget->item(0, 3)->setBackground(Qt::gray);
-    ui->tableWidget->item(0, 5)->setBackground(Qt::gray);
+    ui->tableWidget->item(0, 4)->setBackground(Qt::gray);
     ui->tableWidget->item(0, 7)->setBackground(Qt::gray);
-    ui->tableWidget->item(0, 10)->setBackground(Qt::gray);
 
     for (int row = 0; row < ui->tableWidget->rowCount(); ++row) {
         for (int column = 0; column < ui->tableWidget->columnCount(); ++column) {
@@ -1136,15 +1136,12 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                 }
 
                 double minV = 0.0;
-                double maxV = 0;
-                double minVAdjust = 0.0;
-                double maxVAdjust = 0;
+                double maxV = 0.0;
                 double minVDeathTime = 0.0;
-                double maxVDeathTime = 0;
+                double maxVDeathTime = 0.0;
                 quint32 ref = 0;
-                quint64 total = 0;
-                double totalDeathTime = 0;
-                double totalAdjust = 0;
+                double totalCountRate = 0.0;
+                double totalDeathTime = 0.0;
 
                 mMapCount[index].clear();
                 mMapCountCorrect[index].clear();
@@ -1194,9 +1191,6 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
 
                         const double countRate = totalTemp * 1.0 / data->measureTime * 1000;
                         totalTempDeathT = deathTime * 10.0 / (data->measureTime * 10e6) * 100;
-                        minVDeathTime = qMin(minVDeathTime, totalTempDeathT);
-                        maxVDeathTime = qMax(maxVDeathTime, totalTempDeathT);
-                        totalDeathTime += totalTempDeathT;
 
                         const double countRateCorrect =
                             totalTemp * data->measureTime * 10e6 / (data->measureTime * 10e6 - data->deathTime * 10);
@@ -1211,14 +1205,20 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                             mMapSpectrumCorrect[index][j] += static_cast<quint64>(spectrum[j] * deathTimeCorrectFactor);
                         }
 
+                        if (ref == 0) {
+                            minV = countRate;
+                            maxV = countRate;
+                            minVDeathTime = totalTempDeathT;
+                            maxVDeathTime = totalTempDeathT;
+                        } else {
+                            minV = qMin(minV, countRate);
+                            maxV = qMax(maxV, countRate);
+                            minVDeathTime = qMin(minVDeathTime, totalTempDeathT);
+                            maxVDeathTime = qMax(maxVDeathTime, totalTempDeathT);
+                        }
+                        totalCountRate += countRate;
+                        totalDeathTime += totalTempDeathT;
                         ++ref;
-                        minV = qMin(minV, totalTemp);
-                        maxV = qMax(maxV, totalTemp);
-                        total += static_cast<quint64>(totalTemp);
-
-                        minVAdjust = qMin(minVAdjust, countRateCorrect);
-                        maxVAdjust = qMax(maxVAdjust, countRateCorrect);
-                        totalAdjust += countRateCorrect;
 
                         if (mMapCount[index].size() >= kMaxCountPointsPerDetector) {
                             emit reporWriteLog(tr("通道#%1 解析点数超过上限 %2，已截断")
@@ -1251,19 +1251,16 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                     };
 
                     ensureCell(index + 1, 1)->setText(QString::number(minV));
-                    ensureCell(index + 1, 2)->setText(QString::number(minVAdjust));
-                    ensureCell(index + 1, 3)->setText(QString::number(maxV));
-                    ensureCell(index + 1, 4)->setText(QString::number(maxVAdjust));
-                    ensureCell(index + 1, 5)->setText(QString::number(total / ref));
-                    ensureCell(index + 1, 6)->setText(QString::number(totalAdjust / ref));
-                    ensureCell(index + 1, 7)->setText(QString::number(minVDeathTime, 'e', 2));
-                    ensureCell(index + 1, 8)->setText(QString::number(maxVDeathTime, 'e', 2));
-                    ensureCell(index + 1, 9)->setText(QString::number(totalDeathTime / ref, 'e', 2));
+                    ensureCell(index + 1, 2)->setText(QString::number(maxV));
+                    ensureCell(index + 1, 3)->setText(QString::number(totalCountRate / ref));
+                    ensureCell(index + 1, 4)->setText(QString::number(minVDeathTime, 'e', 2));
+                    ensureCell(index + 1, 5)->setText(QString::number(maxVDeathTime, 'e', 2));
+                    ensureCell(index + 1, 6)->setText(QString::number(totalDeathTime / ref, 'e', 2));
 
                     const double deadTimeScale = measureInterval / 100.0;
-                    ensureCell(index + 1, 10)->setText(QString::number(minVDeathTime * deadTimeScale, 'e', 2));
-                    ensureCell(index + 1, 11)->setText(QString::number(maxVDeathTime * deadTimeScale, 'e', 2));
-                    ensureCell(index + 1, 12)->setText(QString::number(totalDeathTime / ref * deadTimeScale, 'e', 2));
+                    ensureCell(index + 1, 7)->setText(QString::number(minVDeathTime * deadTimeScale, 'f', 3));
+                    ensureCell(index + 1, 8)->setText(QString::number(maxVDeathTime * deadTimeScale, 'f', 3));
+                    ensureCell(index + 1, 9)->setText(QString::number(totalDeathTime / ref * deadTimeScale, 'f', 3));
                 }
 
                 dataset.close();

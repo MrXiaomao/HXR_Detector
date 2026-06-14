@@ -354,27 +354,12 @@
           </column>
           <column>
            <property name="text">
-            <string>最小值</string>
-           </property>
-          </column>
-          <column>
-           <property name="text">
             <string>最大值/cps</string>
            </property>
           </column>
           <column>
            <property name="text">
-            <string>最大值</string>
-           </property>
-          </column>
-          <column>
-           <property name="text">
             <string>均值/cps</string>
-           </property>
-          </column>
-          <column>
-           <property name="text">
-            <string>均值</string>
            </property>
           </column>
           <column>
@@ -425,18 +410,13 @@
           </item>
           <item row="0" column="2">
            <property name="text">
-            <string/>
-           </property>
-          </item>
-          <item row="0" column="3">
-           <property name="text">
             <string>最大值</string>
            </property>
            <property name="textAlignment">
             <set>AlignCenter</set>
            </property>
           </item>
-          <item row="0" column="5">
+          <item row="0" column="3">
            <property name="text">
             <string>均值</string>
            </property>
@@ -449,33 +429,9 @@
             <string/>
            </property>
           </item>
-          <item row="1" column="1">
-           <property name="text">
-            <string>修正前</string>
-           </property>
-           <property name="textAlignment">
-            <set>AlignCenter</set>
-           </property>
-          </item>
-          <item row="1" column="2">
-           <property name="text">
-            <string>修正后</string>
-           </property>
-           <property name="textAlignment">
-            <set>AlignCenter</set>
-           </property>
-          </item>
-          <item row="1" column="3">
-           <property name="text">
-            <string>修正前</string>
-           </property>
-           <property name="textAlignment">
-            <set>AlignCenter</set>
-           </property>
-          </item>
           <item row="1" column="4">
            <property name="text">
-            <string>修正后</string>
+            <string>最小值</string>
            </property>
            <property name="textAlignment">
             <set>AlignCenter</set>
@@ -483,7 +439,7 @@
           </item>
           <item row="1" column="5">
            <property name="text">
-            <string>修正前</string>
+            <string>最大值</string>
            </property>
            <property name="textAlignment">
             <set>AlignCenter</set>
@@ -491,7 +447,7 @@
           </item>
           <item row="1" column="6">
            <property name="text">
-            <string>修正后</string>
+            <string>均值</string>
            </property>
            <property name="textAlignment">
             <set>AlignCenter</set>
@@ -514,30 +470,6 @@
            </property>
           </item>
           <item row="1" column="9">
-           <property name="text">
-            <string>均值</string>
-           </property>
-           <property name="textAlignment">
-            <set>AlignCenter</set>
-           </property>
-          </item>
-          <item row="1" column="10">
-           <property name="text">
-            <string>最小值</string>
-           </property>
-           <property name="textAlignment">
-            <set>AlignCenter</set>
-           </property>
-          </item>
-          <item row="1" column="11">
-           <property name="text">
-            <string>最大值</string>
-           </property>
-           <property name="textAlignment">
-            <set>AlignCenter</set>
-           </property>
-          </item>
-          <item row="1" column="12">
            <property name="text">
             <string>均值</string>
            </property>

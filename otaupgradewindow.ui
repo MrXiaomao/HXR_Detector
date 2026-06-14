@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>OTA更新</string>
+   <string>远程OTA更新</string>
   </property>
   <layout class="QHBoxLayout" name="horizontalLayout_3">
    <item>

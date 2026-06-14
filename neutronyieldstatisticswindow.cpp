@@ -530,7 +530,7 @@ void NeutronYieldStatisticsWindow::updateMeasurementInfoFromFirstFile()
                 mDealSucess[i + 1] = false;
             }
             if (i >= 0 && i < ui->tableWidget->rowCount()) {
-                ui->tableWidget->setItem(i, 5, new QTableWidgetItem(QString::number(rows)));
+                ui->tableWidget->setItem(i, 6, new QTableWidgetItem(QString::number(rows)));
             }
 
             group.close();
@@ -1334,7 +1334,7 @@ void NeutronYieldStatisticsWindow::slotSuccess(int detID)
     // 显示909初始计数
     double count909_N0 = dealFile[detID-1]->GetInitialCount();
     if(detID > 0 && detID <= ui->tableWidget->rowCount()){
-        ui->tableWidget->setItem(detID-1, 4, new QTableWidgetItem(QString::number(count909_N0)));
+        ui->tableWidget->setItem(detID-1, 5, new QTableWidgetItem(QString::number(count909_N0)));
 
         //读取灵敏度标定数据，给出中子产额
         QSettings mSettings("./config/NeutronYield.ini", QSettings::IniFormat);
@@ -1348,8 +1348,8 @@ void NeutronYieldStatisticsWindow::slotSuccess(int detID)
         ui->tableWidget->setItem(detID-1, 1, new QTableWidgetItem(QString::number(yield)));
 
         //从界面左侧表格读取探测器经纬度(这意味着用户可以离线分析中手动修改各个探测器的坐标位置）
-        QTableWidgetItem* longitudeItem = ui->tableWidget->item(detID-1, 2);
-        QTableWidgetItem* latitudeItem = ui->tableWidget->item(detID-1, 3);
+        QTableWidgetItem* longitudeItem = ui->tableWidget->item(detID-1, 3);
+        QTableWidgetItem* latitudeItem = ui->tableWidget->item(detID-1, 4);
         double longitude = 0.0;
         double latitude = 0.0;
         if(longitudeItem && latitudeItem){
@@ -1777,19 +1777,19 @@ bool NeutronYieldStatisticsWindow::setLonLat(int row, double lon, double lat)
 
     ui->tableWidget->blockSignals(true); // 防止触发 itemChanged
 
-    // 经度（第三列）
-    QTableWidgetItem* lonItem = ui->tableWidget->item(row, 2);
+    // 经度（第四列）
+    QTableWidgetItem* lonItem = ui->tableWidget->item(row, 3);
     if (!lonItem) {
         lonItem = new QTableWidgetItem;
-        ui->tableWidget->setItem(row, 2, lonItem);
+        ui->tableWidget->setItem(row, 3, lonItem);
     }
     lonItem->setText(QString::number(lon, 'f', 2));
 
-    // 纬度（第四列）
-    QTableWidgetItem* latItem = ui->tableWidget->item(row, 3);
+    // 纬度（第五列）
+    QTableWidgetItem* latItem = ui->tableWidget->item(row, 4);
     if (!latItem) {
         latItem = new QTableWidgetItem;
-        ui->tableWidget->setItem(row, 3, latItem);
+        ui->tableWidget->setItem(row, 4, latItem);
     }
     latItem->setText(QString::number(lat, 'f', 2));
 
@@ -1832,7 +1832,7 @@ void NeutronYieldStatisticsWindow::on_bt_saveResult_clicked()
     {        
         QTextStream out(&file);
         //写入表头
-        out << "DetectorID\tYield\tLongitude\tLatitude\tInitial909Count\tSpecCount\n";
+        out << "DetectorID\tYield\tUncertainty\tLongitude\tLatitude\tInitial909Count\tSpecCount\n";
         //写入数据
         for (int row = 0; row < ui->tableWidget->rowCount(); row++)
         {

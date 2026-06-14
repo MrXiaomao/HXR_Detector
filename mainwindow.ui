@@ -2222,7 +2222,7 @@
   </action>
   <action name="action_OTA">
    <property name="text">
-    <string>OTA升级</string>
+    <string>远程OTA更新</string>
    </property>
   </action>
   <action name="action_mainApp">

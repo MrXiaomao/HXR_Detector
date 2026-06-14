@@ -1719,8 +1719,8 @@ void MainWindow::on_action_startAllMeasure_triggered()
     ui->cbb_measureMode->setEnabled(false);
     ui->btn_startSelectedMeasure->setEnabled(false);
     ui->btn_stopSelectedMeasure->setEnabled(false);
-    ui->action_waveformMode->setEnabled(false);
-    ui->action_particalMode->setEnabled(false);
+    ui->action_waveformMode->setEnabled(true);
+    ui->action_particalMode->setEnabled(true);
     ui->spinBox_coolTimeLength->setEnabled(false);
 
     if (mMeasureTimer && mMeasureTimer->isValid())
