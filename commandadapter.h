@@ -43,7 +43,7 @@ signals:
     void reportParticleData(quint8 index, const QByteArray&); // 上报粒子数据
     void reportTimestampData(quint8 index, const QByteArray&); // 上报外触发时间戳数据
     void reportParamterData(quint8 index, const QByteArray&); // 上报参数数据
-    void reportTemperatureData(float temperature);
+    void reportTemperatureData(float temperature, const QDateTime& trTime);
 
 // public slots:
 //     void restartTempTimeout();   // 收到温度时调用

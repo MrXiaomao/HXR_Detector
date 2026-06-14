@@ -426,8 +426,8 @@ void CommHelper::initDataProcessor()
         mDetectorDataProcessor[index] = processor;
 
         // 更新温度数据
-        connect(processor, &DataProcessor::reportTemperatureData, this, [=](double temperature){
-            emit reportDetectorTemperature(processor->getIndex(), temperature);
+        connect(processor, &DataProcessor::reportTemperatureData, this, [=](double temperature, const QDateTime& trTime){
+            emit reportDetectorTemperature(processor->getIndex(), temperature, trTime);
             mTempUpdateTime[processor->getIndex()] = QDateTime::currentMSecsSinceEpoch();
         }, Qt::DirectConnection);
 

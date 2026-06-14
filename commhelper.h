@@ -1,4 +1,4 @@
-#ifndef COMMHELPER_H
+﻿#ifndef COMMHELPER_H
 #define COMMHELPER_H
 
 #include <QObject>
@@ -142,7 +142,7 @@ public:
 
     Q_SIGNAL void settingfinished();//配置完成
 
-    Q_SIGNAL void reportDetectorTemperature(quint8, float temperature); //探测器温度报告
+    Q_SIGNAL void reportDetectorTemperature(quint8, float temperature, const QDateTime& trTime); //探测器温度报告
     Q_SIGNAL void reportTemperatureTimeout(quint8 index); //探测器温度超时报警
     Q_SIGNAL void reportFullSpectrum(quint8 index, const FullSpectrum& fullSpectrum); // 发送完整的能谱数据
     Q_SIGNAL void reportWaveCurve(quint8, const QVector<quint16>& data); // 发送解析后的波形曲线

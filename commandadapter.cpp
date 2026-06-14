@@ -117,10 +117,18 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
 
         // 温度监测（心跳检测）
         if (hasHeadAt(pos, kCmdTempHead)) {
-            qint32 t = qFromBigEndian<qint32>(cachePool.constData() + pos + 6);
+            quint32 timeUTCs = qFromBigEndian<quint32>(cachePool.constData() + pos + 6);
+            quint32 timeUTCms = qFromBigEndian<quint32>(cachePool.constData() + pos + 10);
+            qint32 t = qFromBigEndian<qint32>(cachePool.constData() + pos + 14);
             float temperature = t * 0.0001f;
-            QMetaObject::invokeMethod(this, "reportTemperatureData", Qt::DirectConnection, Q_ARG(float, temperature));
-            pos += kCmdLen;
+            quint64 msecond = static_cast<quint64>(timeUTCms) * 1000 / std::pow(2,32);//65536; // 毫秒
+
+            // UTC转Unix时间戳，也就是从1970年1月1日00：00：00开始计算的整数秒数
+            quint64 tmUnix = static_cast<quint64>(timeUTCs) - 2208988800ULL; // UTC时间戳（1970）-unix时间戳
+            QDateTime tm = QDateTime::fromMSecsSinceEpoch(tmUnix*1000 + msecond);
+
+            QMetaObject::invokeMethod(this, "reportTemperatureData", Qt::DirectConnection, Q_ARG(float, temperature), Q_ARG(QDateTime, tm));
+            pos += kCmdLen + 8;// 新扩展的数据包长度为20
             handled = true;
             needNotifyNextCmd = true;
         }

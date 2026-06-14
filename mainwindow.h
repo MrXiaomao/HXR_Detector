@@ -1,4 +1,4 @@
-#ifndef MAINWINDOW_H
+﻿#ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
 #include <QMainWindow>
@@ -171,7 +171,7 @@ private slots:
     // 处理数据解析后的能谱数据（解析线程）：累积数据；绘图投递到主线程
     void onFullSpectrum_Thread(int detID, const FullSpectrum& fullSpectrum);
     // 解析线程上报温度，仅写缓存
-    void onReportDetectorTemperature(quint8 index, float temperature);
+    void onReportDetectorTemperature(quint8 index, float temperature, const QDateTime& trTime);
 
     // 系统刷新定时器，暂定于每秒钟刷新1次，刷新内容包括：测量时间、能谱图像、计数率曲线等
     void onSystemTimer();
@@ -299,6 +299,7 @@ private:
     // 温度离线/定时写盘缓存（满足：temperature/<yyyy-MM-dd>/<index>.txt；跨午夜按点归档）
     struct TempPoint {
         QString dtStr;      // "yyyy-MM-dd HH:mm:ss"（精确到秒）
+        QString dtStrDetector;      // "yyyy-MM-dd HH:mm:ss"（精确到秒）探测器时间戳
         float temperature;
     };
     QHash<quint8, QHash<QString, QVector<TempPoint>>> m_tempPointCache; // index -> day(yyyy-MM-dd) -> points

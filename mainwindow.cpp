@@ -1250,7 +1250,7 @@ void MainWindow::onPoePowerStatusReport(quint8 index, bool on)
     cell->setChecked(on);
 }
 
-void MainWindow::onReportDetectorTemperature(quint8 index, float temperature)
+void MainWindow::onReportDetectorTemperature(quint8 index, float temperature, const QDateTime& trTime)
 {
     if (index < 0 || index > DET_NUM) //注意，index=0对应时间触发模块
         return;
@@ -1261,7 +1261,8 @@ void MainWindow::onReportDetectorTemperature(quint8 index, float temperature)
 
     const QString ymd = now.toString("yyyy-MM-dd");
     const QString dtStr = now.toString("yyyy-MM-dd HH:mm:ss"); // 精确到秒
-    TempPoint p{dtStr, temperature};
+    const QString dtStr2 = now.toString("yyyy-MM-dd HH:mm:ss"); // 精确到秒
+    TempPoint p{dtStr, dtStr2, temperature};
 
     // QMutexLocker flushLocker(&mMutexTemperature);
     m_tempPointCache[index][ymd].push_back(p);
@@ -1364,7 +1365,7 @@ void MainWindow::flushTemperatureCache()
             QTextStream temperatureStream(&temperatureFile);
             for (const TempPoint& p : points)
             {
-                temperatureStream << p.dtStr << "," << QString::number(p.temperature, 'f', 1) << "\n";
+                temperatureStream << p.dtStr << "," << p.dtStrDetector << "," << QString::number(p.temperature, 'f', 1) << "\n";
             }
             temperatureFile.close();
 
