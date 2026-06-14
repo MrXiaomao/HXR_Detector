@@ -98,9 +98,19 @@ public slots:
      */
     bool setLonLat(int row, double lon, double lat);
 
+    void initFileListTable();
+    void addFilesToList(const QStringList &paths);
+    void refreshFileListBasicColumns();
+    QStringList filePathsFromTable() const;
+    void updateMeasurementInfoFromFirstFile();
+
 private slots:
-    // 选取待处理文件，目前只支持处理H5文件
+    // 添加待处理文件（可多选），目前只支持处理H5文件
     void on_action_open_triggered();
+
+    void on_bt_addFiles_clicked();
+    void on_bt_removeFile_clicked();
+    void on_bt_clearFiles_clicked();
 
     // 开始解析文件
     void on_action_startCalculate_triggered();
@@ -148,7 +158,7 @@ private:
     QMap<int, bool> mDealSucess; //存放各个通道中子产额解析是否成功的标志,探测器编号：1~DET_NUM
     QMap<int, Sensor> myield; //存放各个通道中子产额。通道编号：1-DET_NUM，通道经纬度，通道的中子产额
     ParseData* dealFile[DET_NUM];
-    QString mfilePath; //待解析的文件名
+    QStringList mFilePaths; // 待解析的文件列表（按表格顺序）
 };
 
 #endif // NEUTRONYIELDSTATISTICSWINDOW_H

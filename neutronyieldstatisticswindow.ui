@@ -650,9 +650,9 @@
           <item>
            <widget class="QGroupBox" name="groupBox_2">
             <property name="sizePolicy">
-             <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+             <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
               <horstretch>0</horstretch>
-              <verstretch>0</verstretch>
+              <verstretch>1</verstretch>
              </sizepolicy>
             </property>
             <property name="title">
@@ -660,38 +660,119 @@
             </property>
             <layout class="QVBoxLayout" name="verticalLayout_6">
              <item>
-              <widget class="QLabel" name="label_5">
-               <property name="text">
-                <string>文件来源：</string>
-               </property>
+              <widget class="QWidget" name="widget_fileListToolbar" native="true">
+               <layout class="QHBoxLayout" name="horizontalLayout_fileListToolbar">
+                <property name="leftMargin">
+                 <number>0</number>
+                </property>
+                <property name="topMargin">
+                 <number>0</number>
+                </property>
+                <property name="rightMargin">
+                 <number>0</number>
+                </property>
+                <property name="bottomMargin">
+                 <number>0</number>
+                </property>
+                <item>
+                 <widget class="QPushButton" name="bt_addFiles">
+                  <property name="text">
+                   <string>添加文件</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="bt_removeFile">
+                  <property name="text">
+                   <string>移除选中</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <widget class="QPushButton" name="bt_clearFiles">
+                  <property name="text">
+                   <string>清空列表</string>
+                  </property>
+                 </widget>
+                </item>
+                <item>
+                 <spacer name="horizontalSpacer_fileList">
+                  <property name="orientation">
+                   <enum>Qt::Horizontal</enum>
+                  </property>
+                  <property name="sizeHint" stdset="0">
+                   <size>
+                    <width>40</width>
+                    <height>20</height>
+                   </size>
+                  </property>
+                 </spacer>
+                </item>
+               </layout>
               </widget>
              </item>
              <item>
-              <widget class="QTextBrowser" name="textBrowser_filepath">
+              <widget class="QTableWidget" name="tableWidget_fileList">
                <property name="sizePolicy">
-                <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
                  <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
+                 <verstretch>1</verstretch>
                 </sizepolicy>
                </property>
                <property name="minimumSize">
                 <size>
                  <width>0</width>
-                 <height>30</height>
+                 <height>80</height>
                 </size>
                </property>
-               <property name="maximumSize">
-                <size>
-                 <width>16777215</width>
-                 <height>46</height>
-                </size>
+               <property name="editTriggers">
+                <set>QAbstractItemView::NoEditTriggers</set>
                </property>
-               <property name="verticalScrollBarPolicy">
-                <enum>Qt::ScrollBarAlwaysOff</enum>
+               <property name="selectionMode">
+                <enum>QAbstractItemView::SingleSelection</enum>
                </property>
-               <property name="readOnly">
+               <property name="selectionBehavior">
+                <enum>QAbstractItemView::SelectRows</enum>
+               </property>
+               <property name="showGrid">
                 <bool>true</bool>
                </property>
+               <property name="columnCount">
+                <number>6</number>
+               </property>
+               <attribute name="horizontalHeaderStretchLastSection">
+                <bool>true</bool>
+               </attribute>
+               <column>
+                <property name="text">
+                 <string>序号</string>
+                </property>
+               </column>
+               <column>
+                <property name="text">
+                 <string>文件名</string>
+                </property>
+               </column>
+               <column>
+                <property name="text">
+                 <string>开测时刻</string>
+                </property>
+               </column>
+               <column>
+                <property name="text">
+                 <string>时长(s)</string>
+                </property>
+               </column>
+               <column>
+                <property name="text">
+                 <string>能谱数</string>
+                </property>
+               </column>
+               <column>
+                <property name="text">
+                 <string>与上段间隔</string>
+                </property>
+               </column>
               </widget>
              </item>
              <item>
@@ -1106,13 +1187,13 @@
      <normaloff>:/open.png</normaloff>:/open.png</iconset>
    </property>
    <property name="text">
-    <string>打开文件(&amp;O)...</string>
+    <string>添加文件(&amp;O)...</string>
    </property>
    <property name="iconText">
-    <string>打开文件</string>
+    <string>添加文件</string>
    </property>
    <property name="toolTip">
-    <string>打开文件</string>
+    <string>添加测量数据文件（可多选）</string>
    </property>
    <property name="shortcut">
     <string>Ctrl+O</string>
