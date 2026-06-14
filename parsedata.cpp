@@ -1,4 +1,5 @@
 ﻿#include "parsedata.h"
+#include "offlinespectrumparser.h"
 #include <QFile>
 #include <QDataStream>
 #include <QElapsedTimer>
@@ -823,8 +824,20 @@ int ParseData::parseH5File(const QString& filePath, const quint32 detectorId)
     else return 0;
 }
 
-// 解析大文件中的网络数据包（流式读取）
+// 解析大文件中的网络数据包（流式读取，内部委托 OfflineSpectrumDatReader）
 int ParseData::parseDatFile(const QString &filePath)
+{
+    m_allSpec.clear();
+    m_parasemode = offlineMode;
+
+    if (!OfflineSpectrumDatReader::read(filePath, m_allSpec))
+        return -1;
+
+    return m_allSpec.size();
+}
+
+#if 0 // 旧 0x55 协议实现，已废弃
+int ParseData::parseDatFile_legacy(const QString &filePath)
 {
     quint64 bufferSize = 10*1024*1024;
 
@@ -896,6 +909,7 @@ int ParseData::parseDatFile(const QString &filePath)
 
     return packetsFound;
 }
+#endif
 
 // 处理缓冲区中的数据
 int ParseData::processBuffer(bool isFinal)

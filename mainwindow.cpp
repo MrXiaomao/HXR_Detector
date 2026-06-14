@@ -3255,6 +3255,23 @@ void MainWindow::on_action_neutronYieldStatistics_triggered()
     qInfo().nospace().noquote() << tr("打开离线数据分析程序-中子产额统计");
 }
 
+
+void MainWindow::on_action_spectrumH5Rebuild_triggered()
+{
+    QString program = QCoreApplication::applicationFilePath();
+    QStringList arguments;
+    arguments.append("-m");
+    arguments.append("spectrumH5Rebuild");
+
+    static int num = 0;
+    arguments.append("-num");
+    arguments.append(QString::number(num));
+    num++;
+    QProcess::startDetached(program, arguments);
+
+    qInfo().nospace().noquote() << tr("打开离线数据分析程序-能谱H5重建");
+}
+
 #include "waveformwindow.h"
 void MainWindow::on_action_waveformMode_triggered()
 {

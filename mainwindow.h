@@ -205,6 +205,8 @@ private slots:
 
     void on_action_neutronYieldStatistics_triggered();
 
+    void on_action_spectrumH5Rebuild_triggered();
+
     void on_action_waveformMode_triggered();
 
     void on_lineEdit_filePath_editingFinished();

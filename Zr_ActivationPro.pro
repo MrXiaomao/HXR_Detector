@@ -32,10 +32,13 @@ SOURCES += \
     neutronyieldcalibration.cpp \
     neutronyieldstatisticswindow.cpp \
     otaupgradewindow.cpp \
+    offlinespectrumparser.cpp \
     parsedata.cpp \
     particalwindow.cpp \
     qcomboboxdelegate.cpp \
     qhuaweiswitcherhelper.cpp \
+    spectrumh5rebuilder.cpp \
+    spectrumh5rebuildwindow.cpp \
     switchbutton.cpp \
     sysutils.cpp \
     waveformwindow.cpp
@@ -57,11 +60,14 @@ HEADERS += \
     neutronyieldcalibration.h \
     neutronyieldstatisticswindow.h \
     otaupgradewindow.h \
+    offlinespectrumparser.h \
     parsedata.h \
     particalwindow.h \
     qcomboboxdelegate.h \
     qhuaweiswitcherhelper.h \
     qlitethread.h \
+    spectrumh5rebuilder.h \
+    spectrumh5rebuildwindow.h \
     commhelper.h \
     crashhandler.h \
     detparamlogger.h \
@@ -83,6 +89,7 @@ FORMS += \
     neutronyieldstatisticswindow.ui \
     otaupgradewindow.ui \
     particalwindow.ui \
+    spectrumh5rebuildwindow.ui \
     waveformwindow.ui
 
 # Default rules for deployment.

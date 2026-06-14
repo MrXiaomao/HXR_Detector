@@ -5,6 +5,7 @@
 // #include "commhelper.h"
 #include "countratestatisticswindow.h"
 #include "neutronyieldstatisticswindow.h"
+#include "spectrumh5rebuildwindow.h"
 #include "useractionlogger.h"
 #include "lightstyle.h"
 #include "darkstyle.h"
@@ -216,6 +217,10 @@ int main(int argc, char *argv[])
     else if (args.contains("-m") && args.contains("neutronYieldStatistics")){
         QApplication::setApplicationName("溴化镧配套软件离线数据分析-中子产额统计");
         mMainWindow = new NeutronYieldStatisticsWindow(isDarkTheme, &w);
+    }
+    else if (args.contains("-m") && args.contains("spectrumH5Rebuild")){
+        QApplication::setApplicationName("溴化镧配套软件离线数据分析-能谱H5重建");
+        mMainWindow = new SpectrumH5RebuildWindow(isDarkTheme, &w);
     }
     else
         mMainWindow = new MainWindow(isDarkTheme, &w);

@@ -19,7 +19,7 @@
 
 #include "qlitethread.h"
 #include "commandadapter.h"
-#include "parsedata.h"
+#include "globalsettings.h"
 
 #if ENABLE_LIBHV
 #include <hv/TcpServer.h>
@@ -144,7 +144,6 @@ private:
     QHash<quint32, FullSpectrum> mFullSpectrums; // 按能谱序号存储拼接中的能谱
     quint32 mLastSpectrumSeq = 0;
     FullSpectrum mLastFullSpectrum; // 保存上一个全能谱，做缺包补偿用
-    ParseData* m_parseData;
 
     QTimer mTempTimeoutTimer; //心跳检测定时器
 

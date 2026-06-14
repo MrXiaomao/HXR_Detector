@@ -116,8 +116,11 @@ public:
      */
     int parseH5File(const QString& filePath, const quint32 detectorId);
 
-    // 解析大文件中的网络数据包（流式读取）
+    // 已废弃旧 0x55 协议实现，改为与在线测量一致的拆包/拼包逻辑
     int parseDatFile(const QString &filePath);
+
+    /** @brief 最近一次 parseDatFile / parseH5File 读到的全部能谱 */
+    const QVector<H5Spectrum>& allSpec() const { return m_allSpec; }
 
     // 处理缓冲区中的数据
     int processBuffer(bool isFinal);

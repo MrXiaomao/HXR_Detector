@@ -916,6 +916,14 @@ public:
      */
     bool saveMeasureParametersToH5(const QString& filePath, const QMap<quint8, DetParameter*>& parameters);
 
+    /**
+     * @brief 从 measureParam.h5 读取测量参数
+     * @param filePath H5文件路径
+     * @param outParameters 按 id 1..DET_NUM 顺序的探测器参数
+     * @return 是否读取成功
+     */
+    static bool loadMeasureParametersFromH5(const QString& filePath, QVector<DetParameter>& outParameters);
+
     // Getter函数
     quint32 pluseTime() const { return mPluseTime; }
 

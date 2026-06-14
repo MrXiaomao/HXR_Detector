@@ -1804,6 +1804,7 @@
     </property>
     <addaction name="action_countRateStatistics"/>
     <addaction name="action_neutronYieldStatistics"/>
+    <addaction name="action_spectrumH5Rebuild"/>
     <addaction name="separator"/>
     <addaction name="action_exit"/>
    </widget>
@@ -2310,6 +2311,18 @@
    </property>
    <property name="text">
     <string>中子产额统计</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::NoRole</enum>
+   </property>
+  </action>
+  <action name="action_spectrumH5Rebuild">
+   <property name="icon">
+    <iconset resource="../3rdParty/resource/resource.qrc">
+     <normaloff>:/open.png</normaloff>:/open.png</iconset>
+   </property>
+   <property name="text">
+    <string>能谱H5重建</string>
    </property>
    <property name="menuRole">
     <enum>QAction::NoRole</enum>

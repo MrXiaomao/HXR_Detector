@@ -4,7 +4,6 @@
 DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
     : CommandAdapter(index, parent)
 {
-    m_parseData = nullptr;
     mDataProcessThread = new QLiteThread(this);
     mDataProcessThread->setWorkThreadProc([=](){
         while (!mTerminatedDataThread.load())
@@ -83,12 +82,6 @@ DataProcessor::~DataProcessor()
         mParserResetCondition.wakeAll();
         mDataCondition.wakeOne();
         mDataProcessThread->wait();
-    }
-
-    // 析构时确保释放资源
-    if (m_parseData) {
-        delete m_parseData;
-        m_parseData = nullptr;
     }
 }
 
@@ -215,15 +208,6 @@ void DataProcessor::startMeasure(CommandAdapter::WorkMode workMode)
         mLastSpectrumSeq = 0;
     }
 
-    if (m_parseData) {
-        delete m_parseData;
-        m_parseData = nullptr;
-    }
-    // 创建新对象，初始化测量状态
-    m_parseData = new ParseData();
-
-    QString mMeasureStartTime = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
-
     //#12 波形工作模式=1|0|22|1234000FFF1000000000ABCD
     //#13 能谱工作模式=1|0|23|1234000FFF1000000001ABCD
     //#14 粒子工作模式=1|0|24|1234000FFF1000000002ABCD
@@ -242,15 +226,6 @@ void DataProcessor::startAutoMeasure(QDateTime tmStart, CommandAdapter::WorkMode
         mFullSpectrums.clear();
         mLastSpectrumSeq = 0;
     }
-
-    if (m_parseData) {
-        delete m_parseData;
-        m_parseData = nullptr;
-    }
-    // 创建新对象，初始化测量状态
-    m_parseData = new ParseData();
-
-    QString mMeasureStartTime = QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
 
     //#12 波形工作模式=1|0|22|1234000FFF1000000000ABCD
     //#13 能谱工作模式=1|0|23|1234000FFF1000000001ABCD
