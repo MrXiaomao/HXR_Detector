@@ -760,7 +760,7 @@
                </column>
                <column>
                 <property name="text">
-                 <string>开测时刻</string>
+                 <string>开始时刻</string>
                 </property>
                </column>
                <column>

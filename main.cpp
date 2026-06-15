@@ -252,7 +252,8 @@ int main(int argc, char *argv[])
     }
     w.setupUiHelper(mMainWindow, isDarkTheme);
 
-    qInfo().noquote() << QObject::tr("系统启动");
+    qInfo().noquote() << QObject::tr("系统启动，模块：%1，程序目录：%2")
+                             .arg(appModuleKey, QCoreApplication::applicationDirPath());
     qInfo().noquote() << QString("软件版本信息：%1, git:%2,%3").arg(GIT_BRANCH, GIT_HASH, GIT_DATE);
     CRASH_BREADCRUMB(QObject::tr("主界面已启动"));
 

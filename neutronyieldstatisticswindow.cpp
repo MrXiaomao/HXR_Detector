@@ -21,6 +21,7 @@
 #include <QMessageBox>
 #include <math.h>
 #include <algorithm>
+#include <cstring>
 
 // #include "H5Cpp.h"
 #include "CrasterParabolicHeatmapWidget.h"
@@ -31,8 +32,11 @@ enum FileListColumn {
     ColIndex = 0,
     ColFileName,
     ColStartTime,
+    ColEndTime,
     ColDuration,
     ColSpectrumCount,
+    ColSpecTimeInterval,
+    ColValidChannels,
     ColGap,
     ColCount
 };
@@ -41,6 +45,63 @@ QDateTime measureStartTimeFromPath(const QString &filePath)
 {
     const QString timePart = QFileInfo(filePath).baseName().left(17).replace('_', ' ');
     return QDateTime::fromString(timePart, "yyyy-MM-dd HHmmss");
+}
+
+/** 将 H5Spectrum 中的 UTC 时间戳转为 QDateTime（含毫秒），逻辑同 DataProcessor::extractTimestampData_Thread */
+QDateTime h5UtcToDateTime(quint32 timeUTCs, quint32 timeUTCms)
+{
+    const quint64 msecond = static_cast<quint64>(timeUTCms) * 1000 / (1ULL << 32);
+    const quint64 tmUnix = static_cast<quint64>(timeUTCs) - 2208988800ULL;
+    return QDateTime::fromMSecsSinceEpoch(tmUnix * 1000 + msecond);
+}
+
+bool readH5SpectrumRow(H5::DataSet &dataset, hsize_t cols, hsize_t rowIndex, H5Spectrum &out)
+{
+    H5::DataSpace file_space = dataset.getSpace();
+    hsize_t mem_dims[2] = {1, cols};
+    H5::DataSpace mem_space(2, mem_dims);
+    uint32_t *row_data = new uint32_t[cols];
+
+    hsize_t start[2] = {rowIndex, 0};
+    hsize_t count[2] = {1, cols};
+    file_space.selectHyperslab(H5S_SELECT_SET, count, start);
+    dataset.read(row_data, H5::PredType::NATIVE_UINT, mem_space, file_space);
+    std::memcpy(&out, row_data, sizeof(H5Spectrum));
+    delete[] row_data;
+    file_space.close();
+    return true;
+}
+
+/** 将有效通道号格式化为区间列表，如 1-32 或 1-5,7-32 */
+QString formatChannelRanges(const QMap<int, quint32> &specCount)
+{
+    if (specCount.isEmpty())
+        return QString();
+
+    QList<int> ids = specCount.keys();
+    std::sort(ids.begin(), ids.end());
+
+    QStringList parts;
+    int rangeStart = ids.first();
+    int rangeEnd = ids.first();
+
+    const auto flushRange = [&]() {
+        if (rangeStart == rangeEnd)
+            parts.append(QString::number(rangeStart));
+        else
+            parts.append(QStringLiteral("%1-%2").arg(rangeStart).arg(rangeEnd));
+    };
+
+    for (int i = 1; i < ids.size(); ++i) {
+        if (ids[i] == rangeEnd + 1) {
+            rangeEnd = ids[i];
+        } else {
+            flushRange();
+            rangeStart = rangeEnd = ids[i];
+        }
+    }
+    flushRange();
+    return parts.join(QStringLiteral(","));
 }
 } // namespace
 
@@ -323,8 +384,8 @@ void NeutronYieldStatisticsWindow::initFileListTable()
     QTableWidget *table = ui->tableWidget_fileList;
     table->setColumnCount(ColCount);
     table->setHorizontalHeaderLabels({
-        tr("序号"), tr("文件名"), tr("开测时刻"),
-        tr("时长(s)"), tr("能谱数"), tr("与上段间隔")
+        tr("序号"), tr("文件名"), tr("开始时刻"), tr("结束时刻"),
+        tr("时长(s)"), tr("能谱数"), tr("能谱时间间隔"), tr("有效通道"), tr("与上段间隔")
     });
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     table->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -338,7 +399,15 @@ void NeutronYieldStatisticsWindow::initFileListTable()
     table->horizontalHeader()->setStretchLastSection(true);
     table->horizontalHeader()->setSectionResizeMode(ColIndex, QHeaderView::Fixed);
     table->horizontalHeader()->setSectionResizeMode(ColFileName, QHeaderView::Stretch);
+    table->horizontalHeader()->setSectionResizeMode(ColStartTime, QHeaderView::Fixed);
+    table->horizontalHeader()->setSectionResizeMode(ColEndTime, QHeaderView::Fixed);
     table->setColumnWidth(ColIndex, 40);
+    table->setColumnWidth(ColStartTime, 190);
+    table->setColumnWidth(ColEndTime, 190);
+    table->horizontalHeader()->setSectionResizeMode(ColSpecTimeInterval, QHeaderView::Fixed);
+    table->setColumnWidth(ColSpecTimeInterval, 90);
+    table->horizontalHeader()->setSectionResizeMode(ColValidChannels, QHeaderView::Fixed);
+    table->setColumnWidth(ColValidChannels, 100);
 
     connect(table->model(), &QAbstractItemModel::rowsMoved, this, [this]() {
         refreshFileListBasicColumns();
@@ -444,10 +513,242 @@ void NeutronYieldStatisticsWindow::addFilesToList(const QStringList &paths)
         }
 
         emit reporWriteLog(tr("添加测量文件：%1").arg(filePath));
+
+        H5FileChannelMeta meta;
+        if (readH5FileChannelMeta(filePath, meta))
+            applyMeasurementMetaToFileListRow(row, meta);
+        else
+            applyMeasurementMetaToFileListRow(row, H5FileChannelMeta{});
     }
 
+    updateFileListGapColumns();
     refreshFileListBasicColumns();
     updateMeasurementInfoFromFirstFile();
+}
+
+void NeutronYieldStatisticsWindow::computeCommonTimeInterval(const H5FileChannelMeta &meta,
+                                                             QDateTime &commonStart,
+                                                             QDateTime &commonEnd)
+{
+    commonStart = QDateTime();
+    commonEnd = QDateTime();
+    for (auto it = meta.firstDateTime.cbegin(); it != meta.firstDateTime.cend(); ++it) {
+        const int detId = it.key();
+        if (!meta.lastDateTime.contains(detId))
+            continue;
+        const QDateTime first = it.value();
+        const QDateTime last = meta.lastDateTime.value(detId);
+        if (!first.isValid() || !last.isValid())
+            continue;
+        if (!commonStart.isValid()) {
+            commonStart = first;
+            commonEnd = last;
+        } else {
+            if (first > commonStart)
+                commonStart = first;
+            if (last < commonEnd)
+                commonEnd = last;
+        }
+    }
+}
+
+bool NeutronYieldStatisticsWindow::readH5FileChannelMeta(const QString &filePath,
+                                                         H5FileChannelMeta &out,
+                                                         bool applyDetectorLonLat,
+                                                         bool showErrorDialog)
+{
+    out = H5FileChannelMeta{};
+
+    try {
+        QTextCodec *gbk_codec = QTextCodec::codecForName("GBK");
+        QByteArray filePathBytes = gbk_codec->fromUnicode(filePath);
+        H5::H5File file(filePathBytes.toStdString(), H5F_ACC_RDONLY);
+
+        try {
+            H5::Group configGroup = file.openGroup("Config");
+            H5::DataSet configDataset = configGroup.openDataSet("Configuration");
+            H5::CompType cfgType = HDF5Settings::createCfgDataType();
+            DetParameter cfg[DET_NUM];
+            configDataset.read(&cfg, cfgType);
+            configDataset.close();
+            configGroup.close();
+
+            if (applyDetectorLonLat) {
+                for (int i = 0; i < DET_NUM; ++i)
+                    setLonLat(i, cfg[i].longitude, cfg[i].latitude);
+            }
+        } catch (H5::Exception &) {
+            emit reporWriteLog(tr("文件 %1 缺少 Config/Configuration，跳过探测器参数读取")
+                                   .arg(QFileInfo(filePath).fileName()),
+                               QtWarningMsg);
+        }
+
+        for (int i = 0; i < DET_NUM; ++i) {
+            const int detId = i + 1;
+            const QString detName = QString("Detector#%1").arg(detId);
+
+            try {
+                H5::Group group = file.openGroup(detName.toStdString());
+                H5::DataSet dataset = group.openDataSet("Spectrum");
+
+                H5::CompType fileType = dataset.getCompType();
+                if (fileType != H5::PredType::NATIVE_UINT) {
+                    emit reporWriteLog(tr("谱仪%1数据类型不匹配，跳过").arg(detId), QtWarningMsg);
+                    group.close();
+                    dataset.close();
+                    continue;
+                }
+
+                H5::DataSpace file_space = dataset.getSpace();
+                hsize_t current_dims[2];
+                file_space.getSimpleExtentDims(current_dims, NULL);
+                const hsize_t rows = current_dims[0];
+                const hsize_t cols = current_dims[1];
+
+                if (rows <= 0) {
+                    emit reporWriteLog(tr("谱仪%1无能谱数据，跳过").arg(detId), QtWarningMsg);
+                    group.close();
+                    dataset.close();
+                    file_space.close();
+                    continue;
+                }
+
+                H5Spectrum firstSpec{};
+                H5Spectrum lastSpec{};
+                readH5SpectrumRow(dataset, cols, 0, firstSpec);
+                readH5SpectrumRow(dataset, cols, rows - 1, lastSpec);
+
+                const QDateTime firstDt = h5UtcToDateTime(firstSpec.timeUTCs, firstSpec.timeUTCms);
+                const QDateTime lastDt = h5UtcToDateTime(lastSpec.timeUTCs, lastSpec.timeUTCms);
+                out.firstDateTime[detId] = firstDt;
+                out.lastDateTime[detId] = lastDt;
+                out.specCount[detId] = static_cast<quint32>(rows);
+
+                if (!out.hasMeasureTime) {
+                    out.measureTimeMs = firstSpec.measureTime;
+                    out.hasMeasureTime = true;
+                }
+
+                emit reporWriteLog(tr("谱仪%1时间范围：%2 ~ %3")
+                                       .arg(detId)
+                                       .arg(firstDt.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss.zzz")))
+                                       .arg(lastDt.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss.zzz"))));
+
+                if (applyDetectorLonLat && i >= 0 && i < ui->tableWidget->rowCount()) {
+                    ui->tableWidget->setItem(i, 6, new QTableWidgetItem(QString::number(rows)));
+                }
+
+                group.close();
+                dataset.close();
+                file_space.close();
+            } catch (H5::Exception &) {
+                emit reporWriteLog(tr("谱仪%1无数据或组不存在，跳过").arg(detId), QtWarningMsg);
+            }
+        }
+        file.close();
+    } catch (H5::FileIException &) {
+        if (showErrorDialog) {
+            QMessageBox::critical(this, tr("错误"), tr("无法打开HDF5文件，可能被占用。"));
+        } else {
+            emit reporWriteLog(tr("无法打开HDF5文件：%1").arg(filePath), QtWarningMsg);
+        }
+        return false;
+    } catch (H5::Exception &) {
+        if (showErrorDialog) {
+            QMessageBox::critical(this, tr("错误"), tr("HDF5读取异常。"));
+        } else {
+            emit reporWriteLog(tr("HDF5读取异常：%1").arg(filePath), QtWarningMsg);
+        }
+        return false;
+    }
+
+    computeCommonTimeInterval(out, out.commonStart, out.commonEnd);
+    out.valid = out.commonStart.isValid() && out.commonEnd.isValid();
+    if (out.valid && out.commonStart > out.commonEnd) {
+        emit reporWriteLog(tr("文件 %1 各通道时间无重叠区间").arg(QFileInfo(filePath).fileName()),
+                           QtWarningMsg);
+        out.valid = false;
+    } else if (out.valid) {
+        const double durationSec = out.commonStart.msecsTo(out.commonEnd) / 1000.0;
+        emit reporWriteLog(tr("文件 %1 共有测量区间：%2 ~ %3，时长 %4s")
+                               .arg(QFileInfo(filePath).fileName())
+                               .arg(out.commonStart.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss.zzz")))
+                               .arg(out.commonEnd.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss.zzz")))
+                               .arg(durationSec, 0, 'f', 1));
+    }
+
+    return out.valid || !out.firstDateTime.isEmpty();
+}
+
+void NeutronYieldStatisticsWindow::applyMeasurementMetaToFileListRow(int row,
+                                                                     const H5FileChannelMeta &meta)
+{
+    QTableWidget *table = ui->tableWidget_fileList;
+    if (row < 0 || row >= table->rowCount())
+        return;
+
+    const auto setCell = [&](int col, const QString &text, const QVariant &userData = {}) {
+        QTableWidgetItem *item = table->item(row, col);
+        if (!item) {
+            item = new QTableWidgetItem();
+            item->setTextAlignment(Qt::AlignCenter);
+            table->setItem(row, col, item);
+        }
+        item->setText(text);
+        if (userData.isValid())
+            item->setData(Qt::UserRole, userData);
+    };
+
+    if (!meta.valid) {
+        setCell(ColStartTime, QString());
+        setCell(ColEndTime, QString());
+        setCell(ColDuration, QString());
+        setCell(ColSpectrumCount, QString());
+        setCell(ColSpecTimeInterval, meta.hasMeasureTime ? tr("%1 ms").arg(meta.measureTimeMs) : QString());
+        setCell(ColValidChannels, formatChannelRanges(meta.specCount));
+        return;
+    }
+
+    const QString timeFmt = QStringLiteral("yyyy-MM-dd hh:mm:ss.zzz");
+    const double durationSec = meta.commonStart.msecsTo(meta.commonEnd) / 1000.0;
+    quint32 totalSpec = 0;
+    for (quint32 n : meta.specCount)
+        totalSpec += n;
+
+    setCell(ColStartTime, meta.commonStart.toString(timeFmt), meta.commonStart);
+    setCell(ColEndTime, meta.commonEnd.toString(timeFmt), meta.commonEnd);
+    setCell(ColDuration, QString::number(durationSec, 'f', 1));
+    setCell(ColSpectrumCount, QString::number(totalSpec));
+    if (meta.hasMeasureTime)
+        setCell(ColSpecTimeInterval, tr("%1 ms").arg(meta.measureTimeMs));
+    setCell(ColValidChannels, formatChannelRanges(meta.specCount));
+}
+
+void NeutronYieldStatisticsWindow::updateFileListGapColumns()
+{
+    QTableWidget *table = ui->tableWidget_fileList;
+    for (int row = 0; row < table->rowCount(); ++row) {
+        QTableWidgetItem *gapItem = table->item(row, ColGap);
+        if (!gapItem) {
+            gapItem = new QTableWidgetItem();
+            gapItem->setTextAlignment(Qt::AlignCenter);
+            table->setItem(row, ColGap, gapItem);
+        }
+        if (row == 0) {
+            gapItem->setText(QStringLiteral("-"));
+            continue;
+        }
+        const QTableWidgetItem *prevEndItem = table->item(row - 1, ColEndTime);
+        const QTableWidgetItem *curStartItem = table->item(row, ColStartTime);
+        const QDateTime prevEnd = prevEndItem ? prevEndItem->data(Qt::UserRole).toDateTime() : QDateTime();
+        const QDateTime curStart = curStartItem ? curStartItem->data(Qt::UserRole).toDateTime() : QDateTime();
+        if (!prevEnd.isValid() || !curStart.isValid()) {
+            gapItem->setText(QString());
+            continue;
+        }
+        const double gapSec = prevEnd.msecsTo(curStart) / 1000.0;
+        gapItem->setText(QString::number(gapSec, 'f', 1));
+    }
 }
 
 void NeutronYieldStatisticsWindow::updateMeasurementInfoFromFirstFile()
@@ -457,91 +758,34 @@ void NeutronYieldStatisticsWindow::updateMeasurementInfoFromFirstFile()
         return;
 
     const QString filePath = paths.first();
-
-    QString timePart = QFileInfo(filePath).baseName().left(17).replace('_', ' ');
-    QDateTime datetime = QDateTime::fromString(timePart, "yyyy-MM-dd HHmmss");
-    if (datetime.isValid()) {
-        ui->messureDateTime->setDateTime(datetime);
-        if (paths.size() == 1)
-            ui->fusionDateTime->setDateTime(datetime);
-    }
-
     mDetectorSpecCount.clear();
     mDealSucess.clear();
+    mDetectorFirstDateTime.clear();
+    mDetectorLastDateTime.clear();
 
-    try {
-        QTextCodec *gbk_codec = QTextCodec::codecForName("GBK");
-        QByteArray filePathBytes = gbk_codec->fromUnicode(filePath);
-        H5::H5File file(filePathBytes.toStdString(), H5F_ACC_RDONLY);
+    H5FileChannelMeta meta;
+    if (!readH5FileChannelMeta(filePath, meta, true, true))
+        return;
 
-        H5::Group configGroup = file.openGroup("Config");
-        H5::DataSet configDataset = configGroup.openDataSet("Configuration");
-        H5::CompType cfgType = HDF5Settings::createCfgDataType();
-        DetParameter cfg[DET_NUM];
-        configDataset.read(&cfg, cfgType);
-        configDataset.close();
-        configGroup.close();
+    applyMeasurementMetaToFileListRow(0, meta);
+    updateFileListGapColumns();
 
-        for (int i = 0; i < DET_NUM; ++i) {
-            setLonLat(i, cfg[i].longitude, cfg[i].latitude);
+    mDetectorSpecCount = meta.specCount;
+    mDealSucess.clear();
+    for (int detId : meta.specCount.keys())
+        mDealSucess[detId] = false;
+    mDetectorFirstDateTime = meta.firstDateTime;
+    mDetectorLastDateTime = meta.lastDateTime;
 
-            const QString detName = QString("Detector#%1").arg(i + 1);
-            H5::Group group = file.openGroup(detName.toStdString());
-            H5::DataSet dataset = group.openDataSet("Spectrum");
+    if (meta.valid && meta.commonStart.isValid()) {
+        ui->messureDateTime->setDateTime(meta.commonStart);
+        if (paths.size() == 1)
+            ui->fusionDateTime->setDateTime(meta.commonStart);
+    }
 
-            H5::CompType fileType = dataset.getCompType();
-            if (fileType != H5::PredType::NATIVE_UINT) {
-                group.close();
-                dataset.close();
-                continue;
-            }
-
-            H5::DataSpace file_space = dataset.getSpace();
-            hsize_t current_dims[2];
-            file_space.getSimpleExtentDims(current_dims, NULL);
-            const hsize_t rows = current_dims[0];
-            const hsize_t cols = current_dims[1];
-
-            if (rows <= 0) {
-                group.close();
-                dataset.close();
-                file_space.close();
-                continue;
-            }
-
-            hsize_t mem_dims[2] = {1, cols};
-            H5::DataSpace mem_space(2, mem_dims);
-            uint32_t *row_data = new uint32_t[cols];
-
-            hsize_t start[2] = {0, 0};
-            hsize_t count[2] = {1, cols};
-            file_space.selectHyperslab(H5S_SELECT_SET, count, start);
-            dataset.read(row_data, H5::PredType::NATIVE_UINT, mem_space, file_space);
-            H5Spectrum *data = reinterpret_cast<H5Spectrum *>(row_data);
-
-            const quint32 measureTimelength = rows * data->measureTime / 1000;
-            ui->spinBox_timeEnd->setMaximum(measureTimelength / 60);
-            emit reporWriteLog(tr("谱仪%1测量时长:%2s").arg(i + 1).arg(measureTimelength));
-
-            delete[] row_data;
-
-            if (rows > 0) {
-                mDetectorSpecCount[i + 1] = rows;
-                mDealSucess[i + 1] = false;
-            }
-            if (i >= 0 && i < ui->tableWidget->rowCount()) {
-                ui->tableWidget->setItem(i, 6, new QTableWidgetItem(QString::number(rows)));
-            }
-
-            group.close();
-            dataset.close();
-            file_space.close();
-        }
-        file.close();
-    } catch (H5::FileIException &) {
-        QMessageBox::critical(this, tr("错误"), tr("无法打开HDF5文件，可能被占用。"));
-    } catch (H5::Exception &) {
-        QMessageBox::critical(this, tr("错误"), tr("HDF5读取异常。"));
+    if (meta.valid && meta.commonStart.isValid() && meta.commonEnd.isValid()) {
+        const qint64 durationSec = qMax<qint64>(0, meta.commonStart.secsTo(meta.commonEnd));
+        ui->spinBox_timeEnd->setMaximum(static_cast<int>(durationSec / 60));
     }
 }
 
@@ -1133,6 +1377,8 @@ void NeutronYieldStatisticsWindow::on_bt_clearFiles_clicked()
     mFilePaths.clear();
     mDetectorSpecCount.clear();
     mDealSucess.clear();
+    mDetectorFirstDateTime.clear();
+    mDetectorLastDateTime.clear();
 }
 
 

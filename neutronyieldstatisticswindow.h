@@ -9,6 +9,7 @@
 #define NEUTRONYIELDSTATISTICSWINDOW_H
 
 #include <QWidget>
+#include <QDateTime>
 #include "QGoodWindowHelper"
 #include "qcustomplothelper.h"
 #include "parsedata.h"
@@ -38,6 +39,21 @@ public:
     
     void applyColorTheme();
     void restoreSettings();
+
+    void initFileListTable();
+    void addFilesToList(const QStringList &paths);
+    void refreshFileListBasicColumns();
+    QStringList filePathsFromTable() const;
+    void updateMeasurementInfoFromFirstFile();
+
+    /**
+     * @brief 设置经纬度
+     * @param row 行号，从0开始计数
+     * @param lon 经度 0-360
+     * @param lat 纬度 0-180
+     * @return
+     */
+    bool setLonLat(int row, double lon, double lat);
 
     Q_SIGNAL void reporWriteLog(const QString &msg, QtMsgType msgType = QtDebugMsg);
     Q_SIGNAL void sigWriteLog(const QString &msg, QtMsgType msgType = QtDebugMsg);
@@ -90,21 +106,6 @@ public slots:
      */
     void slotUpdate_yieldDis(QMap<int, Sensor> yield);
 
-    /**
-     * @brief 设置经纬度
-     * @param row 行号，从0开始计数
-     * @param lon 经度 0-360
-     * @param lat 纬度 0-180
-     * @return
-     */
-    bool setLonLat(int row, double lon, double lat);
-
-    void initFileListTable();
-    void addFilesToList(const QStringList &paths);
-    void refreshFileListBasicColumns();
-    QStringList filePathsFromTable() const;
-    void updateMeasurementInfoFromFirstFile();
-
 private slots:
     // 添加待处理文件（可多选），目前只支持处理H5文件
     void on_action_open_triggered();
@@ -131,6 +132,25 @@ private slots:
     void on_bt_saveResult_clicked();
 
 private:
+    struct H5FileChannelMeta {
+        QMap<int, QDateTime> firstDateTime;
+        QMap<int, QDateTime> lastDateTime;
+        QMap<int, quint32> specCount;
+        QDateTime commonStart;
+        QDateTime commonEnd;
+        quint32 measureTimeMs = 0;
+        bool hasMeasureTime = false;
+        bool valid = false;
+    };
+
+    bool readH5FileChannelMeta(const QString &filePath, H5FileChannelMeta &out,
+                               bool applyDetectorLonLat = false, bool showErrorDialog = false);
+    void applyMeasurementMetaToFileListRow(int row, const H5FileChannelMeta &meta);
+    void updateFileListGapColumns();
+    static void computeCommonTimeInterval(const H5FileChannelMeta &meta,
+                                          QDateTime &commonStart,
+                                          QDateTime &commonEnd);
+
     Ui::NeutronYieldStatisticsWindow *ui;
     bool mIsDarkTheme = true;
     bool mThemeColorEnable = true;
@@ -157,6 +177,8 @@ private:
 
     QMap<int, quint32> mDetectorSpecCount; //存放各个通道中能谱的数据,探测器编号：1~DET_NUM
     QMap<int, bool> mDealSucess; //存放各个通道中子产额解析是否成功的标志,探测器编号：1~DET_NUM
+    QMap<int, QDateTime> mDetectorFirstDateTime; // 各通道首条能谱 UTC 时间，键 1..DET_NUM
+    QMap<int, QDateTime> mDetectorLastDateTime;  // 各通道末条能谱 UTC 时间，键 1..DET_NUM
     QMap<int, Sensor> myield; //存放各个通道中子产额。通道编号：1-DET_NUM，通道经纬度，通道的中子产额
     ParseData* dealFile[DET_NUM];
     QStringList mFilePaths; // 待解析的文件列表（按表格顺序）
