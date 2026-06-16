@@ -98,14 +98,18 @@ void DataProcessor::reallocSocket(const hv::SocketChannelPtr& tcpSocket, DetPara
         isFirstError = true;
         tcpSocket->onread = [=](hv::Buffer* buf){
             if(buf->size()==0) return;
-            QByteArray rawData = QByteArray::fromRawData((const char*)buf->data(), buf->size());
+            QByteArray rawData((const char*)buf->data(), buf->size());// 深拷贝
+            // QByteArray rawData = QByteArray::fromRawData((const char*)buf->data(), buf->size());// 浅拷贝（数据处理不及时，可能会被覆盖）
+
             // 上报原始网络数据
             if (mIsUpgrading)
                 emit reportOTAUpgradeData(mIndex, rawData);
             else
+            {
                 emit reportRawNetData(mIndex, rawData);
 
-            this->appendRawTcpData(rawData);
+                this->appendRawTcpData(rawData);
+            }
         };
 
         tcpSocket->onwrite = [=](hv::Buffer* buf) {

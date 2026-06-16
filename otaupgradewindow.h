@@ -51,10 +51,16 @@ protected:
     QPixmap dblroundPixmap(QSize sz, QColor clrIn, QColor clrOut = Qt::gray);
 
 private:
-    //std::atomic<qint64> m_returnDataSize[25] = {0}; // 共享变量：返回数据大小
-    qint64 m_currentFileSize[DET_NUM] = {0}; // 共享变量：返回升级文件大小
+    std::atomic<qint64> m_returnDataSize = 0; // 共享变量：返回数据大小
+    qint64 m_currentFileSize = 0; // 共享变量：返回升级文件大小
     int m_runningTasks = 0; // 异步任务计数器（用于控制按钮状态）
     QList<QFutureWatcher<void>*> m_watchers; // 任务监控器列表（支持取消操作）
+
+    QElapsedTimer mRecvTimeoutTimer;
+    QFile* mFileUpgrade = nullptr; // 记录升级发送的文件内容，目录./logs
+    QFile* mFileUpgradeAck = nullptr; // 记录升级返回的文件内容，目录./logs
+    QByteArray mAckUpgradePkg;
+    QByteArray mOTAUpgradePkg;
 
 private:
     QList<QPair<int, QString>> m_taskQueue; // 任务队列：<设备索引, 分区名称>

@@ -467,7 +467,7 @@ void CommHelper::initDataProcessor()
         // 原始OTA升级数据
         connect(processor, &DataProcessor::reportOTAUpgradeData, this, [=](quint8 detID, const QByteArray& data){
             emit reportOTAUpgradeData(detID, data);
-        }, Qt::QueuedConnection);
+        }, Qt::DirectConnection);
 
         // 原始网络数据
         connect(processor, &DataProcessor::reportRawNetData, this,

@@ -202,7 +202,6 @@ LocalSettingWindow::LocalSettingWindow(QWidget *parent)
         on_spinBox_valueChanged(ui->spinBox->value());
     });
     connect(ui->tableWidget, &QTableWidget::itemChanged, this, [=](QTableWidgetItem *item) {
-        qDebug() << item->row() << item->column() << item->checkState();
         if (item->checkState() == Qt::Checked)
         {
             ui->tableWidget->blockSignals(true);

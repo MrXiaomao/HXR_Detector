@@ -273,9 +273,6 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
                             }
                         }
                     }
-                    else{
-                        qDebug();
-                    }
 
                     // 执行下一条指令
                     executeNextAction();
@@ -304,9 +301,6 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
                                 QMetaObject::invokeMethod(this, "reportPoePowerStatus", Qt::QueuedConnection, Q_ARG(quint8, index), Q_ARG(bool, false));
                             }
                         }
-                    }
-                    else{
-                        qDebug();
                     }
 
                     // 执行下一条指令
