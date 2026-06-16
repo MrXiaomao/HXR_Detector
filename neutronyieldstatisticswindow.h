@@ -42,6 +42,7 @@ public:
 
     void initFileListTable();
     void addFilesToList(const QStringList &paths);
+    void sortFileListByStartTime();
     void refreshFileListBasicColumns();
     QStringList filePathsFromTable() const;
     void updateMeasurementInfoFromFirstFile();
@@ -114,6 +115,7 @@ private slots:
     void on_bt_addFiles_clicked();
     void on_bt_removeFile_clicked();
     void on_bt_clearFiles_clicked();
+    void on_btn_sort_clicked();
 
     // 开始解析文件
     void on_action_startCalculate_triggered();
@@ -158,6 +160,8 @@ private:
     void updateShotTimeModeUi();
     void syncMeasureDateTimeForDetector(int detId);
     qint64 beginTimeForDetector(int detId, const QDateTime &fusionTime) const;
+    int currentPictureDetId() const;
+    void updatePictureForDetector(int detID);
 
     Ui::NeutronYieldStatisticsWindow *ui;
     bool mIsDarkTheme = true;

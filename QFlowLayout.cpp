@@ -146,7 +146,6 @@ int QFlowLayout::doLayout(const QRect& rect, bool testOnly) const
 
         x = nextX;
         lineHeight = qMax(lineHeight, item->sizeHint().height());
-        qDebug() << "index=" << index << ", height="<< height;
         index++;
     }
 

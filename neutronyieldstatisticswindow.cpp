@@ -342,8 +342,8 @@ void NeutronYieldStatisticsWindow::initUi()
 
     initFileListTable();
 
-    // 连接表格选择变化信号
-    connect(ui->tableWidget, &QTableWidget::itemSelectionChanged, this, &NeutronYieldStatisticsWindow::on_tableWidget_selectionChanged);
+    // 连接表格选择变化信号（图表通道改由 spinBox_pictureDet 控制，不再联动 tableWidget 行选择）
+    // connect(ui->tableWidget, &QTableWidget::itemSelectionChanged, this, &NeutronYieldStatisticsWindow::on_tableWidget_selectionChanged);
 
     {
         QButtonGroup *shotTimeModeGroup = new QButtonGroup(this);
@@ -358,8 +358,14 @@ void NeutronYieldStatisticsWindow::initUi()
                 updateShotTimeModeUi();
         });
         connect(ui->spinBox_channelId, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int detId) {
-            if (isPerChannelShotTimeMode())
+            if (isPerChannelShotTimeMode()) {
                 syncMeasureDateTimeForDetector(detId);
+                updatePictureForDetector(detId);
+            }
+        });
+        connect(ui->spinBox_pictureDet, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int detId) {
+            if (!isPerChannelShotTimeMode())
+                updatePictureForDetector(detId);
         });
         updateShotTimeModeUi();
     }
@@ -443,6 +449,77 @@ void NeutronYieldStatisticsWindow::initFileListTable()
         refreshFileListBasicColumns();
         updateMeasurementInfoFromFirstFile();
     });
+}
+
+void NeutronYieldStatisticsWindow::sortFileListByStartTime()
+{
+    QTableWidget *table = ui->tableWidget_fileList;
+    const int rowCount = table->rowCount();
+    if (rowCount <= 1)
+        return;
+
+    struct FileListRow {
+        QDateTime startTime;
+        QVector<QTableWidgetItem*> items;
+    };
+
+    const auto startTimeForRow = [&](int row) -> QDateTime {
+        if (const QTableWidgetItem *item = table->item(row, ColStartTime)) {
+            const QDateTime dt = item->data(Qt::UserRole).toDateTime();
+            if (dt.isValid())
+                return dt;
+        }
+        if (const QTableWidgetItem *nameItem = table->item(row, ColFileName)) {
+            const QString path = nameItem->data(Qt::UserRole).toString();
+            if (!path.isEmpty()) {
+                const QDateTime dt = measureStartTimeFromPath(path);
+                if (dt.isValid())
+                    return dt;
+            }
+        }
+        return QDateTime();
+    };
+
+    QVector<FileListRow> rows;
+    rows.reserve(rowCount);
+    for (int row = 0; row < rowCount; ++row) {
+        FileListRow entry;
+        entry.startTime = startTimeForRow(row);
+        entry.items.resize(ColCount);
+        for (int col = 0; col < ColCount; ++col) {
+            if (QTableWidgetItem *item = table->item(row, col))
+                entry.items[col] = item->clone();
+            else {
+                auto *item = new QTableWidgetItem();
+                item->setTextAlignment(Qt::AlignCenter);
+                entry.items[col] = item;
+            }
+        }
+        rows.append(entry);
+    }
+
+    std::stable_sort(rows.begin(), rows.end(), [](const FileListRow &a, const FileListRow &b) {
+        if (a.startTime.isValid() && b.startTime.isValid())
+            return a.startTime < b.startTime;
+        if (a.startTime.isValid())
+            return true;
+        if (b.startTime.isValid())
+            return false;
+        const QString pathA = a.items[ColFileName]->data(Qt::UserRole).toString();
+        const QString pathB = b.items[ColFileName]->data(Qt::UserRole).toString();
+        return pathA < pathB;
+    });
+
+    table->setRowCount(0);
+    table->setRowCount(rowCount);
+    for (int row = 0; row < rowCount; ++row) {
+        for (int col = 0; col < ColCount; ++col)
+            table->setItem(row, col, rows[row].items[col]);
+    }
+
+    updateFileListGapColumns();
+    refreshFileListBasicColumns();
+    updateMeasurementInfoFromFirstFile();
 }
 
 void NeutronYieldStatisticsWindow::refreshFileListBasicColumns()
@@ -901,8 +978,68 @@ void NeutronYieldStatisticsWindow::updateShotTimeModeUi()
     const bool perChannel = isPerChannelShotTimeMode();
     ui->label_channelId->setVisible(perChannel);
     ui->spinBox_channelId->setVisible(perChannel);
+    ui->spinBox_pictureDet->setEnabled(!perChannel);
     if (perChannel)
         syncMeasureDateTimeForDetector(ui->spinBox_channelId->value());
+}
+
+int NeutronYieldStatisticsWindow::currentPictureDetId() const
+{
+    if (isPerChannelShotTimeMode())
+        return ui->spinBox_channelId->value();
+    return ui->spinBox_pictureDet->value();
+}
+
+void NeutronYieldStatisticsWindow::updatePictureForDetector(int detID)
+{
+    if (detID < 1 || detID > DET_NUM)
+        return;
+
+    if (!mDealSucess.value(detID, false)) {
+        QMessageBox::information(this, tr("提示"), tr("谱仪%1不存在解析成功的数据！").arg(detID));
+        return;
+    }
+
+    QVector<specStripData> count909_picture = dealFile[detID - 1]->GetCount909Data();
+    if (count909_picture.isEmpty())
+        return;
+
+    std::vector<double> time;
+    std::vector<double> count;
+    std::vector<double> fitCount;
+    std::vector<double> residual;
+
+    for (int i = 0; i < count909_picture.size(); i++) {
+        time.push_back(count909_picture.at(i).x);
+        count.push_back(count909_picture.at(i).y);
+        fitCount.push_back(count909_picture.at(i).fit_y);
+        residual.push_back(count909_picture.at(i).residual_rate);
+    }
+    slotUpdate_Count909_time(time, count, fitCount, residual);
+
+    QVector<specStripData> allSpec = dealFile[detID - 1]->GetStripData(0);
+    if (!allSpec.isEmpty()) {
+        std::vector<double> energy;
+        std::vector<double> specCount;
+        std::vector<double> fitSpecCount;
+        std::vector<double> specResidual;
+
+        for (auto data : allSpec) {
+            energy.push_back(data.x);
+            specCount.push_back(data.y);
+            fitSpecCount.push_back(data.fit_y);
+            specResidual.push_back(data.residual_rate);
+        }
+        slotUpdateSpec_909keV(energy, specCount, fitSpecCount, specResidual);
+    }
+
+    QVector<ParseData::mergeSpecData> mergeSpecData = dealFile[detID - 1]->GetMergeSpec();
+    if (!mergeSpecData.isEmpty()) {
+        std::vector<ParseData::mergeSpecData> allSpec_vec;
+        for (auto data : mergeSpecData)
+            allSpec_vec.push_back(data);
+        slotUpdateMultiSegmentPlotDatas(allSpec_vec);
+    }
 }
 
 void NeutronYieldStatisticsWindow::syncMeasureDateTimeForDetector(int detId)
@@ -1388,9 +1525,7 @@ void NeutronYieldStatisticsWindow::initCountCustomPlot()
     connect(customPlot, SIGNAL(mouseRelease(QMouseEvent*)), this, SLOT(slotRestorePlot(QMouseEvent*)));
 
     connect(customPlotHelper, &QCustomPlotHelper::itemActived, this, [=](QCPGraph *graph, double key, double value){
-        int detID = 1; //默认读取探测器1的数据
-        if (ui->tableWidget->selectedItems().count() > 0)
-            detID = ui->tableWidget->selectedItems()[0]->row() + 1;
+        const int detID = currentPictureDetId();
 
         if (graph->name() != "timeCountGraph")
             return;
@@ -1518,6 +1653,12 @@ void NeutronYieldStatisticsWindow::on_bt_clearFiles_clicked()
     mDealSucess.clear();
     mDetectorFirstDateTime.clear();
     mDetectorLastDateTime.clear();
+}
+
+void NeutronYieldStatisticsWindow::on_btn_sort_clicked()
+{
+    sortFileListByStartTime();
+    emit reporWriteLog(tr("文件列表已按开始时刻排序"));
 }
 
 
@@ -1699,75 +1840,15 @@ void NeutronYieldStatisticsWindow::on_action_stopCalculate_triggered()
 
 void NeutronYieldStatisticsWindow::on_tableWidget_selectionChanged()
 {
-    // 获取当前选中的行
     QList<QTableWidgetItem*> selectedItems = ui->tableWidget->selectedItems();
     if (selectedItems.isEmpty())
         return;
 
-    int row = selectedItems[0]->row();
+    const int row = selectedItems[0]->row();
     if (row < 0)
         return;
 
-    int detID = row + 1; // 探测器ID从1开始
-
-    // 检查数据是否已经解析完成
-    if (detID > 0 && detID <= DET_NUM)
-    {
-        if (!mDealSucess.value(detID, false)) {
-            QMessageBox::information(this, tr("提示"), tr("谱仪%1不存在解析成功的数据！").arg(detID));
-            return;
-        }
-        
-        // 更新计数衰减曲线
-        QVector<specStripData> count909_picture = dealFile[detID-1]->GetCount909Data();
-        if (!count909_picture.isEmpty())
-        {
-            std::vector<double> time;
-            std::vector<double> count;
-            std::vector<double> fitCount;
-            std::vector<double> residual;
-
-            for(int i=0; i<count909_picture.size(); i++)
-            {
-                time.push_back(count909_picture.at(i).x);
-                count.push_back(count909_picture.at(i).y);
-                fitCount.push_back(count909_picture.at(i).fit_y);
-                residual.push_back(count909_picture.at(i).residual_rate);
-            }
-            slotUpdate_Count909_time(time, count, fitCount, residual);
-
-            // 更新第一个时间点的909keV能谱
-            QVector<specStripData> allSpec = dealFile[detID-1]->GetStripData(0);
-            if (!allSpec.isEmpty())
-            {
-                std::vector<double> energy;
-                std::vector<double> specCount;
-                std::vector<double> fitSpecCount;
-                std::vector<double> residual;
-
-                for(auto data : allSpec)
-                {
-                    energy.push_back(data.x);
-                    specCount.push_back(data.y);
-                    fitSpecCount.push_back(data.fit_y);
-                    residual.push_back(data.residual_rate);
-                }
-                slotUpdateSpec_909keV(energy, specCount, fitSpecCount, residual);
-            }
-
-            // 更新多段能谱
-            QVector<ParseData::mergeSpecData> mergeSpecData = dealFile[detID-1]->GetMergeSpec();
-            if (!mergeSpecData.isEmpty())
-            {
-                std::vector<ParseData::mergeSpecData> allSpec_vec;
-                for(auto data : mergeSpecData)
-                {
-                    allSpec_vec.push_back(data);
-                }
-                slotUpdateMultiSegmentPlotDatas(allSpec_vec);
-            }
-        }
-    }
+    updatePictureForDetector(row + 1);
 }
 
 void NeutronYieldStatisticsWindow::slotFail()
@@ -1812,56 +1893,8 @@ void NeutronYieldStatisticsWindow::slotSuccess(int detID)
         slotUpdate_yieldDis(myield);
     }
 
-    //绘制中子产额空间分布
-
-    //显示计数衰减曲线、显示计数率和残差%
-    std::vector<double> time;// x
-    std::vector<double> count;// y
-    std::vector<double> fitCount; // fity 拟合曲线
-    std::vector<double> residual; // 残差
-
-    QVector<specStripData> count909_picture = dealFile[detID-1]->GetCount909Data();
-    specStripData tempData;
-    for(int i=0; i<count909_picture.size(); i++)
-    {
-        time.push_back(count909_picture.at(i).x);
-        count.push_back(count909_picture.at(i).y);
-        fitCount.push_back(count909_picture.at(i).fit_y);
-        residual.push_back(count909_picture.at(i).residual_rate);
-    }
-    slotUpdate_Count909_time(time, count, fitCount, residual);
-
-    // 先默认绘制第一幅图
-    {
-        QVector<specStripData> allSpec = dealFile[detID-1]->GetStripData(0);
-        std::vector<double> energy; //能量
-        std::vector<double> specCount; // 能谱计数
-        std::vector<double> fitSpecCount; // 拟合曲线
-        std::vector<double> residual;// 残差
-        int num = energy.size();
-        energy.reserve(num);
-        for(auto data:allSpec)
-        {
-            energy.push_back(data.x);
-            specCount.push_back(data.y);
-            fitSpecCount.push_back(data.fit_y);
-            residual.push_back(data.residual_rate);
-        }
-
-        slotUpdateSpec_909keV(energy, specCount, fitSpecCount, residual);
-    }
-
-    // 绘制多段能谱
-    {
-        QVector<ParseData::mergeSpecData> allSpec = dealFile[detID-1]->GetMergeSpec();
-        std::vector<ParseData::mergeSpecData> allSpec_vec;
-        for(auto data:allSpec)
-        {
-            allSpec_vec.push_back(data);
-        }
-
-        slotUpdateMultiSegmentPlotDatas(allSpec_vec);
-    }
+    if (detID == currentPictureDetId())
+        updatePictureForDetector(detID);
 
     // QTimer::singleShot(1, this, [=](){
     //     SplashWidget::instance()->hide();
