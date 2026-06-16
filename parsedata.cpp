@@ -1,13 +1,152 @@
 ﻿#include "parsedata.h"
 #include "offlinespectrumparser.h"
 #include <QFile>
+#include <QFileInfo>
 #include <QDataStream>
 #include <QElapsedTimer>
+#include <QTextCodec>
 #include <cmath>
 #include <cstring> // 需要包含memcpy
+#include <algorithm>
 #include "sysutils.h"
 
 #include "curveFit.h"
+#include <QDebug>
+
+namespace {
+QDateTime h5UtcToDateTime(quint32 timeUTCs, quint32 timeUTCms)
+{
+    const quint64 msecond = static_cast<quint64>(timeUTCms) * 1000 / (1ULL << 32);
+    const quint64 tmUnix = static_cast<quint64>(timeUTCs) - 2208988800ULL;
+    return QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(tmUnix * 1000 + msecond));
+}
+
+qint64 spectrumStartMs(const H5Spectrum &spec)
+{
+    return h5UtcToDateTime(spec.timeUTCs, spec.timeUTCms).toMSecsSinceEpoch();
+}
+
+/** 从 H5 文件名解析开测时刻，如 2026-05-20_161318.H5 */
+QDateTime measureStartTimeFromFileName(const QString &filePath)
+{
+    const QString timePart = QFileInfo(filePath).baseName().left(17).replace('_', ' ');
+    QDateTime dt = QDateTime::fromString(timePart, QStringLiteral("yyyy-MM-dd HHmmss"));
+    if (!dt.isValid())
+        dt = QDateTime::fromString(timePart, QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+    return dt;
+}
+
+/** 读取 H5 Config/StartTime（测量软件写入，格式 yyyy-MM-dd_HHmmss） */
+QDateTime readH5ConfigStartTime(const std::string &filePathStd)
+{
+    try {
+        H5::H5File file(filePathStd, H5F_ACC_RDONLY);
+        if (H5Lexists(file.getId(), "Config", H5P_DEFAULT) <= 0)
+            return {};
+        H5::Group cfgGroup = file.openGroup("Config");
+        if (H5Lexists(cfgGroup.getId(), "StartTime", H5P_DEFAULT) <= 0)
+            return {};
+        H5::DataSet ds = cfgGroup.openDataSet("StartTime");
+        char buffer[128] = {};
+        const H5::StrType memType(H5::PredType::C_S1, sizeof(buffer));
+        ds.read(buffer, memType);
+        const QString raw = QString::fromUtf8(buffer);
+        QDateTime dt = QDateTime::fromString(raw, QStringLiteral("yyyy-MM-dd_HHmmss"));
+        if (!dt.isValid()) {
+            QString normalized = raw;
+            dt = QDateTime::fromString(normalized.replace('_', ' '), QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+        }
+        return dt;
+    } catch (H5::Exception &) {
+        return {};
+    }
+}
+
+qint64 resolveFileStartMs(const QString &filePath, const std::string &filePathStd)
+{
+    QDateTime startDt = readH5ConfigStartTime(filePathStd);
+    if (!startDt.isValid())
+        startDt = measureStartTimeFromFileName(filePath);
+    if (!startDt.isValid())
+        return 0;
+    return startDt.toMSecsSinceEpoch();
+}
+
+qint64 syntheticSpectrumStartMs(qint64 fileStartMs, quint32 sequence0, quint32 measureTimeMs, quint32 sequence)
+{
+    return fileStartMs + static_cast<qint64>(sequence - sequence0)
+                       * static_cast<qint64>(measureTimeMs);
+}
+
+/** 按 sequence 连续段切分（相邻序号差 > 1 视为断点） */
+QVector<QVector<H5Spectrum>> splitBySequenceRuns(const QVector<H5Spectrum> &fileSpec)
+{
+    QVector<QVector<H5Spectrum>> runs;
+    QVector<H5Spectrum> currentRun;
+    quint32 prevSequence = 0;
+    bool hasPrev = false;
+
+    for (const H5Spectrum &spec : fileSpec) {
+        if (spec.measureTime == 0)
+            continue;
+        if (hasPrev && spec.sequence > prevSequence + 1) {
+            if (!currentRun.isEmpty())
+                runs.append(currentRun);
+            currentRun.clear();
+        }
+        currentRun.append(spec);
+        prevSequence = spec.sequence;
+        hasPrev = true;
+    }
+    if (!currentRun.isEmpty())
+        runs.append(currentRun);
+    return runs;
+}
+
+struct DetectorCalChannel {
+    double ch511;
+    double ch909;
+};
+
+/** 与 MATLAB Data_Analysis_Main.m V1.1 各探测器 CH 表一致（1~29） */
+const DetectorCalChannel kDetectorChTable[] = {
+    {373, 659}, {325, 573}, {296, 525}, {374, 662}, {301, 533},
+    {343, 614}, {383, 677}, {298, 533}, {434, 762}, {328, 584},
+    {407, 724}, {389, 698}, {428, 763}, {344, 613}, {327, 584},
+    {415, 738}, {307, 545}, {326, 578}, {315, 558}, {323, 573},
+    {278, 490}, {327, 580}, {329, 585}, {392, 698}, {324, 595},
+    {377, 666}, {312, 551}, {327, 582}, {312, 564},
+};
+
+constexpr int kDetectorChTableSize = sizeof(kDetectorChTable) / sizeof(kDetectorChTable[0]);
+constexpr int kRefreshTimeSec = 60;
+constexpr double kPeakHeightMin = 100.0;
+
+bool initialEnergyScaleForDetector(int detId, double outScale[2])
+{
+    if (detId < 1 || detId > kDetectorChTableSize)
+        return false;
+
+    const DetectorCalChannel &entry = kDetectorChTable[detId - 1];
+    double r2 = 0.0;
+    QVector<QPointF> pts;
+    pts << QPointF(entry.ch511, 511.0) << QPointF(entry.ch909, 909.0);
+    bool flag = CurveFit::fit_linear(pts, outScale, &r2);
+    qDebug()<<"initialEnergyScaleForDetector: k="<<outScale[0]<<", b="<<outScale[1];
+    return flag;
+}
+
+double deadTimeRateFromSegment(const ParseData::mergeSpecData &spec)
+{
+    if (spec.rowCount == 0 || spec.sumMeasureTimeMs == 0)
+        return 0.0;
+    const double avgDeadSec = static_cast<double>(spec.deathTime) / static_cast<double>(spec.rowCount) / 1e9;
+    const double sumMeasureSec = static_cast<double>(spec.sumMeasureTimeMs) / 1000.0;
+    if (sumMeasureSec <= 0.0)
+        return 0.0;
+    return avgDeadSec / sumMeasureSec;
+}
+}
 
 const double diffstep = 1.4901e-08;
 ParseData::ParseData() {
@@ -98,108 +237,96 @@ void ParseData::mergeSpecTime_online(const H5Spectrum& specPack)
 bool ParseData::getResult(QVector<mergeSpecData> mergeSpec)
 {
     clearFitResult();
-    //根据能量刻度进行首次寻峰，进一步拟合给出511,846,909的峰位和半高宽
-    QVector<fit_result> fit_c_2;
-    bool fitflag[3]={false,false,false}; //寻峰是否成功的标志
+
+    QVector<fit_result> peakParAll;
+    bool fitflag[3] = {false, false, false};
     {
-        double* singleSpectrum = new double[mCHANNEL2048];
-        for(int i=0; i<mCHANNEL2048; i++)
-        {
-            singleSpectrum[i] = mergeSpec.at(0).spectrum[i]*1.0;
-        }
+        double *singleSpectrum = new double[mCHANNEL2048];
+        for (int i = 0; i < mCHANNEL2048; ++i)
+            singleSpectrum[i] = mergeSpec.at(0).spectrum[i] * 1.0;
 
-        // 先对能谱进行能量刻度拟合
         double energy_scale[2] = {1.272, -26.87};
-        double R2 = 0.0;
-        QVector<QPointF> enFitPoints;
-        enFitPoints.push_back(QPointF(488.0,511.0)); //（ch1,En1）
-        enFitPoints.push_back(QPointF(863.0,909.0)); // (ch2,En2)
-        CurveFit::fit_linear(enFitPoints, energy_scale, &R2);
+        if (!initialEnergyScaleForDetector(mDetId, energy_scale))
+            qWarning() << "Detector" << mDetId << "uses fallback energy scale";
 
-        initial_PeakFind(singleSpectrum, energy_scale, fit_c_2, fitflag);
-
+        initial_PeakFind(singleSpectrum, energy_scale, peakParAll, fitflag);
         delete[] singleSpectrum;
     }
-    // 拟合初值
-    // 单高斯拟合 fit_type1 = @(p, x) p(1).*exp(-1/2*((x-p(2))./p(3)).^2) + p(4).*x.^4 + p(5).*x.^3 + p(6).*x.^2 + p(7).*x + p(8);
-    // 双高斯拟合 fit_type2 = @(p, x) p(1).*exp(-1/2*((x-p(2))./p(3)).^2) + p(4).*exp(-1/2*((x-p(5))./p(6)).^2)
-    //                       + p(7).*x.^4 + p(8).*x.^3 + p(9).*x.^2 + p(10).*x + p(11);
-    QVector<double> fit_c = {fit_c_2[1].c0, 846, fit_c_2[1].c2, fit_c_2[2].c0, 909, fit_c_2[2].c2,
-                             10.0, 1.0e-3, 1.0e-2, 1.0, 0.5};
-    // QVector<double> fit_c = {fit_c_2[1].c0, 846, fit_c_2[1].c2, fit_c_2[2].c0, 909, fit_c_2[2].c2,
-    //                          0.0, 0.0, 0.0, 0.0, 0.0};
-    fit_c_2.removeAt(1); //删除中间的846峰相关拟合参数
+
+    if (peakParAll.size() < 3)
+        return false;
+
+    QVector<double> initialValue = {
+        peakParAll[1].c0, peakParAll[1].c1, peakParAll[1].c2,
+        peakParAll[2].c0, peakParAll[2].c1, peakParAll[2].c2,
+        0.0, 0.0, 0.0, 0.0, 0.0
+    };
+
+    QVector<fit_result> peakPar0;
+    peakPar0 << peakParAll[0] << peakParAll[2];
+
+    bool stripFlag[2] = {fitflag[1], fitflag[2]};
 
     int spec_id = 0;
-    for(auto spec:mergeSpec)
-    {
-        //对初始拟合参数最后几位挑调整
+    for (const mergeSpecData &spec : mergeSpec) {
+        QVector<double> fit_c = initialValue;
         fit_c[6] = 10.0;
         fit_c[7] = 1.0;
         fit_c[8] = 1.0;
         fit_c[9] = 1.0;
         fit_c[10] = 5.0;
-        qDebug()<<"specID: "<<spec_id;
-        qint64 nowtime = spec.currentTime;
-        double* singleSpectrum = new double[mCHANNEL2048];
-        for(int i=0; i<mCHANNEL2048; i++)
-        {
-            singleSpectrum[i] = spec.spectrum[i]*1.0;
-        }
 
-        bool exitflag[2]={false,false}; //寻峰是否成功的标志
-        if(!PeakFind(singleSpectrum, fit_c_2, exitflag)) { //注意，这里的fit_c_2每次调用后发生了更新
-            qDebug()<<"PeakFind Failed!";
+        double *singleSpectrum = new double[mCHANNEL2048];
+        for (int i = 0; i < mCHANNEL2048; ++i)
+            singleSpectrum[i] = spec.spectrum[i] * 1.0;
+
+        bool exitflag[2] = {false, false};
+        QVector<fit_result> peakFindInit = peakPar0;
+        if (!PeakFind(singleSpectrum, peakFindInit, exitflag)) {
             delete[] singleSpectrum;
             return false;
         }
 
-        if(!exitflag[1]){
-            qDebug()<<"909keV全能峰计数太低无法拟合，已终止运行";
+        if (!exitflag[0] || !exitflag[1]) {
+            if (!exitflag[0])
+                qDebug() << "511keV peak height < 100, stop processing";
+            if (!exitflag[1])
+                qDebug() << "909keV peak height < 100, stop processing";
+            delete[] singleSpectrum;
+            if (spec_id == 0)
+                return false;
+            break;
+        }
+
+        peakPar0 = peakFindInit;
+
+        double newEnergyScal[2] = {1.0, 1.0};
+        double r2 = 0.0;
+        QVector<QPointF> enFitPoints;
+        enFitPoints << QPointF(peakPar0[0].c1, m_energyCalibration[0])
+                    << QPointF(peakPar0[1].c1, m_energyCalibration[1]);
+        CurveFit::fit_linear(enFitPoints, newEnergyScal, &r2);
+
+        const double deathRatio = deadTimeRateFromSegment(spec);
+        double peakCount = 0.0;
+        if (!SpecStripping(singleSpectrum, newEnergyScal, fit_c, stripFlag, deathRatio, &peakCount)) {
+            delete[] singleSpectrum;
             return false;
         }
 
-        //峰位漂移矫正 利用511keV 909keV做能量刻度
-        double new_energyScal[2] = {1.0,1.0};
-        double R2 = 0.0;
-        QVector<QPointF> enFitPoints;
-        enFitPoints.push_back(QPointF(fit_c_2[0].c1,m_energyCalibration[0])); //（ch1,En1）
-        enFitPoints.push_back(QPointF(fit_c_2[1].c1,m_energyCalibration[1])); // (ch2,En2)
-        CurveFit::fit_linear(enFitPoints, new_energyScal, &R2);
-
-        // 剥谱
-        double deathRatio = spec.deathTime / 1.0e6 /spec.specTime ; //注意统一单位
-        SpecStripping(singleSpectrum, new_energyScal, fit_c, exitflag);
-        count909_time.push_back(spec.currentTime*1.0/60000);//ms转化为min
-
-        // 计算909keV峰面积
-        // 高斯面积法
-        double pi = 3.141592654;
-        double peakCount = fit_c[3]*fit_c[5]*sqrt(2*pi)/(1-deathRatio);
+        initialValue = fit_c;
+        count909_time.push_back(spec.currentTime * 1.0 / 60000.0);
         count909_count.push_back(peakCount);
 
-        qDebug()<<"SpecStripping End, specID: "<<spec_id;
-        spec_id++;
+        qDebug() << "SpecStripping End, specID:" << spec_id << "peakCount:" << peakCount;
+        ++spec_id;
         delete[] singleSpectrum;
     }
 
-    //对909全能峰计数取对数做线性拟合
-    if(count909_count.size()>1)
-    {
+    if (count909_count.size() > 1)
         fit909data();
-        //调试用,打印909相关结果
-        for(int i=0; i<count909_count.size(); i++)
-        {
-            qDebug() << QString("数据点[%1]: 时间=%2 min, 计数=%3, 拟合值=%4, 残差率=%5%").arg(i)
-                        .arg(count909_time.at(i), 0, 'f', 3)
-                        .arg(count909_count.at(i), 0, 'f', 2)
-                        .arg(count909_fitcount.at(i), 0, 'f', 2)
-                        .arg(count909_residual.at(i), 0, 'f', 3);
-        }
-        qDebug() << "================================================";
-    }
 
-    return true;
+    return spec_id > 0;
 }
 
 /**
@@ -226,17 +353,17 @@ bool ParseData::initial_PeakFind(double* spectrum, double energy_scale[], QVecto
     //搜索峰的能量，keV
     double m_energyCalibration[3] = {511.0, 846.0, 909.0};
 
-    //峰位的sigma估值，该值根据能量分辨率可以初步估算得到。
-    double sigma[3] = {8.0, 11, 12.0};
-
+    //峰位的sigma估值（V1.1 Sigma0 = [5 6 7]）
+    double sigma[3] = {5.0, 6.0, 7.0};
+    double width = 25.0;
     //------------- 寻找候选峰-------------------
     for(int e = 0; e<3; e++)
     {
         //峰位搜索宽度，根据初值，给出511keV能峰的大致范围。
         quint32 leftCH, rightCH;
         double init_peak = (m_energyCalibration[e] - energy_scale[1]) / energy_scale[0];
-        leftCH = floor(init_peak) - floor(2.0 * sigma[e]);
-        rightCH = floor(init_peak) + floor(2.0 * sigma[e]);
+        leftCH = floor(init_peak) - width;
+        rightCH = floor(init_peak) + width;
 
         //先对峰位附近划定不同的道址范围进行拟合，每次拟合的高斯项不同
         QVector<fit_result> fit_result_All; //拟合结果汇总
@@ -284,7 +411,7 @@ bool ParseData::initial_PeakFind(double* spectrum, double energy_scale[], QVecto
         QVector<double> valid_chi_square;
         for(auto tempResult:fit_result_All)
         {
-            if(tempResult.c0 >0 &&
+            if(tempResult.c0 >= kPeakHeightMin &&
                 tempResult.c2 <= 1.5*sigma[e] &&
                 tempResult.c2 >= 0.5*sigma[e])
             {
@@ -380,7 +507,7 @@ bool ParseData::PeakFind(double* spectrum, QVector<fit_result>& init_c, bool* ex
     SysUtils::smooth(spectrum_smooth1, spectrum_smooth2, mCHANNEL2048, 5);
 
     //峰位的sigma估值，该值根据能量分辨率可以初步估算得到。
-    double Width = 15.0;
+    double Width = 10.0;
     //------------- 寻找候选峰-------------------
     QVector<fit_result> fit_c_2; //两个候选峰峰位各自一组的最优拟合参数
     for(int e = 0; e<2; e++)
@@ -440,7 +567,7 @@ bool ParseData::PeakFind(double* spectrum, QVector<fit_result>& init_c, bool* ex
         QVector<double> valid_chi_square;
         for(auto temp_result:fit_result_All)
         {
-            if(temp_result.c0 >0 &&
+            if(temp_result.c0 >= kPeakHeightMin &&
                 temp_result.c2 <= 1.5*sigma &&
                 temp_result.c2 >= 0.5*sigma)
             {
@@ -515,6 +642,9 @@ bool ParseData::PeakFind(double* spectrum, QVector<fit_result>& init_c, bool* ex
         else{
             qDebug()<<"CurveFit::fit_gauss_linear2 failed";
         }
+
+        if (fit_c_2[e].c0 < kPeakHeightMin)
+            exitflag[e] = false;
     }
 
     //返回拟合结果
@@ -533,162 +663,135 @@ bool ParseData::PeakFind(double* spectrum, QVector<fit_result>& init_c, bool* ex
  * @param fit_c 拟合系数,8个参数 {p0,p1,p2,p3,p4,p5,p6,p7} fit_type = p(0).*exp(-1/2*((x-p(1))./p(2)).^2) + p(3).*x.^4 + p(4).*x.^3 + p(5).*x.^2 + p(6).*x + p(7);
  * 拟合成功后，fit_c更新为拟合结果
  */
-bool ParseData::SpecStripping(double* spectrum, double energy_scale[], QVector<double>& init_c, bool* exitflag)
+bool ParseData::SpecStripping(double *spectrum, double energy_scale[], QVector<double> &init_c,
+                              bool *exitflag, double deadTimeRate, double *peakCountOut)
 {
     std::vector<double> data;
-    for(int i=0; i<mCHANNEL2048; i++){
+    data.reserve(mCHANNEL2048);
+    for (int i = 0; i < mCHANNEL2048; ++i)
         data.push_back(spectrum[i]);
-    }
 
-    // 四次Savitzky-Golay滤波器
-    std::vector<double> newdata = SysUtils::sgolayfilt_matlab_like(data, 3, 13);
-    newdata = SysUtils::sgolayfilt_matlab_like(newdata, 3, 13);
-    newdata = SysUtils::sgolayfilt_matlab_like(newdata, 3, 13);
-    newdata = SysUtils::sgolayfilt_matlab_like(newdata, 3, 13);
+    const std::vector<double> filtered = SysUtils::lowpass(data, 0.1);
 
-    int ch_count; //待分析的能谱道数
-    int leftCH, rightCH;
-    leftCH = int(floor((mStripEnRange[0] - energy_scale[1]) / energy_scale[0]));
-    rightCH = int(floor((mStripEnRange[1] - energy_scale[1]) / energy_scale[0]));
-    ch_count = rightCH - leftCH;
+    const double energyLow = exitflag[0] ? 800.0 : 850.0;
+    const double energyHigh = 1100.0;
+    const double a = energy_scale[0];
+    const double b = energy_scale[1];
 
-    //提取拟合数据
     QVector<QPointF> fitPoints;
-    QVector<double> fitx, fity;
+    QVector<double> fitx;
+    QVector<double> fity;
     QVector<double> fity_curve;
-    //这里需要注意，MATLAB和C++下标对齐问题。能量刻度y=ax+b时，x从1开始
-    for(int i = leftCH; i<rightCH; i++)
-    {
-        double xi = (i+1) * energy_scale[0] + energy_scale[1];
-        double yi = newdata[i]*1.0;
-        fitPoints.push_back(QPointF(xi, yi));
-        fitx.push_back(xi);
+
+    for (int i = 0; i < mCHANNEL2048; ++i) {
+        const double channel = static_cast<double>(i + 1);
+        const double energy = channel * a + b;
+        if (energy <= energyLow || energy >= energyHigh)
+            continue;
+        const double yi = filtered[static_cast<std::size_t>(i)];
+        fitPoints.push_back(QPointF(channel, yi));
+        fitx.push_back(channel);
         fity.push_back(yi);
     }
 
-    //拟合并给出结果
+    const int ch_count = fitPoints.size();
+    if (ch_count < CurveFit::gauss_arr_count_min)
+        return false;
+
+    const QVector<double> savedInitial = init_c;
     alglib::real_1d_array c;
     QVector<double> residual_rate;
-    if(exitflag[0]) //存在846峰，采用双高斯拟合
-    {
-        //选用上次的拟合结果作为拟合初值
+
+    if (exitflag[0]) {
         double p[11];
-        for(int i=0; i<11; i++)
-        {
+        for (int i = 0; i < 11; ++i)
             p[i] = init_c[i];
-        }
 
         CurveFit::fit_2gauss_ploy4(fitPoints, p, residual_rate);
-
-        //提取拟合结果
-        for(int i=0; i<11; i++)
-        {
+        for (int i = 0; i < 11; ++i)
             init_c[i] = p[i];
-        }
+        for (int i = 0; i < 6; ++i)
+            init_c[i] = std::abs(init_c[i]);
         c.setcontent(11, p);
 
-        //计算拟合曲线y值、残差
-        for(int i=0; i<ch_count; i++)
-        {
-            double x_temp = fitx.at(i);
+        for (int i = 0; i < ch_count; ++i) {
             alglib::real_1d_array xData;
             xData.setlength(1);
-            xData[0] = x_temp;
-            double y;
-            CurveFit::function_2gauss_poly4(c, xData, y, NULL);
+            xData[0] = fitx.at(i);
+            double y = 0.0;
+            CurveFit::function_2gauss_poly4(c, xData, y, nullptr);
             fity_curve.push_back(y);
-            double residual = fity.at(i) - y; //残差
-            residual = residual/y*100;
         }
-    }else{
-        //选用上次的拟合结果作为拟合初值
+    } else {
         double p[8];
-        for(int i=0; i<8; i++)
-        {
-            p[i] = init_c[i+3];
-        }
+        for (int i = 0; i < 8; ++i)
+            p[i] = init_c[i + 3];
 
         CurveFit::fit_gauss_ploy4(fitPoints, p, residual_rate);
+        init_c[0] = savedInitial[0];
+        init_c[1] = 846.0;
+        init_c[2] = savedInitial[2];
+        for (int i = 0; i < 8; ++i)
+            init_c[i + 3] = p[i];
+        for (int i = 0; i < 6; ++i)
+            init_c[i] = std::abs(init_c[i]);
+        c.setcontent(8, p + 0);
 
-        //提取拟合结果
-        for(int i=0; i<8; i++)
-        {
-            init_c[i+3] = p[i];
-        }
-
-        c.setcontent(8, p);
-
-        //计算拟合曲线y值、残差
-        for(int i=0; i<ch_count; i++)
-        {
-            double x_temp = fitx.at(i);
+        for (int i = 0; i < ch_count; ++i) {
             alglib::real_1d_array xData;
             xData.setlength(1);
-            xData[0] = x_temp;
-            double y;
-            CurveFit::function_gauss_poly4(c, xData, y, NULL);
+            xData[0] = fitx.at(i);
+            double y = 0.0;
+            CurveFit::function_gauss_poly4(c, xData, y, nullptr);
             fity_curve.push_back(y);
-            double residual = fity.at(i) - y; //残差
-            residual = residual/y*100;
         }
     }
 
-    //统一参数
-    if(!exitflag[0]){
-        for(int i=0; i<6; i++)
-        {
-            init_c[i] = abs(init_c[i]);
+    if (exitflag[0]) {
+        const double bsl_L_846 = init_c[1] - 2 * init_c[2];
+        const double bsl_H_846 = init_c[1] + 2 * init_c[2];
+        QVector<double> edgeCounts;
+        for (int i = 0; i < ch_count; ++i) {
+            const double x = fitx.at(i);
+            if (x >= bsl_L_846 && x <= bsl_H_846)
+                edgeCounts.push_back(fity.at(i));
+        }
+        if (edgeCounts.size() >= 2) {
+            const double bsl846 = (edgeCounts.first() + edgeCounts.last()) * 0.5;
+            if (init_c[0] <= std::sqrt(bsl846) + 40.0)
+                exitflag[0] = false;
         }
     }
 
-    //峰位确认
-    if(exitflag[0]){
-        double bsl_L_846 = init_c[1] - 2*init_c[2];
-        double bsl_R_846 = init_c[1] + 2*init_c[2];
-        QVector<double> countRange;
-        for(int i = 0; i<mCHANNEL2048; i++)
-        {
-            double energy = (i+1) * energy_scale[0] + energy_scale[1];
-            if(energy>=bsl_L_846 && energy<=bsl_R_846){
-                countRange.push_back(newdata[i]*1.0);
-            }
+    if (exitflag[1]) {
+        const double bsl_L_909 = init_c[4] - 2 * init_c[5];
+        const double bsl_H_909 = init_c[4] + 2 * init_c[5];
+        QVector<double> edgeCounts;
+        for (int i = 0; i < ch_count; ++i) {
+            const double x = fitx.at(i);
+            if (x >= bsl_L_909 && x <= bsl_H_909)
+                edgeCounts.push_back(fity.at(i));
         }
-        double ave846 = (countRange.at(0) + countRange.back())*0.5;
-        if(init_c[0] <= sqrt(ave846) + 40)
-        {
-            exitflag[0] = false;
-            qDebug()<<"846峰值过低，固定参数拟合";
+        if (edgeCounts.size() >= 2) {
+            const double bsl909 = (edgeCounts.first() + edgeCounts.last()) * 0.5;
+            if (init_c[3] <= std::sqrt(bsl909) + 50.0)
+                exitflag[1] = false;
         }
     }
 
-    if(exitflag[1]){
-        double bsl_L_909 = init_c[4] - 2*init_c[5];
-        double bsl_R_909 = init_c[4] + 2*init_c[5];
-        QVector<double> countRange;
-        for(int i = 0; i<mCHANNEL2048; i++)
-        {
-            double energy = (i+1) * energy_scale[0] + energy_scale[1];
-            if(energy>=bsl_L_909 && energy<=bsl_R_909){
-                countRange.push_back(newdata[i]*1.0);
-            }
-        }
-        double ave909 = (countRange.at(0) + countRange.back())*0.5;
-        if(init_c[3] <= sqrt(ave909) + 50)
-        {
-            exitflag[1] = false;
-            qDebug()<<"909峰值过低，固定参数拟合";
-        }
-    }
+    const double pi = 3.141592654;
+    const double denom = (1.0 - deadTimeRate) > 1e-12 ? (1.0 - deadTimeRate) : 1.0;
+    if (peakCountOut)
+        *peakCountOut = init_c[3] * init_c[5] * std::sqrt(pi) / denom;
 
     specStripData_x.append(fitx);
     specStripData_y.append(fity);
     specStripData_fity.append(fity_curve);
     specStripData_residualRate.append(residual_rate);
 
-    //记录下标终点
-    int endPos = specStripData_x.size() -1;
-    if(specStrip_rightCH.size()==0) specStrip_rightCH.push_back(-1);
-    specStrip_rightCH.push_back(endPos);
+    if (specStrip_rightCH.isEmpty())
+        specStrip_rightCH.push_back(-1);
+    specStrip_rightCH.push_back(specStripData_x.size() - 1);
 
     return true;
 }
@@ -701,47 +804,46 @@ bool ParseData::fit909data()
 {
     count909_fitcount.clear();
     count909_residual.clear();
-    int ch_count = count909_count.size();
+    const int ch_count = count909_count.size();
+    if (ch_count < 2)
+        return false;
 
-    //提取拟合数据
     QVector<QPointF> fitPoints;
-    QVector<double> fitx,fity;
-    for(int i=0; i<ch_count; i++)
-    {
-        double ti = count909_time.at(i);
-        double yi = count909_count.at(i);
-        fitPoints.push_back(QPointF(ti, log(yi)));
-        fitx.push_back(ti);
-        fity.push_back(yi);
+    QVector<double> fitx;
+    QVector<double> fity;
+    fitPoints.reserve(ch_count);
+    fitx.reserve(ch_count);
+    fity.reserve(ch_count);
+    for (int i = 0; i < ch_count; ++i) {
+        fitx.push_back(count909_time.at(i));
+        fity.push_back(count909_count.at(i));
+        fitPoints.push_back(QPointF(fitx.last(), fity.last()));
     }
 
-    //赋初值，并拟合
-    double p = 10.0;
+    double fit_a = fity.first();
     QVector<double> residual_rate;
-    CurveFit::fit_log(fitPoints, &p, residual_rate);
+    if (!CurveFit::fit_exp_decay(fitPoints, &fit_a, residual_rate))
+        return false;
 
-    //计算拟合曲线y值、残差
-    alglib::real_1d_array c;
-    c.setcontent(1, &p);
     QVector<double> fity_curve;
-    for(int i=0; i<ch_count; i++)
-    {
-        double x_temp = fitx.at(i);
+    fity_curve.reserve(ch_count);
+    alglib::real_1d_array c;
+    c.setcontent(1, &fit_a);
+    for (int i = 0; i < ch_count; ++i) {
         alglib::real_1d_array xData;
         xData.setlength(1);
-        xData[0] = x_temp;
-        double y;
-        CurveFit::function_log(c, xData, y, NULL);
-        fity_curve.push_back(exp(y));
-        count909_residual.push_back((exp(y)-fity.at(i))/fity.at(i)*100.0);
+        xData[0] = fitx.at(i);
+        double yFit = 0.0;
+        CurveFit::function_exp_decay(c, xData, yFit, nullptr);
+        fity_curve.push_back(yFit);
+        count909_residual.push_back((fity.at(i) - yFit) / yFit * 100.0);
     }
 
-    count909_fitcount.append(fity_curve);
-    // count909_residual.append(residual_rate);
+    count909_fitcount = fity_curve;
 
-    //零时刻计数
-    double t1 = log(2)/(78.4*60);
-    mInitialCount = exp(p)/(exp(mTimeBin_online/60*t1)-1);
+    const double t1 = log(2.0) / (78.4 * 60.0);
+    const double timeBinMin = mTimeBin_online / 60.0;
+    mInitialCount = fit_a / (std::exp(timeBinMin * t1) - 1.0);
     return true;
 }
 
@@ -801,7 +903,6 @@ void ParseData::clearFitResult()
     specStripData_residualRate.clear(); //残差
 }
 
-#include <QTextCodec>
 /**
  * @brief parseH5File 解析h5文件，获取能谱数据
  * @param filePath h5文件路径
@@ -1200,4 +1301,187 @@ bool ParseData::getResult_offline(quint64 timeBin, quint64 start_time, quint64 e
     mergeSpecTime_offline(timeBin, start_time, end_time);
     bool flag = getResult(m_mergeSpec);
     return flag;
+}
+
+void ParseData::addCompressedSpectrumToSegment(mergeSpecData &seg, const H5Spectrum &spec, quint64 lossTimeNs)
+{
+    seg.deathTime += lossTimeNs;
+    seg.sumMeasureTimeMs += spec.measureTime;
+    ++seg.rowCount;
+    for (int i = 0; i < mCHANNEL2048; ++i) {
+        const int ch = i * 4;
+        seg.spectrum[i] += spec.spectrum[ch] + spec.spectrum[ch + 1]
+                         + spec.spectrum[ch + 2] + spec.spectrum[ch + 3];
+    }
+}
+
+/**
+ * @brief 多文件离线能谱合并与解析（对齐 MATLAB Data_Analysis_Main.m 叠加逻辑）
+ *
+ * 处理流程（每个 H5 文件、每个探测器通道独立进行）：
+ * 1. 读取该通道全部原始能谱；能谱时刻由「文件开测时刻 + (sequence-sequence0)×measureTime」推算（不用 FPGA UTC）；
+ * 2. 按 sequence 连续性切分连续段（相邻序号差 > 1 为断点），再按解析窗口筛选；
+ * 3. 每连续段从首条能谱起，每 spectraPerBin 条原始能谱合并为 1 段（8192→2048 压缩求和）；
+ *    spectraPerBin = stepSec×1000 / measureTimeMs；fileStart 优先 Config/StartTime，否则文件名；
+ * 4. 不足一整段的尾部能谱丢弃；合并段 currentTime 取该 bin 最后一条子能谱结束时刻（推算起始+measureTime）相对打靶的右端点；
+ * 5. 多文件产生的合并段按 currentTime 排序串联后，调用 getResult() 寻峰/剥谱/衰减拟合。
+ *
+ * @param filePaths    测量 H5 文件路径列表
+ * @param detectorId   探测器编号 1..DET_NUM
+ * @param fusionTime   打靶零时刻
+ * @param windowLeft   解析窗口左端点 UTC（fusionTime + timeStart）
+ * @param windowRight  解析窗口右端点 UTC（fusionTime + timeEnd）
+ * @param stepSec      合并时间步长 Time_Bin，单位 s
+ * @return 至少合并出一段且 getResult 成功时返回 true
+ */
+bool ParseData::getResult_offlineMultiFileUtc(const QStringList &filePaths,
+                                              quint32 detectorId,
+                                              const QDateTime &fusionTime,
+                                              const QDateTime &windowLeft,
+                                              const QDateTime &windowRight,
+                                              int stepSec)
+{
+    // -------- 0. 初始化解析状态 --------
+    mDetId = detectorId;
+    m_allSpec.clear();
+    m_mergeSpec.clear();
+    mTimeBin_online = stepSec;
+
+    // -------- 1. 参数合法性检查 --------
+    if (filePaths.isEmpty() || !fusionTime.isValid() || !windowLeft.isValid() || !windowRight.isValid())
+        return false;
+    if (stepSec <= 0 || windowLeft >= windowRight)
+        return false;
+
+    // 解析窗口与打靶时刻（ms）
+    const qint64 leftMs = windowLeft.toMSecsSinceEpoch();
+    const qint64 rightMs = windowRight.toMSecsSinceEpoch();
+    const qint64 fusionMs = fusionTime.toMSecsSinceEpoch();
+
+    QTextCodec *gbk_codec = QTextCodec::codecForName("GBK");
+    quint32 totalRawRows = 0; // 参与合并的原始能谱条数（统计用）
+
+    // -------- 2. 逐文件读取并分段合并 --------
+    for (const QString &filePath : filePaths) {
+        if (filePath.isEmpty() || !QFileInfo::exists(filePath))
+            continue;
+
+        // 2.1 读取本文件指定通道的全部能谱
+        QVector<H5Spectrum> fileSpec;
+        const QByteArray filePathBytes = gbk_codec->fromUnicode(filePath);
+        const std::string filePathStd = filePathBytes.toStdString();
+        if (!HDF5Settings::readAllH5Spectrum(filePathStd, detectorId, fileSpec)
+            || fileSpec.isEmpty()) {
+            continue;
+        }
+
+        // 2.2 文件开测时刻与序号基准（不依赖 FPGA UTC）
+        const qint64 fileStartMs = resolveFileStartMs(filePath, filePathStd);
+        if (fileStartMs == 0) {
+            qWarning().nospace() << "Skip file (no valid start time):" << QFileInfo(filePath).fileName();
+            continue;
+        }
+
+        quint32 measureTimeMs = 0;
+        quint32 sequence0 = 0;
+        for (const H5Spectrum &spec : fileSpec) {
+            if (spec.measureTime == 0)
+                continue;
+            measureTimeMs = spec.measureTime;
+            sequence0 = spec.sequence;
+            break;
+        }
+        if (measureTimeMs == 0)
+            continue;
+
+        const int spectraPerBin = static_cast<int>(static_cast<qint64>(stepSec) * 1000
+                                                   / static_cast<qint64>(measureTimeMs));
+        if (spectraPerBin <= 0) {
+            qWarning().nospace() << "Skip file (step shorter than measureTime):" << QFileInfo(filePath).fileName()
+                                 << " stepSec=" << stepSec << " measureTimeMs=" << measureTimeMs;
+            continue;
+        }
+
+        const auto specStartMs = [&](const H5Spectrum &spec) -> qint64 {
+            return syntheticSpectrumStartMs(fileStartMs, sequence0, measureTimeMs, spec.sequence);
+        };
+
+        int fileMergedCount = 0;
+        int rawInWindow = 0;
+
+        // 2.3 先按 sequence 断点分段，再在段内筛选窗口并合并（避免窗口截断造成伪断点）
+        const QVector<QVector<H5Spectrum>> runs = splitBySequenceRuns(fileSpec);
+        for (const QVector<H5Spectrum> &run : runs) {
+            QVector<H5Spectrum> filtered;
+            filtered.reserve(run.size());
+            for (const H5Spectrum &spec : run) {
+                const qint64 startMs = specStartMs(spec);
+                const qint64 endMs = startMs + static_cast<qint64>(spec.measureTime);
+                if (endMs <= leftMs || startMs >= rightMs)
+                    continue;
+                filtered.append(spec);
+            }
+            if (filtered.isEmpty())
+                continue;
+
+            rawInWindow += filtered.size();
+
+            // 2.4 在连续段内按 spectraPerBin 条合并
+            const int completeBins = filtered.size() / spectraPerBin;
+            int lastSpecID = 0;
+            for (int bin = 0; bin < completeBins; ++bin) {
+                const int binStart = bin * spectraPerBin;
+                const int binEnd = binStart + spectraPerBin;
+
+                mergeSpecData seg;
+                seg.specTime = static_cast<quint64>(stepSec) * 1000ULL;
+
+                for (int idx = binStart; idx < binEnd; ++idx) {
+                    const H5Spectrum &spec = filtered.at(idx);
+                    const qint64 lossTimeTempMs = static_cast<qint64>(spec.sequence - lastSpecID - 1)
+                        * static_cast<qint64>(measureTimeMs);
+                    const quint64 lossTimeNs = static_cast<quint64>(qMax<qint64>(0, lossTimeTempMs)) * 1000000ULL
+                        + static_cast<quint64>(spec.deathTime) * 10ULL;
+                    addCompressedSpectrumToSegment(seg, spec, lossTimeNs);
+                    lastSpecID = spec.sequence;
+                    ++totalRawRows;
+                }
+
+                // 合并段右端点 = 本 bin 最后一条子能谱的结束时刻（起始 + measureTime），再转为相对打靶 ms
+                const H5Spectrum &lastSpecInBin = filtered.at(binEnd - 1);
+                const qint64 rightEndpointMs = specStartMs(lastSpecInBin)
+                    + static_cast<qint64>(lastSpecInBin.measureTime);
+                seg.currentTime = rightEndpointMs - fusionMs;
+                m_mergeSpec.append(seg);
+                ++fileMergedCount;
+            }
+        }
+
+        if (fileMergedCount == 0) {
+            qInfo().nospace() << "Skip file (no merged segments in window):" << QFileInfo(filePath).fileName()
+                              << " det" << detectorId;
+            continue;
+        }
+
+        qInfo().nospace() << "Merge file:" << QFileInfo(filePath).fileName()
+                          << " det" << detectorId
+                          << " fileStartMs" << fileStartMs
+                          << " measureTimeMs" << measureTimeMs
+                          << " sequence0" << sequence0
+                          << " rawInWindow" << rawInWindow
+                          << " spectraPerBin" << spectraPerBin
+                          << " mergedSegments" << fileMergedCount;
+    }
+
+    // -------- 3. 多文件结果校验 --------
+    if (m_mergeSpec.isEmpty() || totalRawRows == 0)
+        return false;
+
+    // -------- 4. 按合并段时刻排序后串联，执行寻峰/剥谱 --------
+    std::sort(m_mergeSpec.begin(), m_mergeSpec.end(),
+              [](const mergeSpecData &a, const mergeSpecData &b) {
+                  return a.currentTime < b.currentTime;
+              });
+
+    return getResult(m_mergeSpec);
 }

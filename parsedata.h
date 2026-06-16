@@ -3,6 +3,8 @@
 
 //中子产额分析算法
 #include <QString>
+#include <QStringList>
+#include <QDateTime>
 #include <QVector>
 #include <QtEndian> //qFromBigEndian需要
 #include <cstring>      // 用于内存初始化（如memset）
@@ -42,14 +44,17 @@ public:
         qint64 currentTime; //能谱测量结束时刻，打靶时刻为零时刻，早于打靶为负数，单位ms
         quint64 specTime;   //能谱测量对应时长，单位ms
         quint64 deathTime;  //能谱测量死时间，单位ns
+        quint32 rowCount = 0;         // 合并子能谱个数
+        quint64 sumMeasureTimeMs = 0; // 各子能谱 measureTime 累加，单位 ms
+
         quint32 spectrum[2048];  // 能谱，将FPGA传输来的8192道压缩为2048道。
 
-        // 1. 默认构造函数：初始化所有成员为默认值，确保spectrum前三道为0
         mergeSpecData()
             : currentTime(0),
             specTime(0),
-            deathTime(0) {
-            // 初始化spectrum数组
+            deathTime(0),
+            rowCount(0),
+            sumMeasureTimeMs(0) {
             for (int i = 0; i < 2048; ++i) {
                 spectrum[i] = 0;
             }
@@ -98,7 +103,8 @@ public:
     bool PeakFind(double* spectrum, QVector<fit_result>& init_c, bool* exitflag);
 
     // 剥谱
-    bool SpecStripping(double* spectrum, double energy_scale[], QVector<double>& init_c, bool* exitflag);
+    bool SpecStripping(double* spectrum, double energy_scale[], QVector<double>& init_c, bool* exitflag,
+                       double deadTimeRate, double *peakCountOut);
 
     // 拟合909全能峰计数随时间的变化
     bool fit909data();
@@ -152,6 +158,22 @@ public:
     // 获取指定时间段内的能谱
     bool getResult_offline(quint64 timeBin, quint64 start_time, quint64 end_time);
 
+    /**
+     * @brief 从多个 H5 文件读取指定通道，按推算时刻分段合并（fileStart+sequence×measureTime，8192→2048），并执行寻峰/剥谱
+     * @param filePaths 测量文件列表
+     * @param detectorId 探测器通道号 1..DET_NUM
+     * @param fusionTime 打靶时刻（零时刻）
+     * @param windowLeft 解析窗口左端点（fusionTime + timeStart）
+     * @param windowRight 解析窗口右端点（fusionTime + timeEnd）
+     * @param stepSec      合并时间步长 Time_Bin，单位 s；spectraPerBin=stepSec×1000/measureTimeMs
+     */
+    bool getResult_offlineMultiFileUtc(const QStringList &filePaths,
+                                       quint32 detectorId,
+                                       const QDateTime &fusionTime,
+                                       const QDateTime &windowLeft,
+                                       const QDateTime &windowRight,
+                                       int stepSec);
+
 public:
     int mDetId; //探测器编号
 
@@ -159,6 +181,8 @@ private:
     bool getResult(QVector<mergeSpecData> mergeSpec);
 
     void clearFitResult();
+
+    void addCompressedSpectrumToSegment(mergeSpecData &seg, const H5Spectrum &spec, quint64 lossTimeNs);
 
     QVector<mergeSpecData> m_mergeSpec; //对原始数据汇总后的各时段能谱，对丢包带来的死时间做了相应记录
     QVector<H5Spectrum> m_allSpec;// 从HDF5文件中读取到特定通道的所有能谱

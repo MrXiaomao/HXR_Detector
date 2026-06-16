@@ -879,44 +879,40 @@ void HDF5Settings::writeH5SpectrumBatch(quint8 index, const QVector<H5Spectrum>&
 
 bool HDF5Settings::readAllH5Spectrum(const std::string& filePath, const quint32 detectorId,
     QVector<H5Spectrum>& outData)
-{    
+{
+    outData.clear();
     try {
-        // 1. 打开文件
         H5::H5File file(filePath, H5F_ACC_RDONLY);
 
-        // 2. 打开分组核数据集
-        H5::Group group = file.openGroup(QString("Detector#%1").arg(detectorId).toStdString());
+        const std::string groupName = QString("Detector#%1").arg(detectorId).toStdString();
+        if (H5Lexists(file.getId(), groupName.c_str(), H5P_DEFAULT) <= 0)
+            return false;
+
+        H5::Group group = file.openGroup(groupName);
         H5::DataSet dataset = group.openDataSet("Spectrum");
 
-        // 3. 获取数据集维度
         H5::DataSpace file_space = dataset.getSpace();
         hsize_t dims[2] = {0, 0};
         file_space.getSimpleExtentDims(dims, nullptr);
 
-        hsize_t rows    = dims[0];
-        hsize_t columns = dims[1];
+        const hsize_t rows = dims[0];
+        const hsize_t columns = dims[1];
 
         if (rows == 0)
             return true;
 
-        // 4. 校验列数（非常重要，防文件结构不一致）
-        const hsize_t expectedColumns =
-            sizeof(H5Spectrum) / sizeof(quint32);
-
+        const hsize_t expectedColumns = sizeof(H5Spectrum) / sizeof(quint32);
         if (columns != expectedColumns) {
             qWarning() << "H5Spectrum column mismatch:"
                        << columns << "!=" << expectedColumns;
             return false;
         }
 
-        // 5. 分配输出容器
-        outData.resize(rows);
+        outData.resize(static_cast<int>(rows));
 
-        // 6. 定义内存空间（一次性读所有行）
         hsize_t mem_dims[2] = {rows, columns};
         H5::DataSpace mem_space(2, mem_dims);
 
-        // 7. 一次性读
         dataset.read(outData.data(),
                      H5::PredType::NATIVE_UINT,
                      mem_space,
@@ -924,8 +920,7 @@ bool HDF5Settings::readAllH5Spectrum(const std::string& filePath, const quint32 
 
         return true;
 
-    } catch (H5::Exception& e) {
-        e.printErrorStack();
+    } catch (H5::Exception &) {
         return false;
     }
 }

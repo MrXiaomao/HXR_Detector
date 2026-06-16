@@ -86,16 +86,20 @@ namespace CurveFit {
      */
     void function_log(const alglib::real_1d_array &c, const alglib::real_1d_array &t, double &func, void *ptr);
 
+    /** @brief a*exp(-ln2/(78.4*60)*t)，t 单位 min */
+    void function_exp_decay(const alglib::real_1d_array &c, const alglib::real_1d_array &t, double &func, void *ptr);
+
     /**
      * @brief 线性拟合
      * func = c[0]*x + c[1];
      * @param fit_x 待拟合一维数组x
      * @param fit_y 待拟合一维数组y
      * @param fit_c 拟合参数一维数组c的初值 拟合成功后，会将拟合结果存放在fit_c中
+     * @param R2    拟合决定系数 R²
      * @param rep   拟合报告
      * @return 拟合是否成功
      */
-    bool fit_linear(QVector<QPointF> points, double* R2, double* fit_c, alglib::lsfitreport* rep = nullptr);
+    bool fit_linear(QVector<QPointF> points, double* fit_c, double* R2, alglib::lsfitreport* rep = nullptr);
 
     /**
      * @brief 二次函数拟合
@@ -168,6 +172,11 @@ namespace CurveFit {
      * @return 拟合是否成功
      */
     bool fit_log(QVector<QPointF> points, double* fit_c, QVector<double> &residual_rate);
+
+    /**
+     * @brief 909 全能峰计数随时间指数衰减拟合 func = a*exp(-ln2/(78.4*60)*t)
+     */
+    bool fit_exp_decay(QVector<QPointF> points, double *fit_a, QVector<double> &residual_rate);
 
     const int gauss_arr_count_min = 10; //高斯拟合数据点数最小值
 }

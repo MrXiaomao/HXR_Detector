@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-04-20 09:21:28
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-06-13 20:21:26
+ * @LastEditTime: 2026-06-15 16:57:18
  * @Description: 离线数据分析 中子产额分析
  */
 #include "neutronyieldstatisticswindow.h"
@@ -111,6 +111,9 @@ NeutronYieldStatisticsWindow::NeutronYieldStatisticsWindow(bool isDarkTheme, QWi
     , mIsDarkTheme(isDarkTheme)
     , mainWindow(static_cast<QGoodWindowHelper*>(parent))
 {
+    for (int i = 0; i < DET_NUM; ++i)
+        dealFile[i] = nullptr;
+
     ui->setupUi(this);
 
     // 初始化界面
@@ -140,6 +143,10 @@ NeutronYieldStatisticsWindow::NeutronYieldStatisticsWindow(bool isDarkTheme, QWi
 
 NeutronYieldStatisticsWindow::~NeutronYieldStatisticsWindow()
 {
+    for (int i = 0; i < DET_NUM; ++i) {
+        delete dealFile[i];
+        dealFile[i] = nullptr;
+    }
     delete ui;
 }
 
@@ -333,6 +340,25 @@ void NeutronYieldStatisticsWindow::initUi()
 
     // 连接表格选择变化信号
     connect(ui->tableWidget, &QTableWidget::itemSelectionChanged, this, &NeutronYieldStatisticsWindow::on_tableWidget_selectionChanged);
+
+    {
+        QButtonGroup *shotTimeModeGroup = new QButtonGroup(this);
+        shotTimeModeGroup->addButton(ui->radioButton_unifiedShotTime);
+        shotTimeModeGroup->addButton(ui->radioButton_perChannelShotTime);
+        connect(ui->radioButton_unifiedShotTime, &QRadioButton::toggled, this, [this](bool checked) {
+            if (checked)
+                updateShotTimeModeUi();
+        });
+        connect(ui->radioButton_perChannelShotTime, &QRadioButton::toggled, this, [this](bool checked) {
+            if (checked)
+                updateShotTimeModeUi();
+        });
+        connect(ui->spinBox_channelId, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int detId) {
+            if (isPerChannelShotTimeMode())
+                syncMeasureDateTimeForDetector(detId);
+        });
+        updateShotTimeModeUi();
+    }
 
     initSpectrumCustomPlot();
     initCountCustomPlot();
@@ -586,9 +612,13 @@ bool NeutronYieldStatisticsWindow::readH5FileChannelMeta(const QString &filePath
         for (int i = 0; i < DET_NUM; ++i) {
             const int detId = i + 1;
             const QString detName = QString("Detector#%1").arg(detId);
+            const std::string detNameStd = detName.toStdString();
+
+            if (H5Lexists(file.getId(), detNameStd.c_str(), H5P_DEFAULT) <= 0)
+                continue;
 
             try {
-                H5::Group group = file.openGroup(detName.toStdString());
+                H5::Group group = file.openGroup(detNameStd);
                 H5::DataSet dataset = group.openDataSet("Spectrum");
 
                 H5::CompType fileType = dataset.getCompType();
@@ -642,7 +672,7 @@ bool NeutronYieldStatisticsWindow::readH5FileChannelMeta(const QString &filePath
                 dataset.close();
                 file_space.close();
             } catch (H5::Exception &) {
-                emit reporWriteLog(tr("谱仪%1无数据或组不存在，跳过").arg(detId), QtWarningMsg);
+                qDebug() << "Detector" << detId << "read failed in" << QFileInfo(filePath).fileName();
             }
         }
         file.close();
@@ -782,11 +812,81 @@ void NeutronYieldStatisticsWindow::updateMeasurementInfoFromFirstFile()
         if (paths.size() == 1)
             ui->fusionDateTime->setDateTime(meta.commonStart);
     }
+    
+    //取消时间范围的限制，采用交集方式计算时间范围
+    // if (meta.valid && meta.commonStart.isValid() && meta.commonEnd.isValid()) {
+    //     const qint64 durationSec = qMax<qint64>(0, meta.commonStart.secsTo(meta.commonEnd));
+    //     ui->spinBox_timeEnd->setMaximum(static_cast<int>(durationSec / 60));
+    // }
+}
 
-    if (meta.valid && meta.commonStart.isValid() && meta.commonEnd.isValid()) {
-        const qint64 durationSec = qMax<qint64>(0, meta.commonStart.secsTo(meta.commonEnd));
-        ui->spinBox_timeEnd->setMaximum(static_cast<int>(durationSec / 60));
+void NeutronYieldStatisticsWindow::updateDetectorSpecCountFromAllFiles()
+{
+    const QStringList paths = filePathsFromTable();
+    mDetectorSpecCount.clear();
+    mDetectorFirstDateTime.clear();
+    mDetectorLastDateTime.clear();
+
+    for (const QString &filePath : paths) {
+        H5FileChannelMeta meta;
+        if (!readH5FileChannelMeta(filePath, meta, false, false))
+            continue;
+
+        for (auto it = meta.specCount.cbegin(); it != meta.specCount.cend(); ++it) {
+            const int detId = it.key();
+            if (!mDetectorSpecCount.contains(detId) || it.value() > mDetectorSpecCount[detId])
+                mDetectorSpecCount[detId] = it.value();
+
+            if (!mDetectorFirstDateTime.contains(detId)
+                || meta.firstDateTime.value(detId) < mDetectorFirstDateTime[detId]) {
+                mDetectorFirstDateTime[detId] = meta.firstDateTime.value(detId);
+            }
+            if (!mDetectorLastDateTime.contains(detId)
+                || meta.lastDateTime.value(detId) > mDetectorLastDateTime[detId]) {
+                mDetectorLastDateTime[detId] = meta.lastDateTime.value(detId);
+            }
+        }
     }
+
+    for (int detId : mDetectorSpecCount.keys())
+        mDealSucess[detId] = false;
+}
+
+bool NeutronYieldStatisticsWindow::isPerChannelShotTimeMode() const
+{
+    return ui->radioButton_perChannelShotTime->isChecked();
+}
+
+void NeutronYieldStatisticsWindow::updateShotTimeModeUi()
+{
+    const bool perChannel = isPerChannelShotTimeMode();
+    ui->label_channelId->setVisible(perChannel);
+    ui->spinBox_channelId->setVisible(perChannel);
+    if (perChannel)
+        syncMeasureDateTimeForDetector(ui->spinBox_channelId->value());
+}
+
+void NeutronYieldStatisticsWindow::syncMeasureDateTimeForDetector(int detId)
+{
+    if (detId < 1 || !mDetectorFirstDateTime.contains(detId))
+        return;
+
+    const QDateTime firstDt = mDetectorFirstDateTime.value(detId);
+    if (firstDt.isValid())
+        ui->messureDateTime->setDateTime(firstDt);
+}
+
+qint64 NeutronYieldStatisticsWindow::beginTimeForDetector(int detId, const QDateTime &fusionTime) const
+{
+    if (isPerChannelShotTimeMode()) {
+        const QDateTime measureStart = mDetectorFirstDateTime.value(detId);
+        if (measureStart.isValid() && fusionTime.isValid())
+            return measureStart.toSecsSinceEpoch() - fusionTime.toSecsSinceEpoch();
+    }
+
+    const qint64 fusionSec = fusionTime.toSecsSinceEpoch();
+    const qint64 measureSec = ui->messureDateTime->dateTime().toSecsSinceEpoch();
+    return measureSec - fusionSec;
 }
 
 void NeutronYieldStatisticsWindow::on_action_lightTheme_triggered()
@@ -1392,97 +1492,162 @@ void NeutronYieldStatisticsWindow::on_action_startCalculate_triggered()
 {
     mInterrupted = false;
 
-    // 获取测量的起始时刻，以打靶时刻为零时刻
-    // 获取两个时间的时间戳（秒）
-    qint64 seconds1 = ui->fusionDateTime->dateTime().toSecsSinceEpoch();
-    qint64 seconds2 = ui->messureDateTime->dateTime().toSecsSinceEpoch();
-    qint64 beginTime = seconds2 - seconds1;
+    const int startTime = ui->spinBox_timeStart->value() * 60;
+    const int endTime = ui->spinBox_timeEnd->value() * 60;
+    const int timeStep = ui->spinBox_step->value() * 60;
 
-    // 设定待分析的时间区间以及步长
-    int startTime = ui->spinBox_timeStart->value() * 60; //单位：s
-    int endTime = ui->spinBox_timeEnd->value() * 60; //单位：s
-    int timeStep = ui->spinBox_step->value() * 60;//单位：s
-
-    if(startTime >= endTime)
-    {
+    if (startTime >= endTime) {
         QMessageBox::information(this, tr("提示"), tr("退出解析！输入的解析时间起点>=解析时间终点。"));
         return;
     }
 
-    QString tmStart = ui->fusionDateTime->dateTime().addSecs(startTime).toString("yyyy-MM-dd hh:mm:ss");
-    QString tmEnd = ui->fusionDateTime->dateTime().addSecs(endTime).toString("yyyy-MM-dd hh:mm:ss");
-    QString step = QString::number(timeStep/60);
-    QString f_segment = QString::number((endTime - startTime)*1.0/timeStep, 'f', 1);
-    QString i_segment = QString::number((endTime - startTime)/timeStep);
-    QString msgTip = QString("您选择的"
-                             "\n起点时间：%1"
-                             "\n结束时间：%2"
-                             "\n时间步长：%3分钟"
-                             "\n计算结果：%4条曲线，根据整除原则，将只显示%5条曲线"
-                             "\n\n点击[确认]开始解析"
-                             "\n点击[否]返回重新修改").arg(tmStart, tmEnd, step, f_segment, i_segment);
-    if (QMessageBox::question(this, tr("提示"), msgTip, QMessageBox::Yes, QMessageBox::No)!=QMessageBox::Yes)
+    const QStringList allFilePaths = filePathsFromTable();
+    if (allFilePaths.isEmpty()) {
+        QMessageBox::information(this, tr("提示"), tr("请先添加测量文件。"));
+        return;
+    }
+
+    QStringList h5FilePaths;
+    for (const QString &filePath : allFilePaths) {
+        if (QFileInfo(filePath).suffix().compare(QStringLiteral("H5"), Qt::CaseInsensitive) == 0)
+            h5FilePaths.append(filePath);
+    }
+    if (h5FilePaths.isEmpty()) {
+        QMessageBox::information(this, tr("提示"), tr("当前仅支持 H5 测量文件的多文件分段合并解析。"));
+        return;
+    }
+
+    updateDetectorSpecCountFromAllFiles();
+    if (mDetectorSpecCount.isEmpty()) {
+        QMessageBox::information(this, tr("提示"), tr("所选文件中没有可用的探测器能谱数据。"));
+        return;
+    }
+
+    const bool perChannelMode = isPerChannelShotTimeMode();
+    const QDateTime fusionTime = ui->fusionDateTime->dateTime();
+    if (!fusionTime.isValid()) {
+        QMessageBox::information(this, tr("提示"), tr("打靶时刻无效，请先设置打靶时刻。"));
+        return;
+    }
+
+    QList<int> detIds;
+    if (perChannelMode) {
+        const int detID = ui->spinBox_channelId->value();
+        if (detID < 1 || detID > DET_NUM) {
+            QMessageBox::information(this, tr("提示"), tr("通道号无效，请输入 1~%1。").arg(DET_NUM));
+            return;
+        }
+        if (!mDetectorSpecCount.contains(detID)) {
+            QMessageBox::information(this, tr("提示"), tr("谱仪%1无有效能谱数据。").arg(detID));
+            return;
+        }
+        detIds.append(detID);
+        syncMeasureDateTimeForDetector(detID);
+    } else {
+        detIds = mDetectorSpecCount.keys();
+        std::sort(detIds.begin(), detIds.end());
+    }
+
+    const QDateTime windowLeft = fusionTime.addSecs(startTime);
+    const QDateTime windowRight = fusionTime.addSecs(endTime);
+
+    const QString tmStart = windowLeft.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss"));
+    const QString tmEnd = windowRight.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss"));
+    const QString step = QString::number(timeStep / 60);
+    const QString f_segment = QString::number((endTime - startTime) * 1.0 / timeStep, 'f', 1);
+    const QString i_segment = QString::number((endTime - startTime) / timeStep);
+
+    QString msgTip;
+    if (perChannelMode) {
+        msgTip = QString(tr("模式：分通道打靶时刻"
+                            "\n通道：谱仪 %1"
+                            "\n打靶时刻：%2"
+                            "\n起点时间：%3"
+                            "\n结束时间：%4"
+                            "\n时间步长：%5分钟"
+                            "\n计算结果：%6条曲线，根据整除原则，将只显示%7条曲线"
+                            "\n\n点击[Yes]开始解析"
+                            "\n点击[No]返回重新修改"))
+                   .arg(detIds.first())
+                   .arg(fusionTime.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss")))
+                   .arg(tmStart, tmEnd, step, f_segment, i_segment);
+    } else {
+        msgTip = QString(tr("模式：统一打靶时刻"
+                            "\n打靶时刻：%1"
+                            "\n起点时间：%2"
+                            "\n结束时间：%3"
+                            "\n时间步长：%4分钟"
+                            "\n计算结果：%5条曲线，根据整除原则，将只显示%6条曲线"
+                            "\n\n点击[Yes]开始解析"
+                            "\n点击[No]返回重新修改"))
+                   .arg(fusionTime.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss")))
+                   .arg(tmStart, tmEnd, step, f_segment, i_segment);
+    }
+    if (QMessageBox::question(this, tr("提示"), msgTip, QMessageBox::Yes, QMessageBox::No) != QMessageBox::Yes)
         return;
 
     emit reporWriteLog(tr("开始解析..."));
+    emit reporWriteLog(tr("解析窗口：%1 ~ %2，步长 %3 s，全局 %4 段")
+                           .arg(tmStart, tmEnd)
+                           .arg(timeStep)
+                           .arg((endTime - startTime) / timeStep));
+    if (perChannelMode) {
+        emit reporWriteLog(tr("分通道模式：谱仪 %1，打靶时刻 %2")
+                               .arg(detIds.first())
+                               .arg(fusionTime.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss"))));
+    } else {
+        emit reporWriteLog(tr("统一打靶时刻：%1")
+                               .arg(fusionTime.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss"))));
+    }
 
     QString detectorList;
-    for(int detID:mDetectorSpecCount.keys()){
-        detectorList += QString::number(detID) + ",";
-
-        if(mInterrupted) {
-            break;
-        }
-        if(!dealFile[detID-1]) delete dealFile[detID-1];
-        dealFile[detID-1] = new ParseData();
-
-        quint32 specCount = 0;
-        dealFile[detID-1]->setStartTime(beginTime);
-
-        const QStringList filePaths = filePathsFromTable();
-        if (filePaths.isEmpty()) {
-            emit reporWriteLog(tr("请先添加测量文件"), QtWarningMsg);
+    for (int detID : detIds) {
+        if (detID < 1 || detID > DET_NUM) {
+            emit reporWriteLog(tr("无效通道号 %1，已跳过").arg(detID), QtWarningMsg);
             continue;
         }
-        const QString filePath = filePaths.first();
-        if (QFileInfo(filePath).suffix() == "H5")
-        {
-            int index = 1; //默认读取探测器1的数据
-            if (ui->tableWidget->selectedItems().count() > 0)
-                index = ui->tableWidget->selectedItems()[0]->row() + 1;
-            specCount = dealFile[detID-1]->parseH5File(filePath, index);
-        }
-        else//处理网口原始数据，暂时搁置，后续有空再处理
-        {
-            specCount = dealFile[detID-1]->parseDatFile(filePath);
+
+        detectorList += QString::number(detID) + ",";
+
+        if (mInterrupted)
+            break;
+
+        mDealSucess[detID] = false;
+        delete dealFile[detID - 1];
+        dealFile[detID - 1] = new ParseData();
+        dealFile[detID - 1]->setStartTime(static_cast<int>(beginTimeForDetector(detID, fusionTime)));
+
+        bool parseOk = dealFile[detID - 1]->getResult_offlineMultiFileUtc(
+            h5FilePaths,
+            static_cast<quint32>(detID),
+            fusionTime,
+            windowLeft,
+            windowRight,
+            timeStep);
+
+        if (!parseOk) {
+            emit reporWriteLog(tr("谱仪%1解析失败").arg(detID));
+            emit reporWriteLog(QString("谱仪%1解析完成").arg(detID));
+            continue;
         }
 
-        if (specCount <= 0)
-        {
-            qInfo().nospace() << tr("文件中未找到完整能谱数据。");
-        }
-        else {
-            if (dealFile[detID-1]->getResult_offline(timeStep, startTime, endTime))
-            {
-                mDealSucess[detID] = true;
-                emit sigSuccess(detID);
-            }
-            else
-            {
-                emit reporWriteLog(QString("谱仪%1解析失败").arg(detID));
-                // emit sigFail();
-            }
-        }
-
+        mDealSucess[detID] = true;
+        emit sigSuccess(detID);
         emit reporWriteLog(QString("谱仪%1解析完成").arg(detID));
     }
 
-    // 去掉最后一个逗号
-    if (!detectorList.isEmpty())
-        detectorList.chop(1);
-    QString msg = QString("文件全部解析完成，包含谱仪：%1").arg(detectorList);
+    QString msg;
+    if (perChannelMode) {
+        const int detID = detIds.isEmpty() ? 0 : detIds.first();
+        msg = mDealSucess.value(detID, false)
+            ? tr("谱仪%1解析成功。").arg(detID)
+            : tr("谱仪%1解析失败。").arg(detID);
+    } else {
+        if (!detectorList.isEmpty())
+            detectorList.chop(1);
+        msg = QString(tr("文件全部解析完成，包含谱仪：%1")).arg(detectorList);
+    }
     emit reporWriteLog(msg);
-
     QMessageBox::information(this, tr("提示"), msg);
 }
 
@@ -1509,9 +1674,9 @@ void NeutronYieldStatisticsWindow::on_tableWidget_selectionChanged()
     // 检查数据是否已经解析完成
     if (detID > 0 && detID <= DET_NUM)
     {
-        if(!mDealSucess[detID]){
+        if (!mDealSucess.value(detID, false)) {
             QMessageBox::information(this, tr("提示"), tr("谱仪%1不存在解析成功的数据！").arg(detID));
-            return; 
+            return;
         }
         
         // 更新计数衰减曲线

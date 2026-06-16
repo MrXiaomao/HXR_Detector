@@ -5,6 +5,8 @@
 #include <vector>
 #include <stdexcept>
 #include <cstddef>
+#include <cmath>
+#include <algorithm>
 #include <Eigen/Dense>
 
 SysUtils::SysUtils() {}
@@ -140,4 +142,27 @@ std::vector<double> SysUtils::sgolayfilt_matlab_like(
     }
 
     return y;
+}
+
+std::vector<double> SysUtils::lowpass(const std::vector<double> &x, double normalizedCutoff)
+{
+    if (x.empty())
+        return x;
+    normalizedCutoff = std::max(0.01, std::min(normalizedCutoff, 0.99));
+    int window = static_cast<int>(std::round(1.0 / normalizedCutoff));
+    window = std::max(3, window);
+    if (window % 2 == 0)
+        ++window;
+
+    std::vector<double> output(x.size(), 0.0);
+    const int half = window / 2;
+    for (int i = 0; i < static_cast<int>(x.size()); ++i) {
+        int start = std::max(0, i - half);
+        int end = std::min(static_cast<int>(x.size()) - 1, i + half);
+        double sum = 0.0;
+        for (int j = start; j <= end; ++j)
+            sum += x[static_cast<std::size_t>(j)];
+        output[static_cast<std::size_t>(i)] = sum / static_cast<double>(end - start + 1);
+    }
+    return output;
 }

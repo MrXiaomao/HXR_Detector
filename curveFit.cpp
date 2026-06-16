@@ -57,6 +57,12 @@ namespace CurveFit {
         func = c[0] - log(2)/(78.4*60)*t[0];
     }
 
+    void function_exp_decay(const real_1d_array &c, const real_1d_array &t, double &func, void *ptr)
+    {
+        Q_UNUSED(ptr);
+        func = c[0] * exp(-log(2) / (78.4 * 60) * t[0]);
+    }
+
     bool fit_linear(QVector<QPointF> points, double* fit_c, double* R2, lsfitreport* rep)
     {
         int paraNum = 2; //待拟合参数个数
@@ -683,6 +689,63 @@ namespace CurveFit {
             return 0;
         }
         return 1;
+    }
+
+    bool fit_exp_decay(QVector<QPointF> points, double *fit_a, QVector<double> &residual_rate)
+    {
+        const int paraNum = 1;
+        const int num = points.size();
+        if (num < 2)
+            return false;
+
+        QVector<double> fit_x;
+        QVector<double> fit_y;
+        fit_x.reserve(num);
+        fit_y.reserve(num);
+        for (int i = 0; i < num; ++i) {
+            fit_x.push_back(points.at(i).x());
+            fit_y.push_back(points.at(i).y());
+        }
+
+        try {
+            alglib::real_2d_array x;
+            x.setcontent(num, 1, fit_x.constData());
+
+            alglib::real_1d_array y;
+            y.setcontent(num, fit_y.constData());
+
+            alglib::real_1d_array c;
+            c.setcontent(paraNum, fit_a);
+
+            const double epsx = 1e-9;
+            const ae_int_t maxits = 10000;
+            lsfitstate state;
+            lsfitreport rep;
+
+            lsfitcreatef(x, y, c, 1e-9, state);
+            alglib::lsfitsetcond(state, epsx, maxits);
+            alglib::lsfitfit(state, function_exp_decay);
+            lsfitresults(state, c, rep);
+
+            fit_a[0] = c[0];
+            residual_rate.clear();
+            for (int i = 0; i < num; ++i) {
+                alglib::real_1d_array xData;
+                xData.setlength(1);
+                xData[0] = fit_x.at(i);
+                double yFit = 0.0;
+                function_exp_decay(c, xData, yFit, nullptr);
+                const double measured = fit_y.at(i);
+                residual_rate.push_back((measured - yFit) / yFit * 100.0);
+            }
+
+            qDebug().nospace() << "CurveFit::fit_exp_decay a=" << fit_a[0]
+                               << " r2=" << rep.r2;
+        } catch (alglib::ap_error &alglib_exception) {
+            printf("ALGLIB exception with message '%s'\n", alglib_exception.msg.c_str());
+            return false;
+        }
+        return true;
     }
 }
 

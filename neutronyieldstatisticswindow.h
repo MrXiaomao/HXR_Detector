@@ -45,6 +45,7 @@ public:
     void refreshFileListBasicColumns();
     QStringList filePathsFromTable() const;
     void updateMeasurementInfoFromFirstFile();
+    void updateDetectorSpecCountFromAllFiles();
 
     /**
      * @brief 设置经纬度
@@ -150,6 +151,11 @@ private:
     static void computeCommonTimeInterval(const H5FileChannelMeta &meta,
                                           QDateTime &commonStart,
                                           QDateTime &commonEnd);
+
+    bool isPerChannelShotTimeMode() const;
+    void updateShotTimeModeUi();
+    void syncMeasureDateTimeForDetector(int detId);
+    qint64 beginTimeForDetector(int detId, const QDateTime &fusionTime) const;
 
     Ui::NeutronYieldStatisticsWindow *ui;
     bool mIsDarkTheme = true;

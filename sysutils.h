@@ -23,6 +23,9 @@ public:
      * @return 滤波输出数据
      */
     static std::vector<double> sgolayfilt_matlab_like(const std::vector<double>& x,int p,int f);
+
+    /** @brief 一维低通滤波，近似 MATLAB lowpass(x, Wn)，Wn 为归一化截止频率 (0~1) */
+    static std::vector<double> lowpass(const std::vector<double> &x, double normalizedCutoff = 0.1);
 };
 
 #endif // SYSUTILS_H
