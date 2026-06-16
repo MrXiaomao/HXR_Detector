@@ -43,8 +43,12 @@ enum FileListColumn {
 
 QDateTime measureStartTimeFromPath(const QString &filePath)
 {
-    const QString timePart = QFileInfo(filePath).baseName().left(17).replace('_', ' ');
-    return QDateTime::fromString(timePart, "yyyy-MM-dd HHmmss");
+    QTextCodec *gbk_codec = QTextCodec::codecForName("GBK");
+    const std::string filePathStd = gbk_codec->fromUnicode(filePath).toStdString();
+    const QDateTime fromConfig = HDF5Settings::readConfigStartTime(filePathStd);
+    if (fromConfig.isValid())
+        return fromConfig;
+    return HDF5Settings::measureStartTimeFromFileName(filePath);
 }
 
 /** 将 H5Spectrum 中的 UTC 时间戳转为 QDateTime（含毫秒），逻辑同 DataProcessor::extractTimestampData_Thread */
@@ -588,26 +592,41 @@ bool NeutronYieldStatisticsWindow::readH5FileChannelMeta(const QString &filePath
     try {
         QTextCodec *gbk_codec = QTextCodec::codecForName("GBK");
         QByteArray filePathBytes = gbk_codec->fromUnicode(filePath);
-        H5::H5File file(filePathBytes.toStdString(), H5F_ACC_RDONLY);
+        const std::string filePathStd = filePathBytes.toStdString();
+        H5::H5File file(filePathStd, H5F_ACC_RDONLY);
 
-        try {
+        qint64 fileStartMs = 0;
+        if (H5Lexists(file.getId(), "Config", H5P_DEFAULT) > 0) {
             H5::Group configGroup = file.openGroup("Config");
-            H5::DataSet configDataset = configGroup.openDataSet("Configuration");
-            H5::CompType cfgType = HDF5Settings::createCfgDataType();
-            DetParameter cfg[DET_NUM];
-            configDataset.read(&cfg, cfgType);
-            configDataset.close();
-            configGroup.close();
+            out.configStartTime = HDF5Settings::parseConfigTimeString(
+                HDF5Settings::readConfigStringFromGroup(configGroup, "StartTime"));
+            out.configShotTime = HDF5Settings::parseConfigTimeString(
+                HDF5Settings::readConfigStringFromGroup(configGroup, "ShotTime"));
 
-            if (applyDetectorLonLat) {
-                for (int i = 0; i < DET_NUM; ++i)
-                    setLonLat(i, cfg[i].longitude, cfg[i].latitude);
+            try {
+                H5::DataSet configDataset = configGroup.openDataSet("Configuration");
+                H5::CompType cfgType = HDF5Settings::createCfgDataType();
+                DetParameter cfg[DET_NUM];
+                configDataset.read(&cfg, cfgType);
+                configDataset.close();
+
+                if (applyDetectorLonLat) {
+                    for (int i = 0; i < DET_NUM; ++i)
+                        setLonLat(i, cfg[i].longitude, cfg[i].latitude);
+                }
+            } catch (H5::Exception &) {
+                emit reporWriteLog(tr("文件 %1 缺少 Config/Configuration，跳过探测器参数读取")
+                                       .arg(QFileInfo(filePath).fileName()),
+                                   QtWarningMsg);
             }
-        } catch (H5::Exception &) {
-            emit reporWriteLog(tr("文件 %1 缺少 Config/Configuration，跳过探测器参数读取")
-                                   .arg(QFileInfo(filePath).fileName()),
-                               QtWarningMsg);
+            configGroup.close();
         }
+
+        if (!out.configStartTime.isValid())
+            out.configStartTime = HDF5Settings::measureStartTimeFromFileName(filePath);
+        if (out.configStartTime.isValid())
+            fileStartMs = out.configStartTime.toMSecsSinceEpoch();
+        const bool useSyntheticTime = fileStartMs != 0;
 
         for (int i = 0; i < DET_NUM; ++i) {
             const int detId = i + 1;
@@ -648,8 +667,24 @@ bool NeutronYieldStatisticsWindow::readH5FileChannelMeta(const QString &filePath
                 readH5SpectrumRow(dataset, cols, 0, firstSpec);
                 readH5SpectrumRow(dataset, cols, rows - 1, lastSpec);
 
-                const QDateTime firstDt = h5UtcToDateTime(firstSpec.timeUTCs, firstSpec.timeUTCms);
-                const QDateTime lastDt = h5UtcToDateTime(lastSpec.timeUTCs, lastSpec.timeUTCms);
+                QDateTime firstDt;
+                QDateTime lastDt;
+                if (useSyntheticTime && firstSpec.measureTime != 0) {
+                    const quint32 seq0 = firstSpec.sequence;
+                    const qint64 mt = static_cast<qint64>(firstSpec.measureTime);
+                    const qint64 firstMs = fileStartMs
+                        + static_cast<qint64>(firstSpec.sequence - seq0) * mt;
+                    const qint64 lastEndMs = fileStartMs
+                        + static_cast<qint64>(lastSpec.sequence - seq0) * mt
+                        + static_cast<qint64>(lastSpec.measureTime);
+                    firstDt = QDateTime::fromMSecsSinceEpoch(firstMs);
+                    lastDt = QDateTime::fromMSecsSinceEpoch(lastEndMs);
+                } else {
+                    firstDt = h5UtcToDateTime(firstSpec.timeUTCs, firstSpec.timeUTCms);
+                    lastDt = h5UtcToDateTime(lastSpec.timeUTCs, lastSpec.timeUTCms);
+                    if (lastSpec.measureTime != 0)
+                        lastDt = lastDt.addMSecs(static_cast<qint64>(lastSpec.measureTime));
+                }
                 out.firstDateTime[detId] = firstDt;
                 out.lastDateTime[detId] = lastDt;
                 out.specCount[detId] = static_cast<quint32>(rows);
@@ -807,11 +842,15 @@ void NeutronYieldStatisticsWindow::updateMeasurementInfoFromFirstFile()
     mDetectorFirstDateTime = meta.firstDateTime;
     mDetectorLastDateTime = meta.lastDateTime;
 
-    if (meta.valid && meta.commonStart.isValid()) {
+    if (meta.valid && meta.commonStart.isValid())
         ui->messureDateTime->setDateTime(meta.commonStart);
-        if (paths.size() == 1)
-            ui->fusionDateTime->setDateTime(meta.commonStart);
-    }
+    else if (meta.configStartTime.isValid())
+        ui->messureDateTime->setDateTime(meta.configStartTime);
+
+    if (meta.configShotTime.isValid())
+        ui->fusionDateTime->setDateTime(meta.configShotTime);
+    else if (paths.size() == 1 && meta.commonStart.isValid())
+        ui->fusionDateTime->setDateTime(meta.commonStart);
     
     //取消时间范围的限制，采用交集方式计算时间范围
     // if (meta.valid && meta.commonStart.isValid() && meta.commonEnd.isValid()) {

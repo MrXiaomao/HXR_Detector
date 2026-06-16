@@ -889,7 +889,25 @@ public:
      */
     void writeH5SpectrumBatch(quint8 index, const QVector<H5Spectrum>& data);
 
-        /**
+    /** @brief 解析 Config/StartTime、Config/ShotTime 等字符串（yyyy-MM-dd_HHmmss 或 yyyy-MM-dd HH:mm:ss） */
+    static QDateTime parseConfigTimeString(const QString &raw);
+
+    /** @brief 从 H5 文件名解析开测时刻，如 2026-05-20_161318.H5 */
+    static QDateTime measureStartTimeFromFileName(const QString &filePath);
+
+    /** @brief 读取 Config/StartTime（与 createH5Spectrum 写入的 H5T_VARIABLE 字符串一致） */
+    static QDateTime readConfigStartTime(const std::string &filePathStd);
+
+    /** @brief 读取 Config/ShotTime（可选） */
+    static QDateTime readConfigShotTime(const std::string &filePathStd);
+
+    /** @brief 开测时刻：优先 Config/StartTime，否则文件名 */
+    static QDateTime resolveMeasureStartTime(const QString &filePath, const std::string &filePathStd);
+
+    /** @brief 从已打开的 Config 组读取字符串数据集（StartTime / ShotTime 等） */
+    static QString readConfigStringFromGroup(H5::Group &cfgGroup, const char *datasetName);
+
+    /**
      * @brief 从HDF5文件一次性指定探测器的全部读取H5Spectrum结构体
      * @param filePath H5文件路径
      * @param detectorId 探测器编号

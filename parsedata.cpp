@@ -14,59 +14,10 @@
 #include <QDebug>
 
 namespace {
-QDateTime h5UtcToDateTime(quint32 timeUTCs, quint32 timeUTCms)
-{
-    const quint64 msecond = static_cast<quint64>(timeUTCms) * 1000 / (1ULL << 32);
-    const quint64 tmUnix = static_cast<quint64>(timeUTCs) - 2208988800ULL;
-    return QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(tmUnix * 1000 + msecond));
-}
-
-qint64 spectrumStartMs(const H5Spectrum &spec)
-{
-    return h5UtcToDateTime(spec.timeUTCs, spec.timeUTCms).toMSecsSinceEpoch();
-}
-
-/** 从 H5 文件名解析开测时刻，如 2026-05-20_161318.H5 */
-QDateTime measureStartTimeFromFileName(const QString &filePath)
-{
-    const QString timePart = QFileInfo(filePath).baseName().left(17).replace('_', ' ');
-    QDateTime dt = QDateTime::fromString(timePart, QStringLiteral("yyyy-MM-dd HHmmss"));
-    if (!dt.isValid())
-        dt = QDateTime::fromString(timePart, QStringLiteral("yyyy-MM-dd HH:mm:ss"));
-    return dt;
-}
-
-/** 读取 H5 Config/StartTime（测量软件写入，格式 yyyy-MM-dd_HHmmss） */
-QDateTime readH5ConfigStartTime(const std::string &filePathStd)
-{
-    try {
-        H5::H5File file(filePathStd, H5F_ACC_RDONLY);
-        if (H5Lexists(file.getId(), "Config", H5P_DEFAULT) <= 0)
-            return {};
-        H5::Group cfgGroup = file.openGroup("Config");
-        if (H5Lexists(cfgGroup.getId(), "StartTime", H5P_DEFAULT) <= 0)
-            return {};
-        H5::DataSet ds = cfgGroup.openDataSet("StartTime");
-        char buffer[128] = {};
-        const H5::StrType memType(H5::PredType::C_S1, sizeof(buffer));
-        ds.read(buffer, memType);
-        const QString raw = QString::fromUtf8(buffer);
-        QDateTime dt = QDateTime::fromString(raw, QStringLiteral("yyyy-MM-dd_HHmmss"));
-        if (!dt.isValid()) {
-            QString normalized = raw;
-            dt = QDateTime::fromString(normalized.replace('_', ' '), QStringLiteral("yyyy-MM-dd HH:mm:ss"));
-        }
-        return dt;
-    } catch (H5::Exception &) {
-        return {};
-    }
-}
 
 qint64 resolveFileStartMs(const QString &filePath, const std::string &filePathStd)
 {
-    QDateTime startDt = readH5ConfigStartTime(filePathStd);
-    if (!startDt.isValid())
-        startDt = measureStartTimeFromFileName(filePath);
+    const QDateTime startDt = HDF5Settings::resolveMeasureStartTime(filePath, filePathStd);
     if (!startDt.isValid())
         return 0;
     return startDt.toMSecsSinceEpoch();

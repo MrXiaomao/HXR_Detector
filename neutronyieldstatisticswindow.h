@@ -137,6 +137,8 @@ private:
         QMap<int, QDateTime> firstDateTime;
         QMap<int, QDateTime> lastDateTime;
         QMap<int, quint32> specCount;
+        QDateTime configStartTime;
+        QDateTime configShotTime;
         QDateTime commonStart;
         QDateTime commonEnd;
         quint32 measureTimeMs = 0;

@@ -877,6 +877,90 @@ void HDF5Settings::writeH5SpectrumBatch(quint8 index, const QVector<H5Spectrum>&
     }
 }
 
+QDateTime HDF5Settings::parseConfigTimeString(const QString &raw)
+{
+    if (raw.isEmpty())
+        return {};
+
+    QDateTime dt = QDateTime::fromString(raw, QStringLiteral("yyyy-MM-dd_HHmmss"));
+    if (!dt.isValid()) {
+        QString normalized = raw;
+        dt = QDateTime::fromString(normalized.replace('_', ' '), QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+    }
+    if (!dt.isValid())
+        dt = QDateTime::fromString(raw, QStringLiteral("yyyy-MM-dd HHmmss"));
+    return dt;
+}
+
+QDateTime HDF5Settings::measureStartTimeFromFileName(const QString &filePath)
+{
+    const QString timePart = QFileInfo(filePath).baseName().left(17).replace('_', ' ');
+    QDateTime dt = QDateTime::fromString(timePart, QStringLiteral("yyyy-MM-dd HHmmss"));
+    if (!dt.isValid())
+        dt = QDateTime::fromString(timePart, QStringLiteral("yyyy-MM-dd HH:mm:ss"));
+    return dt;
+}
+
+QString HDF5Settings::readConfigStringFromGroup(H5::Group &cfgGroup, const char *datasetName)
+{
+    if (H5Lexists(cfgGroup.getId(), datasetName, H5P_DEFAULT) <= 0)
+        return {};
+
+    H5::DataSet ds = cfgGroup.openDataSet(datasetName);
+    H5::StrType fileType = ds.getStrType();
+    if (fileType.isVariableStr()) {
+        char *str = nullptr;
+        ds.read(&str, fileType);
+        const QString raw = QString::fromUtf8(str);
+        H5free_memory(str);
+        return raw;
+    }
+
+    const size_t len = fileType.getSize();
+    if (len == 0)
+        return {};
+
+    QByteArray buffer(static_cast<int>(len + 1), '\0');
+    H5::StrType memType(H5::PredType::C_S1, len);
+    memType.setCset(H5T_CSET_UTF8);
+    ds.read(buffer.data(), memType);
+    return QString::fromUtf8(buffer.constData());
+}
+
+QDateTime HDF5Settings::readConfigStartTime(const std::string &filePathStd)
+{
+    try {
+        H5::H5File file(filePathStd, H5F_ACC_RDONLY);
+        if (H5Lexists(file.getId(), "Config", H5P_DEFAULT) <= 0)
+            return {};
+        H5::Group cfgGroup = file.openGroup("Config");
+        return parseConfigTimeString(readConfigStringFromGroup(cfgGroup, "StartTime"));
+    } catch (H5::Exception &) {
+        return {};
+    }
+}
+
+QDateTime HDF5Settings::readConfigShotTime(const std::string &filePathStd)
+{
+    try {
+        H5::H5File file(filePathStd, H5F_ACC_RDONLY);
+        if (H5Lexists(file.getId(), "Config", H5P_DEFAULT) <= 0)
+            return {};
+        H5::Group cfgGroup = file.openGroup("Config");
+        return parseConfigTimeString(readConfigStringFromGroup(cfgGroup, "ShotTime"));
+    } catch (H5::Exception &) {
+        return {};
+    }
+}
+
+QDateTime HDF5Settings::resolveMeasureStartTime(const QString &filePath, const std::string &filePathStd)
+{
+    QDateTime startDt = readConfigStartTime(filePathStd);
+    if (!startDt.isValid())
+        startDt = measureStartTimeFromFileName(filePath);
+    return startDt;
+}
+
 bool HDF5Settings::readAllH5Spectrum(const std::string& filePath, const quint32 detectorId,
     QVector<H5Spectrum>& outData)
 {
