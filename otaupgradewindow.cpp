@@ -578,7 +578,7 @@ void OTAUpgradeWindow::asyncSendOTAData(int index, const QString& filePath, cons
             mFileUpgrade->write(buf);
         }
 
-        QThread::msleep(10); // 子线程休眠，不阻塞主线程
+        QThread::msleep(50); // 子线程休眠，不阻塞主线程
     }
 
     file.close();
