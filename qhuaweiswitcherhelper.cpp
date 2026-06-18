@@ -798,22 +798,29 @@ void QHuaWeiSwitcherHelper::executeNextAction(bool keepFirst)
     mSwitcherIsBusy.store(false);
     restartHeartbeatCheck();
 
-    QMutexLocker locket(&mActionLocker);
-    if (mActionsWait.size() <= 0){
-        return ;
+    bool notifyIdle = false;
+    {
+        QMutexLocker locket(&mActionLocker);
+        if (mActionsWait.isEmpty())
+            return;
+
+        if (!keepFirst)
+            mActionsWait.removeFirst();
+
+        if (mActionsWait.isEmpty()) {
+            notifyIdle = true;
+        } else {
+            mCurrentPoeIndex = mActionsWait[0].poeIndex;
+            mCurrentAction = mActionsWait[0].action;
+        }
     }
 
-    if (!keepFirst){
-        // 通常只有系统启动才会进入到这里
-        mActionsWait.removeFirst();
+    if (notifyIdle) {
+        QMetaObject::invokeMethod(this, [this]() {
+            emit poeActionQueueIdle();
+        }, Qt::QueuedConnection);
+        return;
     }
-
-    if (mActionsWait.size() <= 0){
-        return ;
-    }
-
-    mCurrentPoeIndex = mActionsWait[0].poeIndex;
-    mCurrentAction = mActionsWait[0].action;
 
     if (mCurrentAction == acQueryState){
         qDebug() << "查询交换机POE口电源状态：" << mCurrentPoeIndex;
@@ -848,4 +855,10 @@ void QHuaWeiSwitcherHelper::executeNextAction(bool keepFirst)
 
         mTelnet->write(mCurrentCommand.toLatin1());
     });
+}
+
+bool QHuaWeiSwitcherHelper::hasPendingActions()
+{
+    QMutexLocker locker(&mActionLocker);
+    return !mActionsWait.isEmpty() || mSwitcherIsBusy.load();
 }

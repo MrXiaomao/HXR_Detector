@@ -15,6 +15,7 @@
 #include "parsedata.h"
 
 class CrasterParabolicHeatmapWidget;
+class QTableWidgetItem;
 
 namespace Ui {
 class NeutronYieldStatisticsWindow;
@@ -132,6 +133,8 @@ private slots:
     // 选中行发生改变
     void on_tableWidget_selectionChanged();
 
+    void on_tableWidget_itemChanged(QTableWidgetItem *item);
+
     void on_bt_saveResult_clicked();
 
 private:
@@ -162,13 +165,14 @@ private:
     qint64 beginTimeForDetector(int detId, const QDateTime &fusionTime) const;
     int currentPictureDetId() const;
     void updatePictureForDetector(int detID);
+    void updateYieldSpatialDistributionForRow(int row);
 
     Ui::NeutronYieldStatisticsWindow *ui;
     bool mIsDarkTheme = true;
     bool mThemeColorEnable = true;
     QColor mThemeColor = QColor(255,255,255);
     class QGoodWindowHelper *mainWindow = nullptr;
-    CrasterParabolicHeatmapWidget *w;
+    CrasterParabolicHeatmapWidget *w = nullptr;
 
     // 中断解析
     std::atomic<bool> mInterrupted = false;

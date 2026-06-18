@@ -1965,13 +1965,13 @@
      <normaloff>:/canshushezhi-05.png</normaloff>:/canshushezhi-05.png</iconset>
    </property>
    <property name="text">
-    <string>测量参数配置(&amp;P)</string>
+    <string>探测器参数配置(&amp;P)</string>
    </property>
    <property name="iconText">
-    <string>测量参数配置</string>
+    <string>探测器参数配置</string>
    </property>
    <property name="toolTip">
-    <string>测量参数配置</string>
+    <string>探测器参数配置</string>
    </property>
    <property name="menuRole">
     <enum>QAction::NoRole</enum>

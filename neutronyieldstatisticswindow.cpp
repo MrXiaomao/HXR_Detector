@@ -107,6 +107,24 @@ QString formatChannelRanges(const QMap<int, quint32> &specCount)
     flushRange();
     return parts.join(QStringLiteral(","));
 }
+
+bool isDetectorTableEditableColumn(int column)
+{
+    return column == 2 || column == 3 || column == 4;
+}
+
+void applyDetectorTableItemFlags(QTableWidgetItem *item, int column)
+{
+    if (!item)
+        return;
+    item->setTextAlignment(Qt::AlignCenter);
+    Qt::ItemFlags flags = item->flags();
+    if (isDetectorTableEditableColumn(column))
+        flags |= Qt::ItemIsEditable;
+    else
+        flags &= ~Qt::ItemIsEditable;
+    item->setFlags(flags);
+}
 } // namespace
 
 NeutronYieldStatisticsWindow::NeutronYieldStatisticsWindow(bool isDarkTheme, QWidget *parent)
@@ -114,6 +132,7 @@ NeutronYieldStatisticsWindow::NeutronYieldStatisticsWindow(bool isDarkTheme, QWi
     , ui(new Ui::NeutronYieldStatisticsWindow)
     , mIsDarkTheme(isDarkTheme)
     , mainWindow(static_cast<QGoodWindowHelper*>(parent))
+    , w(nullptr)
 {
     for (int i = 0; i < DET_NUM; ++i)
         dealFile[i] = nullptr;
@@ -316,27 +335,33 @@ void NeutronYieldStatisticsWindow::initUi()
         });
     }
     
-    ui->tableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    ui->tableWidget->setEditTriggers(QAbstractItemView::DoubleClicked
+                                     | QAbstractItemView::SelectedClicked
+                                     | QAbstractItemView::EditKeyPressed);
     ui->tableWidget->setSelectionMode(QAbstractItemView::SingleSelection);
     ui->tableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     ui->tableWidget->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
     ui->tableWidget->setColumnWidth(0, 40);
 
+    ui->tableWidget->blockSignals(true);
     for (int column=0; column<ui->tableWidget->columnCount(); ++column)
     {
         for (int row=0; row<ui->tableWidget->rowCount(); ++row)
         {
-            ui->tableWidget->setItem(row, column, new QTableWidgetItem(""));
-            ui->tableWidget->item(row, column)->setTextAlignment(Qt::AlignCenter);
+            auto *item = new QTableWidgetItem("");
+            applyDetectorTableItemFlags(item, column);
+            ui->tableWidget->setItem(row, column, item);
         }
     }
 
     for (int row=0; row<ui->tableWidget->rowCount(); ++row)
     {
         ui->tableWidget->setRowHeight(row, 25);
-        ui->tableWidget->setItem(row, 0, new QTableWidgetItem(QString("#%1").arg(row+1)));
-        ui->tableWidget->item(row, 0)->setTextAlignment(Qt::AlignCenter);
+        auto *indexItem = new QTableWidgetItem(QString("#%1").arg(row+1));
+        applyDetectorTableItemFlags(indexItem, 0);
+        ui->tableWidget->setItem(row, 0, indexItem);
     }
+    ui->tableWidget->blockSignals(false);
     ui->tableWidget->setFixedHeight((32+1)*25); //表头1行加32行探测器
     ui->leftStackedWidget->setMinimumWidth(200);
 
@@ -373,6 +398,9 @@ void NeutronYieldStatisticsWindow::initUi()
     initSpectrumCustomPlot();
     initCountCustomPlot();
     initYieldCustomPlot();
+
+    connect(ui->tableWidget, &QTableWidget::itemChanged, this,
+            &NeutronYieldStatisticsWindow::on_tableWidget_itemChanged);
 
     // 显示计数/能谱
     QButtonGroup *grp = new QButtonGroup(this);
@@ -487,12 +515,13 @@ void NeutronYieldStatisticsWindow::sortFileListByStartTime()
         entry.startTime = startTimeForRow(row);
         entry.items.resize(ColCount);
         for (int col = 0; col < ColCount; ++col) {
-            if (QTableWidgetItem *item = table->item(row, col))
-                entry.items[col] = item->clone();
-            else {
-                auto *item = new QTableWidgetItem();
-                item->setTextAlignment(Qt::AlignCenter);
-                entry.items[col] = item;
+            QTableWidgetItem *srcItem = table->item(row, col);
+            if (srcItem) {
+                entry.items[col] = srcItem->clone();
+            } else {
+                auto *newItem = new QTableWidgetItem();
+                newItem->setTextAlignment(Qt::AlignCenter);
+                entry.items[col] = newItem;
             }
         }
         rows.append(entry);
@@ -777,7 +806,9 @@ bool NeutronYieldStatisticsWindow::readH5FileChannelMeta(const QString &filePath
                                        .arg(lastDt.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss.zzz"))));
 
                 if (applyDetectorLonLat && i >= 0 && i < ui->tableWidget->rowCount()) {
-                    ui->tableWidget->setItem(i, 6, new QTableWidgetItem(QString::number(rows)));
+                    auto *specCountItem = new QTableWidgetItem(QString::number(rows));
+                    applyDetectorTableItemFlags(specCountItem, 6);
+                    ui->tableWidget->setItem(i, 6, specCountItem);
                 }
 
                 group.close();
@@ -1838,6 +1869,36 @@ void NeutronYieldStatisticsWindow::on_action_stopCalculate_triggered()
     mInterrupted = true;
 }
 
+void NeutronYieldStatisticsWindow::updateYieldSpatialDistributionForRow(int row)
+{
+    if (row < 0 || row >= ui->tableWidget->rowCount())
+        return;
+
+    const int detID = row + 1;
+    QTableWidgetItem *yieldItem = ui->tableWidget->item(row, 1);
+    QTableWidgetItem *longitudeItem = ui->tableWidget->item(row, 3);
+    QTableWidgetItem *latitudeItem = ui->tableWidget->item(row, 4);
+
+    const double yield = yieldItem ? yieldItem->text().toDouble() : 0.0;
+    const double longitude = longitudeItem ? longitudeItem->text().toDouble() : 0.0;
+    const double latitude = latitudeItem ? latitudeItem->text().toDouble() : 0.0;
+
+    myield[detID] = Sensor{longitude, latitude, yield};
+    slotUpdate_yieldDis(myield);
+}
+
+void NeutronYieldStatisticsWindow::on_tableWidget_itemChanged(QTableWidgetItem *item)
+{
+    if (!item)
+        return;
+
+    const int col = item->column();
+    if (col != 3 && col != 4)
+        return;
+
+    updateYieldSpatialDistributionForRow(item->row());
+}
+
 void NeutronYieldStatisticsWindow::on_tableWidget_selectionChanged()
 {
     QList<QTableWidgetItem*> selectedItems = ui->tableWidget->selectedItems();
@@ -1865,7 +1926,9 @@ void NeutronYieldStatisticsWindow::slotSuccess(int detID)
     // 显示909初始计数
     double count909_N0 = dealFile[detID-1]->GetInitialCount();
     if(detID > 0 && detID <= ui->tableWidget->rowCount()){
-        ui->tableWidget->setItem(detID-1, 5, new QTableWidgetItem(QString::number(count909_N0)));
+        auto *countItem = new QTableWidgetItem(QString::number(count909_N0));
+        applyDetectorTableItemFlags(countItem, 5);
+        ui->tableWidget->setItem(detID-1, 5, countItem);
 
         //读取灵敏度标定数据，给出中子产额
         QSettings mSettings("./config/NeutronYield.ini", QSettings::IniFormat);
@@ -1876,21 +1939,12 @@ void NeutronYieldStatisticsWindow::slotSuccess(int detID)
             yield = count909_N0 / initN_c * yield_c;
         }
 
-        ui->tableWidget->setItem(detID-1, 1, new QTableWidgetItem(QString::number(yield)));
+        auto *yieldItem = new QTableWidgetItem(QString::number(yield));
+        applyDetectorTableItemFlags(yieldItem, 1);
+        ui->tableWidget->setItem(detID-1, 1, yieldItem);
 
         //从界面左侧表格读取探测器经纬度(这意味着用户可以离线分析中手动修改各个探测器的坐标位置）
-        QTableWidgetItem* longitudeItem = ui->tableWidget->item(detID-1, 3);
-        QTableWidgetItem* latitudeItem = ui->tableWidget->item(detID-1, 4);
-        double longitude = 0.0;
-        double latitude = 0.0;
-        if(longitudeItem && latitudeItem){
-            longitude = longitudeItem->text().toDouble();
-            latitude = latitudeItem->text().toDouble();
-        }
-        myield[detID] = Sensor{longitude, latitude, yield};
-
-        //更新中子产额分布图
-        slotUpdate_yieldDis(myield);
+        updateYieldSpatialDistributionForRow(detID - 1);
     }
 
     if (detID == currentPictureDetId())
@@ -2237,6 +2291,9 @@ void NeutronYieldStatisticsWindow::slotUpdateSpec_909keV(std::vector<double> cha
 
 void NeutronYieldStatisticsWindow::slotUpdate_yieldDis(QMap<int, Sensor> yields)
 {
+    if (!w)
+        return;
+
     std::vector<Sensor> sensors;
     for(auto yield:yields)
     {
@@ -2264,6 +2321,7 @@ bool NeutronYieldStatisticsWindow::setLonLat(int row, double lon, double lat)
     QTableWidgetItem* lonItem = ui->tableWidget->item(row, 3);
     if (!lonItem) {
         lonItem = new QTableWidgetItem;
+        applyDetectorTableItemFlags(lonItem, 3);
         ui->tableWidget->setItem(row, 3, lonItem);
     }
     lonItem->setText(QString::number(lon, 'f', 2));
@@ -2272,6 +2330,7 @@ bool NeutronYieldStatisticsWindow::setLonLat(int row, double lon, double lat)
     QTableWidgetItem* latItem = ui->tableWidget->item(row, 4);
     if (!latItem) {
         latItem = new QTableWidgetItem;
+        applyDetectorTableItemFlags(latItem, 4);
         ui->tableWidget->setItem(row, 4, latItem);
     }
     latItem->setText(QString::number(lat, 'f', 2));

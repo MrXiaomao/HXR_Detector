@@ -229,6 +229,13 @@ private slots:
 private:
     // 处理探测器断开连接的统一逻辑
     void handleDetectorDisconnection(quint8 index);
+    // 根据客户端地址解析谱仪编号（不绑定 socket、不下发配置）
+    qint8 peekDetectorIndex(const QString& peerAddress, quint16 peerPort) const;
+    // 关电流程中是否应拒绝该通道重连
+    bool shouldRejectDetectorReconnect(quint8 index) const;
+    bool shouldRejectTimeSynReconnect();
+    void markPoeCloseInProgress(bool closingExtendModule = false);
+    void tryClearPoeCloseInProgress();
     // 能谱数据落盘
     void flushSpectrumH5BuffersOnWorkerThread(bool forceFlushAll = false); 
     // 网口原始数据落盘
@@ -270,6 +277,9 @@ private:
     QVector<quint8> mManualClosedPOEIDs;
     // 一次性：预期由主动断电引起的掉线，用于跳过 disconnect 时的自动断电重启（处理完即清除）
     QVector<quint8> mIntentionalPOECloseIDs;
+    // 关电流程进行中：拒绝已标记关电通道的 TCP 重连与初始化
+    bool mPoePowerClosing = false;
+    bool mClosingExtendTimeSynModule = false;
     QVector<QString> mDataFileList;// 保存当前测量数据文件列表
 
     // 文件flush状态跟踪结构

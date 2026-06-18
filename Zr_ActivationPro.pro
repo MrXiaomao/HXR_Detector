@@ -167,6 +167,8 @@ windows {
         # 大对象/大翻译单元：避免链接与编译阶段内存峰值过高
         QMAKE_CXXFLAGS += -Wa,-mbig-obj
         # Debug 下减少调试信息生成，缓解 cc1plus.exe out of memory
+        QMAKE_CXXFLAGS_DEBUG -= -g
+        QMAKE_CXXFLAGS_DEBUG += -g1
         QMAKE_CXXFLAGS_DEBUG += -fno-var-tracking -fno-var-tracking-assignments
         #QMAKE_CXXFLAGS += -finput-charset=UTF-8
         #QMAKE_CXXFLAGS += -fexec-charset=UTF-8
@@ -192,7 +194,7 @@ include($$PWD/../3rdParty/hdf5/C++/hdf5Wrapper.pri)
 include($$PWD/../3rdParty/alglib-cpp/alglib.pri)
 INCLUDEPATH += $$PWD/../3rdParty/eigen-5.0.0
 
-# 预编译头：降低 MinGW 编译 mainwindow.cpp 等大文件时的内存占用
+# 预编译头：log4qt 与 Qt 宏在 PCH 下会冲突（ttcclayout.h），暂不启用
 #CONFIG += precompile_header
 #PRECOMPILED_HEADER = stable.h
 

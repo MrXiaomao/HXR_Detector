@@ -108,7 +108,10 @@ public:
     Q_SIGNAL void switcherConnected(QString);//交换机连接
     Q_SIGNAL void switcherDisconnected(QString);//交换机断开
     Q_SIGNAL void reportPoePowerStatus(quint8, bool); //POE电源开关
-    Q_SIGNAL void syncPoePowerStatus(quint8, bool); //同步POE电源开关（一般是由于启动服务后探测器主动上线了，这边被动更新POE电源状态)    
+    Q_SIGNAL void syncPoePowerStatus(quint8, bool); //同步POE电源开关（一般是由于启动服务后探测器主动上线了，这边被动更新POE电源状态)
+    Q_SIGNAL void poeActionQueueIdle(); // POE 指令队列已全部执行完毕
+
+    bool hasPendingActions();
 
 signals:
 

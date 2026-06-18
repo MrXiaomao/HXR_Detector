@@ -257,6 +257,19 @@ void CommHelper::initSocket()
             QString peerAddress = QString::fromStdString(channel->peerip());
             quint16 peerPort = channel->peerport();
             qDebug().nospace() << "新客户端连接，地址：" << peerAddress << ", 端口：" << peerPort;
+
+            if (shouldRejectTimeSynReconnect() && peerAddress == mExtendTimeSynModule.ip) {
+                qInfo().nospace() << "关电流程中，拒绝时间同步模块重连，地址：" << peerAddress;
+                channel->close();
+                return;
+            }
+            const qint8 peekIndex = peekDetectorIndex(peerAddress, peerPort);
+            if (peekIndex >= 0 && shouldRejectDetectorReconnect(static_cast<quint8>(peekIndex))) {
+                qInfo().nospace() << "关电流程中，拒绝谱仪[#" << peekIndex << "]重连，地址：" << peerAddress;
+                channel->close();
+                return;
+            }
+
             QMetaObject::invokeMethod(this, "connectPeerConnection",
                                       Qt::QueuedConnection,
                                       Q_ARG(QString, peerAddress),
@@ -286,7 +299,8 @@ void CommHelper::initSocket()
             }
 
             mTempUpdateTime[index] = 0;
-            mIntentionalPOECloseIDs.removeOne(index);
+            if (!mPoePowerClosing)
+                mIntentionalPOECloseIDs.removeOne(index);
         }
         else if (channel->isClosed()){//status == hv::SocketChannel::CLOSED){
             QString peerAddress = QString::fromStdString(channel->peerip());
@@ -341,6 +355,21 @@ void CommHelper::initSocket()
         QString peerAddress = connection->peerAddress().toString();
         quint16 peerPort = connection->peerPort();
         qDebug().nospace() << "新客户端连接，地址：" << peerAddress << ", 端口：" << peerPort;
+
+        if (shouldRejectTimeSynReconnect() && peerAddress == mExtendTimeSynModule.ip) {
+            qInfo().nospace() << "关电流程中，拒绝时间同步模块重连，地址：" << peerAddress;
+            connection->disconnectFromHost();
+            connection->deleteLater();
+            return;
+        }
+        const qint8 peekIndex = peekDetectorIndex(peerAddress, peerPort);
+        if (peekIndex >= 0 && shouldRejectDetectorReconnect(static_cast<quint8>(peekIndex))) {
+            qInfo().nospace() << "关电流程中，拒绝谱仪[#" << peekIndex << "]重连，地址：" << peerAddress;
+            connection->disconnectFromHost();
+            connection->deleteLater();
+            return;
+        }
+
         connection->setProperty("peerAddress", peerAddress);
         connection->setProperty("peerPort", peerPort);
         connection->setProperty("socketDescriptor", socketDescriptor);
@@ -648,6 +677,55 @@ quint8 CommHelper::indexOfPort(int index)
     return 0x00;
 }
 
+qint8 CommHelper::peekDetectorIndex(const QString& peerAddress, quint16 peerPort) const
+{
+    const QMap<quint8, DetParameter*> detParameters = HDF5Settings::instance()->getDetParameters();
+    for (int index = 1; index <= DET_NUM; ++index) {
+        const DetParameter* detParameter = detParameters.value(static_cast<quint8>(index), nullptr);
+        if (!detParameter)
+            continue;
+        const QString detectorAddress = QString::fromStdString(detParameter->det_Ip_port);
+        if (detectorAddress == QString("%1:%2").arg(peerAddress).arg(peerPort)
+            || detectorAddress == peerAddress) {
+            return static_cast<qint8>(index);
+        }
+    }
+    return -1;
+}
+
+bool CommHelper::shouldRejectDetectorReconnect(quint8 index) const
+{
+    return mPoePowerClosing && mIntentionalPOECloseIDs.contains(index);
+}
+
+bool CommHelper::shouldRejectTimeSynReconnect()
+{
+    mExtendTimeSynModule.reload();
+    return mPoePowerClosing && mClosingExtendTimeSynModule;
+}
+
+void CommHelper::markPoeCloseInProgress(bool closingExtendModule)
+{
+    mPoePowerClosing = true;
+    if (closingExtendModule)
+        mClosingExtendTimeSynModule = true;
+}
+
+void CommHelper::tryClearPoeCloseInProgress()
+{
+    if (!mPoePowerClosing)
+        return;
+
+    for (auto switcherHelper : mHuaWeiSwitcherHelper) {
+        if (switcherHelper->hasPendingActions())
+            return;
+    }
+
+    mPoePowerClosing = false;
+    mClosingExtendTimeSynModule = false;
+    qDebug() << "开关电流程：所有交换机 POE 指令队列已空闲，允许探测器重连";
+}
+
 #if ENABLE_LIBHV
 qint8 CommHelper::allocDataProcessor(const hv::SocketChannelPtr& socket)
 {
@@ -888,11 +966,17 @@ bool CommHelper::closeSwitcherPOEPower(quint8 index)
     if (!mIntentionalPOECloseIDs.contains(index))
         mIntentionalPOECloseIDs.append(index);
 
-    QHuaWeiSwitcherHelper *switcherHelper = indexOfHuaWeiSwitcher(index);
-    if (nullptr == switcherHelper)
-        return false;
+    markPoeCloseInProgress();
 
-    return switcherHelper->closeSwitcherPOEPower(indexOfPort(index));
+    QHuaWeiSwitcherHelper *switcherHelper = indexOfHuaWeiSwitcher(index);
+    if (nullptr == switcherHelper) {
+        tryClearPoeCloseInProgress();
+        return false;
+    }
+
+    const bool ok = switcherHelper->closeSwitcherPOEPower(indexOfPort(index));
+    tryClearPoeCloseInProgress();
+    return ok;
 }
 
 /*
@@ -900,6 +984,8 @@ bool CommHelper::closeSwitcherPOEPower(quint8 index)
     */
 bool CommHelper::openSwitcherExtendPOEPower()
 {
+    mClosingExtendTimeSynModule = false;
+
     mExtendTimeSynModule.reload();
     //检查是否存在
     if(mHuaWeiSwitcherHelper.isEmpty() || mExtendTimeSynModule.switcherIndex <= 0 || mExtendTimeSynModule.switcherIndex > mHuaWeiSwitcherHelper.size()){
@@ -915,14 +1001,19 @@ bool CommHelper::openSwitcherExtendPOEPower()
     */
 bool CommHelper::closeSwitcherExtendPOEPower()
 {
+    markPoeCloseInProgress(true);
+
     mExtendTimeSynModule.reload();
     //检查是否存在
     if(mHuaWeiSwitcherHelper.isEmpty() || mExtendTimeSynModule.switcherIndex <= 0 || mExtendTimeSynModule.switcherIndex > mHuaWeiSwitcherHelper.size()){
+        tryClearPoeCloseInProgress();
         return false;
     }
 
     mHuaWeiSwitcherHelper[mExtendTimeSynModule.switcherIndex-1]->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
-    return mHuaWeiSwitcherHelper[mExtendTimeSynModule.switcherIndex-1]->closeSwitcherPOEPower(mExtendTimeSynModule.poeIndex);
+    const bool ok = mHuaWeiSwitcherHelper[mExtendTimeSynModule.switcherIndex-1]->closeSwitcherPOEPower(mExtendTimeSynModule.poeIndex);
+    tryClearPoeCloseInProgress();
+    return ok;
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -994,6 +1085,9 @@ bool CommHelper::startServer()
                     //emit detectorOffline(index);
                 }
             });
+            connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::poeActionQueueIdle,
+                    this, &CommHelper::tryClearPoeCloseInProgress,
+                    Qt::QueuedConnection);
 
             mHuaWeiSwitcherHelper.push_back(huaWeiSwitcherHelper);
         }
@@ -1077,6 +1171,9 @@ void CommHelper::disconnectSwitcher()
 */
 void CommHelper::openPower()
 {
+    mPoePowerClosing = false;
+    mClosingExtendTimeSynModule = false;
+
     GlobalSettings settings(DEVICE_CONFIG_FILE);
     mHuaWeiSwitcherCount =  settings.value("Switcher/Count", 0).toUInt();
     for (int i=0; i<mHuaWeiSwitcherCount; ++i){
@@ -1099,6 +1196,8 @@ void CommHelper::openPower()
 */
 void CommHelper::closePower(bool disconnect)
 {
+    markPoeCloseInProgress();
+
     GlobalSettings settings(DEVICE_CONFIG_FILE);
     mHuaWeiSwitcherCount =  settings.value("Switcher/Count", 0).toUInt();
     for (int i=0; i<mHuaWeiSwitcherCount; ++i){
@@ -1119,6 +1218,7 @@ void CommHelper::closePower(bool disconnect)
             }
         }
     }
+    tryClearPoeCloseInProgress();
 }
 
 /*
