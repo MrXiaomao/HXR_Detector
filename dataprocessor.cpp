@@ -1,5 +1,6 @@
 ﻿#include "dataprocessor.h"
 #include <QTimer>
+#include <QThread>
 
 DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
     : CommandAdapter(index, parent)
@@ -67,10 +68,9 @@ DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
         }
     });
 
-    // 温度刷新，重启心跳定时器
-    connect(this, &DataProcessor::reportTemperatureData, this, [this](){
-        restartTempTimeout();
-    });
+    // 温度刷新，重启心跳定时器（解析在线程，定时器须在主线程启停）
+    connect(this, &DataProcessor::reportTemperatureData, this,
+            &DataProcessor::restartTempTimeout, Qt::QueuedConnection);
 }
 
 
@@ -93,9 +93,11 @@ void DataProcessor::reallocIndex(quint8 index)
 #if ENABLE_LIBHV
 void DataProcessor::reallocSocket(const hv::SocketChannelPtr& tcpSocket, DetParameter* detParameter)
 {
+    requestParserResetOnDataThread();
+    isFirstError = true;
+
     mTcpSocket = tcpSocket;
     if (mTcpSocket){
-        isFirstError = true;
         tcpSocket->onread = [=](hv::Buffer* buf){
             if(buf->size()==0) return;
             QByteArray rawData((const char*)buf->data(), buf->size());// 深拷贝
@@ -130,6 +132,8 @@ void DataProcessor::reallocSocket(const hv::SocketChannelPtr& tcpSocket, DetPara
 
         // 启动温度超时检测
         restartTempTimeout();
+    } else {
+        stopTempTimeout();
     }
 }
 #else
@@ -140,6 +144,9 @@ void DataProcessor::reallocSocket(QTcpSocket *tcpSocket, DetParameter* detParame
     if (mTcpSocket){
         disconnect(mTcpSocket, SIGNAL(readyRead()), this, SLOT(readyRead()));
     }
+
+    requestParserResetOnDataThread();
+    isFirstError = true;
 
     mTcpSocket = tcpSocket;
     if (mTcpSocket){
@@ -152,6 +159,10 @@ void DataProcessor::reallocSocket(QTcpSocket *tcpSocket, DetParameter* detParame
             strcpy(detParameter->det_Ip_port, peerAddress.toStdString().c_str());
             updateSetting(detParameter);
         }
+
+        restartTempTimeout();
+    } else {
+        stopTempTimeout();
     }
 }
 #endif //ENABLE_LIBHV
@@ -251,7 +262,7 @@ void DataProcessor::stopMeasure()
     //#16 停止测量=1|0|26|1234000FEA1000000000ABCD
     this->sendStopMeasure();
 
-    mTempTimeoutTimer.stop();
+    stopTempTimeout();
 }
 
 void DataProcessor::sendCmdToSocket(CommandItem cmdItem, bool delayflag) const
@@ -319,7 +330,13 @@ void DataProcessor::requestParserResetOnDataThread()
 }
 
 
-void DataProcessor::restartTempTimeout() {
+void DataProcessor::restartTempTimeout()
+{
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "restartTempTimeout", Qt::QueuedConnection);
+        return;
+    }
+
     // 如果是模拟器发数据，这里直接return即可！！！
 #if USED_SIMULATOR
     return;
@@ -332,6 +349,16 @@ void DataProcessor::restartTempTimeout() {
         HDF5Settings *settings = HDF5Settings::instance();
         mTempTimeoutTimer.start(settings->pluseTime()*1000);
     }
+}
+
+void DataProcessor::stopTempTimeout()
+{
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, "stopTempTimeout", Qt::QueuedConnection);
+        return;
+    }
+
+    mTempTimeoutTimer.stop();
 }
 
 /**

@@ -71,19 +71,20 @@ public:
 
     void startOTAUpgrade(){
         mIsUpgrading = true;
-        mTempTimeoutTimer.stop();
+        QMetaObject::invokeMethod(this, "stopTempTimeout", Qt::QueuedConnection);
     }
     void endOTAUpgrade(){
         mIsUpgrading = false;
-        restartTempTimeout();
+        QMetaObject::invokeMethod(this, "restartTempTimeout", Qt::QueuedConnection);
     };
     bool sendOTAUpgradeData(const QByteArray& data);
     bool isUpgrading() const{return mIsUpgrading;}
 
 public slots:
     void readyRead();
-    // 收到温度时调用
-    void restartTempTimeout();   
+    // 收到温度时调用（须在 DataProcessor 所属线程操作 QTimer）
+    void restartTempTimeout();
+    void stopTempTimeout();
     // 解析能谱数据包，并拼接成完整能谱
     void mergeSubSpec_Thread(quint8 no, const QByteArray& data);
     // 解析波形数据包（数据解析线程）

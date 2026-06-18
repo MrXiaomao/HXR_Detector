@@ -327,6 +327,7 @@ private:
     qint64 mLastLogFlushSecond = -1; // 上次刷日志的秒级时间戳
     void startMeasure();
     void stopMeasure();
+    void logMeasureStartInfo();
     std::atomic<bool> mPlotAlready = false;//数据刷新准备好了
 
     QMutex mPlotLocker;

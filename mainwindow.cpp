@@ -1067,7 +1067,6 @@ void MainWindow::onSystemTimer()
                 int countdownSeconds = ui->spinBox_measureTime->value();
                 if (countdownSeconds > 0) {
                     mTotalCountdown = countdownSeconds;
-                    qInfo().noquote().nospace() << QString("开始测量，倒计时：%1 秒").arg(countdownSeconds);
                 }
             }
         }
@@ -1492,7 +1491,7 @@ void MainWindow::flushPendingLogs()
 
     // 自动滚动到底部
     edit->verticalScrollBar()->setValue(edit->verticalScrollBar()->maximum());
-    ui->plainTextEdit_log->document()->setMaximumBlockCount(2000);
+    ui->plainTextEdit_log->document()->setMaximumBlockCount(10000);
     
     edit->setUpdatesEnabled(true);
 }
@@ -1705,6 +1704,7 @@ void MainWindow::on_action_startAllMeasure_triggered()
     UserActionLogger::logMessage(mEnableAutoMeasure
                                      ? QStringLiteral("点击开始全部测量(自动)")
                                      : QStringLiteral("点击开始全部测量(手动)"));
+    logMeasureStartInfo();
 
     ui->action_startAllMeasure->setEnabled(false);
     ui->action_stopAllMeasure->setEnabled(true);
@@ -1877,6 +1877,8 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
     }
     clearCustomPlotData(selectedChannels);
     updateSpectrumPlotSettings();
+
+    logMeasureStartInfo();
 
     if (ui->action_waveformMode->isChecked())
     {
@@ -2918,6 +2920,21 @@ void MainWindow::on_action_yieldCalibration_triggered()
     w->show();
 }
 
+void MainWindow::logMeasureStartInfo()
+{
+    const QString measureMode = ui->cbb_measureMode->currentText();
+    const QString triggerMode = ui->com_triggerModel->currentText();
+    const bool isContinuous = ui->checkBox_continueMeasure->isChecked();
+
+    QString msg = QStringLiteral("开始测量，模式：%1，触发模式：%2，%3")
+                      .arg(measureMode, triggerMode,
+                           isContinuous ? QStringLiteral("连续测量") : QStringLiteral("定时测量"));
+    if (!isContinuous) {
+        msg += QStringLiteral(" 时长:%1秒").arg(ui->spinBox_measureTime->value());
+    }
+    qInfo().noquote() << msg;
+}
+
 void MainWindow::startMeasure()
 {
     // 检验shotDir有效性，若无效则使用默认路径"./cache"，并更新界面显示
@@ -2973,7 +2990,6 @@ void MainWindow::startMeasure()
             int countdownSeconds = ui->spinBox_measureTime->value();
             if (countdownSeconds > 0) {
                 mTotalCountdown = countdownSeconds;
-                qInfo().noquote().nospace() << QString("开始测量，倒计时：%1 秒").arg(countdownSeconds);
             }
         }
     }
