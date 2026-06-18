@@ -78,7 +78,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     ui->groupBox_3->setVisible(false); //隐藏统计结果，暂时没有在线中子产额统计结果
     ui->action_startServer->setEnabled(true);
     ui->action_stopServer->setEnabled(false);
-    ui->action_connectSwitch->setEnabled(false);
+    ui->action_connectSwitch->setEnabled(commHelper->hasSwitchers());
     ui->action_powerOn->setEnabled(false);
     ui->action_powerOff->setEnabled(false);
     ui->action_disconnect->setEnabled(false);
@@ -2701,7 +2701,7 @@ void MainWindow::updateConnectButtonState(bool connected)
         ui->action_connectSwitch->setToolTip(tr("连接交换机"));
         ui->action_connectSwitch->setIcon(QIcon(":/switchOffline.png"));  // 使用离线图标
         // 断开后立即启用按钮（解除禁用）
-        ui->action_connectSwitch->setEnabled(commHelper->isOpen());
+        ui->action_connectSwitch->setEnabled(commHelper->hasSwitchers());
         mConnectButtonDisableTimer->stop();
     }
 }

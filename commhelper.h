@@ -210,6 +210,9 @@ public:
     bool readParamters(quint8 detIndex);
     bool isDetectorConnected(quint8 detIndex);
 
+    /** 是否已配置并创建了交换机 helper */
+    bool hasSwitchers() const;
+
 private slots:
     //网口原始数据（解析线程）
     void onRawNetData_Thread(quint8 index, const QByteArray& data);
@@ -301,6 +304,8 @@ private:
     */
     void initSocket();
     void initDataProcessor();
+    void initSwitchers();
+    void destroySwitchers();
 
     /*
      分配数据处理器
