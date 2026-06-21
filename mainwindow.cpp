@@ -2184,6 +2184,10 @@ void MainWindow::onMeasureCountdownTimeout()
             ui->dateTime_shotTime->setEnabled(true);
         }
 
+        m_selectedChannels.clear();
+        mEnableAutoMeasure = false;
+        mEnableExtendTrigger = false;
+
         emit ui->cbb_measureMode->currentIndexChanged(ui->cbb_measureMode->currentIndex());
         emit ui->com_triggerModel->currentIndexChanged(ui->com_triggerModel->currentIndex());
     }
@@ -2243,10 +2247,12 @@ void MainWindow::on_action_picture_reset_triggered()
 
     std::vector<int> channels;
     channels.reserve(DET_NUM);
+    const bool measuring = commHelper->isMeasuring();
     for (int channel = 1; channel <= DET_NUM; ++channel) {
-        if (!m_selectedChannels.contains(static_cast<quint8>(channel))) {
-            channels.push_back(channel);
+        if (measuring && m_selectedChannels.contains(static_cast<quint8>(channel))) {
+            continue;
         }
+        channels.push_back(channel);
     }
 
     if (channels.empty()) {

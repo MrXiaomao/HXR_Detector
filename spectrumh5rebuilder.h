@@ -106,8 +106,15 @@ public:
     static QString measureParamFilePath(const QString &shotDir, const QString &shotNum,
                                         const QString &paramTimestamp);
 
-    /** @brief 解析测量参数文件名，格式：{yyyyMMdd_HHmmss}_measureParam.h5 */
+    /** @brief 解析测量参数文件名（分批次或全通道） */
     static bool parseMeasureParamFileName(const QString &fileName, QString *paramTimestamp = nullptr);
+
+    /** @brief 是否为全通道测量参数文件：{yyyy-MM-dd_HHmmss}.H5 */
+    static bool isFullChannelMeasureParamFileName(const QString &fileName);
+
+    /** @brief 根据参数文件名生成期望完整路径 */
+    static QString measureParamFilePathForName(const QString &shotDir, const QString &shotNum,
+                                               const QString &fileName);
 
     /** @brief 能谱开测时刻 yyyy-MM-dd_HHmmss 转为参数文件时间戳 yyyyMMdd_HHmmss */
     static QString measureStartTimeToParamTimestamp(const QString &measureStartTime);

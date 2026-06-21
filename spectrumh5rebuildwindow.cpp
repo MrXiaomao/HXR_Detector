@@ -407,7 +407,7 @@ void SpectrumH5RebuildWindow::on_bt_addParam_clicked()
     if (mScanResult.measureStartTime.isEmpty())
         return;
 
-    const QString filter = tr("测量参数 (*_measureParam.h5);;所有文件 (*.*)");
+    const QString filter = tr("测量参数 (*_measureParam.h5 *.H5);;所有文件 (*.*)");
     const QString filePath = QFileDialog::getOpenFileName(
         this, tr("添加测量参数 h5"), mShotDirectory, filter);
     if (filePath.isEmpty())
@@ -484,7 +484,9 @@ void SpectrumH5RebuildWindow::on_bt_startRebuild_clicked()
             this, tr("确认"), tr("输出文件已存在，是否覆盖？\n%1").arg(job.outputH5Path));
         if (answer != QMessageBox::Yes)
             return;
-        QFile::remove(job.outputH5Path);
+        // 全通道模式下参数文件与输出 H5 可能为同一文件，删除操作放到 rebuild 中读取参数之后
+        if (QDir::cleanPath(job.outputH5Path) != QDir::cleanPath(job.measureParamPath))
+            QFile::remove(job.outputH5Path);
     }
 
     ui->progressBar->setValue(0);

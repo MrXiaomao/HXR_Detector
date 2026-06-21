@@ -939,7 +939,7 @@ public:
     bool saveMeasureParametersToH5(const QString& filePath, const QMap<quint8, DetParameter*>& parameters);
 
     /**
-     * @brief 从 measureParam.h5 读取测量参数
+     * @brief 从测量参数 H5 读取探测器配置（分批次 MeasureParameters / 全通道 Configuration）
      * @param filePath H5文件路径
      * @param outParameters 按 id 1..DET_NUM 顺序的探测器参数
      * @return 是否读取成功

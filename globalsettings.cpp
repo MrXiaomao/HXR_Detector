@@ -1166,25 +1166,34 @@ bool HDF5Settings::loadMeasureParametersFromH5(const QString& filePath, QVector<
     if (!QFileInfo::exists(filePath))
         return false;
 
-    try {
-        QTextCodec* gbk_codec = QTextCodec::codecForName("GBK");
-        QByteArray filePathBytes = gbk_codec->fromUnicode(filePath);
-        H5::H5File file(filePathBytes.toStdString(), H5F_ACC_RDONLY);
+    auto loadFromDataset = [&](const char *datasetName) -> bool {
+        try {
+            QTextCodec* gbk_codec = QTextCodec::codecForName("GBK");
+            QByteArray filePathBytes = gbk_codec->fromUnicode(filePath);
+            H5::H5File file(filePathBytes.toStdString(), H5F_ACC_RDONLY);
 
-        H5::Group cfgGroup = file.openGroup("Config");
-        H5::DataSet dataset = cfgGroup.openDataSet("MeasureParameters");
-        H5::CompType cfgType = createCfgDataType();
+            H5::Group cfgGroup = file.openGroup("Config");
+            if (H5Lexists(cfgGroup.getId(), datasetName, H5P_DEFAULT) <= 0)
+                return false;
 
-        outParameters.resize(DET_NUM);
-        dataset.read(outParameters.data(), cfgType);
+            H5::DataSet dataset = cfgGroup.openDataSet(datasetName);
+            H5::CompType cfgType = createCfgDataType();
 
-        dataset.close();
-        cfgGroup.close();
-        file.close();
+            outParameters.resize(DET_NUM);
+            dataset.read(outParameters.data(), cfgType);
+
+            dataset.close();
+            cfgGroup.close();
+            file.close();
+            return true;
+        } catch (H5::Exception& e) {
+            e.printErrorStack();
+            outParameters.clear();
+            return false;
+        }
+    };
+
+    if (loadFromDataset("MeasureParameters"))
         return true;
-    } catch (H5::Exception& e) {
-        e.printErrorStack();
-        outParameters.clear();
-        return false;
-    }
+    return loadFromDataset("Configuration");
 }

@@ -18,9 +18,14 @@ const QRegularExpression kSpectrumDatNamePattern(
     QStringLiteral(R"(^(\d{4}-\d{2}-\d{2}_\d{6})_(\d+)_能谱\.dat$)"),
     QRegularExpression::CaseInsensitiveOption);
 
-// MainWindow: QDateTime::currentDateTime().toString("yyyyMMdd_HHmmss") + "_measureParam.h5"
-const QRegularExpression kMeasureParamNamePattern(
+// 分批次测量：MainWindow 保存为 {yyyyMMdd_HHmmss}_measureParam.h5
+const QRegularExpression kBatchMeasureParamNamePattern(
     QStringLiteral(R"(^(\d{8}_\d{6})_measureParam\.h5$)"),
+    QRegularExpression::CaseInsensitiveOption);
+
+// 全通道测量：CommHelper 创建能谱 H5 时写入 Configuration，文件名为 {yyyy-MM-dd_HHmmss}.H5
+const QRegularExpression kFullChannelMeasureParamNamePattern(
+    QStringLiteral(R"(^(\d{4}-\d{2}-\d{2}_\d{6})\.H5$)"),
     QRegularExpression::CaseInsensitiveOption);
 
 } // namespace
@@ -85,18 +90,53 @@ QString SpectrumH5Rebuilder::measureParamFilePath(const QString &shotDir, const 
 
 bool SpectrumH5Rebuilder::parseMeasureParamFileName(const QString &fileName, QString *paramTimestamp)
 {
-    const QRegularExpressionMatch match = kMeasureParamNamePattern.match(fileName);
-    if (!match.hasMatch())
-        return false;
+    {
+        const QRegularExpressionMatch match = kBatchMeasureParamNamePattern.match(fileName);
+        if (match.hasMatch()) {
+            const QString timestamp = match.captured(1);
+            const QDateTime dt = QDateTime::fromString(timestamp, QStringLiteral("yyyyMMdd_HHmmss"));
+            if (!dt.isValid())
+                return false;
 
-    const QString timestamp = match.captured(1);
-    const QDateTime dt = QDateTime::fromString(timestamp, QStringLiteral("yyyyMMdd_HHmmss"));
-    if (!dt.isValid())
-        return false;
+            if (paramTimestamp)
+                *paramTimestamp = timestamp;
+            return true;
+        }
+    }
 
-    if (paramTimestamp)
-        *paramTimestamp = timestamp;
-    return true;
+    {
+        const QRegularExpressionMatch match = kFullChannelMeasureParamNamePattern.match(fileName);
+        if (!match.hasMatch())
+            return false;
+
+        const QString measureStartTime = match.captured(1);
+        const QDateTime dt = QDateTime::fromString(measureStartTime, QStringLiteral("yyyy-MM-dd_HHmmss"));
+        if (!dt.isValid())
+            return false;
+
+        if (paramTimestamp)
+            *paramTimestamp = measureStartTimeToParamTimestamp(measureStartTime);
+        return true;
+    }
+}
+
+bool SpectrumH5Rebuilder::isFullChannelMeasureParamFileName(const QString &fileName)
+{
+    return kFullChannelMeasureParamNamePattern.match(fileName).hasMatch();
+}
+
+QString SpectrumH5Rebuilder::measureParamFilePathForName(const QString &shotDir, const QString &shotNum,
+                                                         const QString &fileName)
+{
+    if (isFullChannelMeasureParamFileName(fileName)) {
+        const QRegularExpressionMatch match = kFullChannelMeasureParamNamePattern.match(fileName);
+        return spectrumH5FilePath(shotDir, shotNum, match.captured(1));
+    }
+
+    QString timestamp;
+    if (parseMeasureParamFileName(fileName, &timestamp))
+        return measureParamFilePath(shotDir, shotNum, timestamp);
+    return {};
 }
 
 QString SpectrumH5Rebuilder::measureStartTimeToParamTimestamp(const QString &measureStartTime)
@@ -108,21 +148,25 @@ QString SpectrumH5Rebuilder::measureStartTimeToParamTimestamp(const QString &mea
 }
 
 static bool resolveMeasureParamFile(const QDir &dir, const QString &shotDir, const QString &shotNum,
-                                    const QString &preferredParamTimestamp,
+                                    const QString &preferredMeasureStartTime,
                                     QString *outPath, QString *outTimestamp, QString *errorMessage)
 {
     struct ParamCandidate {
         QString filePath;
-        QString timestamp;
+        QString timestamp; // yyyyMMdd_HHmmss，便于与批次参数文件匹配
+        bool fullChannel = false;
     };
-    QVector<ParamCandidate> candidates;
+    QVector<ParamCandidate> batchCandidates;
+    QVector<ParamCandidate> fullChannelCandidates;
 
-    const QStringList names = dir.entryList(
+    const QString preferredParamTimestamp =
+        SpectrumH5Rebuilder::measureStartTimeToParamTimestamp(preferredMeasureStartTime);
+
+    const QStringList batchNames = dir.entryList(
         QStringList{QStringLiteral("*_measureParam.h5")},
         QDir::Files,
         QDir::Name);
-
-    for (const QString &name : names) {
+    for (const QString &name : batchNames) {
         QString timestamp;
         if (!SpectrumH5Rebuilder::parseMeasureParamFileName(name, &timestamp))
             continue;
@@ -132,32 +176,64 @@ static bool resolveMeasureParamFile(const QDir &dir, const QString &shotDir, con
         if (QDir::cleanPath(filePath) != QDir::cleanPath(expectedPath))
             continue;
 
-        candidates.append({filePath, timestamp});
+        batchCandidates.append({filePath, timestamp, false});
     }
 
-    if (candidates.isEmpty()) {
+    const QStringList h5Names = dir.entryList(
+        QStringList{QStringLiteral("*.H5")},
+        QDir::Files,
+        QDir::Name);
+    for (const QString &name : h5Names) {
+        if (!SpectrumH5Rebuilder::isFullChannelMeasureParamFileName(name))
+            continue;
+
+        QString timestamp;
+        if (!SpectrumH5Rebuilder::parseMeasureParamFileName(name, &timestamp))
+            continue;
+
+        const QString filePath = dir.absoluteFilePath(name);
+        const QString expectedPath = SpectrumH5Rebuilder::measureParamFilePathForName(shotDir, shotNum, name);
+        if (expectedPath.isEmpty()
+            || QDir::cleanPath(filePath) != QDir::cleanPath(expectedPath)) {
+            continue;
+        }
+
+        fullChannelCandidates.append({filePath, timestamp, true});
+    }
+
+    if (batchCandidates.isEmpty() && fullChannelCandidates.isEmpty()) {
         if (errorMessage) {
             *errorMessage = QObject::tr(
                 "未找到有效的测量参数文件。\n"
-                "期望路径：{保存路径}/{发次号}/{yyyyMMdd_HHmmss}_measureParam.h5");
+                "分批次测量：{保存路径}/{发次号}/{yyyyMMdd_HHmmss}_measureParam.h5\n"
+                "全通道测量：{保存路径}/{发次号}/{yyyy-MM-dd_HHmmss}.H5");
         }
         return false;
     }
 
-    if (!preferredParamTimestamp.isEmpty()) {
-        for (const ParamCandidate &item : candidates) {
-            if (item.timestamp == preferredParamTimestamp) {
-                *outPath = item.filePath;
-                *outTimestamp = item.timestamp;
-                return true;
+    auto pickCandidate = [&](const QVector<ParamCandidate> &candidates) -> bool {
+        if (candidates.isEmpty())
+            return false;
+
+        if (!preferredParamTimestamp.isEmpty()) {
+            for (const ParamCandidate &item : candidates) {
+                if (item.timestamp == preferredParamTimestamp) {
+                    *outPath = item.filePath;
+                    *outTimestamp = item.timestamp;
+                    return true;
+                }
             }
         }
-    }
 
-    const ParamCandidate &selected = candidates.last();
-    *outPath = selected.filePath;
-    *outTimestamp = selected.timestamp;
-    return true;
+        const ParamCandidate &selected = candidates.last();
+        *outPath = selected.filePath;
+        *outTimestamp = selected.timestamp;
+        return true;
+    };
+
+    if (pickCandidate(batchCandidates))
+        return true;
+    return pickCandidate(fullChannelCandidates);
 }
 
 static bool collectDatEntries(const QDir &dir,
@@ -293,13 +369,16 @@ bool SpectrumH5Rebuilder::tryMakeMeasureParamPath(const QString &filePath,
     if (!parseMeasureParamFileName(info.fileName(), &timestamp)) {
         if (errorMessage) {
             *errorMessage = QObject::tr(
-                "文件名不符合规则：{yyyyMMdd_HHmmss}_measureParam.h5");
+                "文件名不符合规则：\n"
+                "分批次测量：{yyyyMMdd_HHmmss}_measureParam.h5\n"
+                "全通道测量：{yyyy-MM-dd_HHmmss}.H5");
         }
         return false;
     }
 
-    const QString expectedPath = measureParamFilePath(shotDirPath, shotNum, timestamp);
-    if (QDir::cleanPath(info.absoluteFilePath()) != QDir::cleanPath(expectedPath)) {
+    const QString expectedPath = measureParamFilePathForName(shotDirPath, shotNum, info.fileName());
+    if (expectedPath.isEmpty()
+        || QDir::cleanPath(info.absoluteFilePath()) != QDir::cleanPath(expectedPath)) {
         if (errorMessage) {
             *errorMessage = QObject::tr(
                 "文件路径不符合规则：\n%1").arg(expectedPath);
@@ -338,8 +417,7 @@ bool SpectrumH5Rebuilder::buildBatchScanResult(const QString &shotDirectory,
     result.measureStartTime = measureStartTime;
     result.defaultOutputH5Path = spectrumH5FilePath(result.shotDir, result.shotNum, measureStartTime);
 
-    const QString preferredParamTimestamp = measureStartTimeToParamTimestamp(measureStartTime);
-    if (!resolveMeasureParamFile(dir, result.shotDir, result.shotNum, preferredParamTimestamp,
+    if (!resolveMeasureParamFile(dir, result.shotDir, result.shotNum, measureStartTime,
                                  &result.measureParamPath, &result.measureParamTimestamp, errorMessage)) {
         return false;
     }
@@ -379,8 +457,7 @@ bool SpectrumH5Rebuilder::scanShotDirectoryBatches(const QString &shotDir,
         summary.datFileCount = it.value().size();
         summary.defaultOutputH5Path = spectrumH5FilePath(shotDirPath, shotNum, summary.measureStartTime);
 
-        const QString preferredParamTimestamp = measureStartTimeToParamTimestamp(summary.measureStartTime);
-        resolveMeasureParamFile(dir, shotDirPath, shotNum, preferredParamTimestamp,
+        resolveMeasureParamFile(dir, shotDirPath, shotNum, summary.measureStartTime,
                                 &summary.measureParamPath, &summary.measureParamTimestamp, nullptr);
 
         batches.append(summary);
@@ -446,17 +523,19 @@ bool SpectrumH5Rebuilder::rebuild(const RebuildJob &job)
         return false;
     }
 
-    if (QFileInfo::exists(job.outputH5Path)) {
-        emit logMessage(tr("输出文件已存在，将跳过创建：%1").arg(job.outputH5Path), QtWarningMsg);
-        emit finished(false, job.outputH5Path);
-        return false;
-    }
-
     QString errorMessage;
     if (!applyMeasureParameters(job.measureParamPath, &errorMessage)) {
         emit logMessage(errorMessage, QtWarningMsg);
         emit finished(false, {});
         return false;
+    }
+
+    if (QFileInfo::exists(job.outputH5Path)) {
+        if (!QFile::remove(job.outputH5Path)) {
+            emit logMessage(tr("无法覆盖已存在的输出文件：%1").arg(job.outputH5Path), QtWarningMsg);
+            emit finished(false, job.outputH5Path);
+            return false;
+        }
     }
 
     emit progress(5, tr("创建 H5 文件..."));
