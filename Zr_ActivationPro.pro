@@ -132,6 +132,7 @@ CONFIG += warn_off
 
 #开启大资源支持
 CONFIG += resources_big
+CONFIG+=debug_vars
 
 #############################################################################################################
 exists (./.git) {
@@ -166,10 +167,24 @@ windows {
         QMAKE_CXXFLAGS += -Wall -Wextra -Wpedantic
         # 大对象/大翻译单元：避免链接与编译阶段内存峰值过高
         QMAKE_CXXFLAGS += -Wa,-mbig-obj
-        # Debug 下减少调试信息生成，缓解 cc1plus.exe out of memory
-        QMAKE_CXXFLAGS_DEBUG -= -g
-        QMAKE_CXXFLAGS_DEBUG += -g1
-        QMAKE_CXXFLAGS_DEBUG += -fno-var-tracking -fno-var-tracking-assignments
+        CONFIG(debug, debug|release) {
+            # 默认 Debug 仅 -g1（可断点、无局部变量），减轻 cc1plus.exe 内存压力。
+            # 若需全工程查看局部变量：Qt Creator -> 项目 -> 构建 -> qmake -> 附加参数 CONFIG+=debug_vars
+            contains(CONFIG, debug_vars) {
+                message("MinGW Debug: full variable symbols for ALL sources (-g2)")
+                QMAKE_CXXFLAGS_DEBUG -= -g
+                QMAKE_CXXFLAGS_DEBUG += -g2
+            } else {
+                QMAKE_CXXFLAGS_DEBUG -= -g
+                QMAKE_CXXFLAGS_DEBUG += -g1
+                QMAKE_CXXFLAGS_DEBUG += -fno-var-tracking -fno-var-tracking-assignments
+                # parsedata.cpp 体量大且常需单步调试，单独恢复完整变量信息
+                parsedata.cpp {
+                    message("MinGW Debug: full variable symbols for parsedata.cpp (-g2)")
+                    QMAKE_CXXFLAGS += -g2 -fvar-tracking -fvar-tracking-assignments
+                }
+            }
+        }
         #QMAKE_CXXFLAGS += -finput-charset=UTF-8
         #QMAKE_CXXFLAGS += -fexec-charset=UTF-8
         #QMAKE_CXXFLAGS += -fwide-exec-charset=UTF-16

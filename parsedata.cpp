@@ -155,8 +155,7 @@ void ParseData::mergeSpecTime_online(const H5Spectrum& specPack)
             if (m_mergeSpec.size() > 0) {
                 QVector<mergeSpecData> mergeSpec_temp = m_mergeSpec;
                 // 处理前面已完整的分时能谱，进行拟合
-                bool flag = getResult(mergeSpec_temp);
-                Q_UNUSED(flag);
+                getResult(mergeSpec_temp);
             }
 
             mergeSpecData tempMerge;
@@ -185,9 +184,14 @@ void ParseData::mergeSpecTime_online(const H5Spectrum& specPack)
 }
 
 
-bool ParseData::getResult(QVector<mergeSpecData> mergeSpec)
+int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
 {
     clearFitResult();
+    m_fitFailureMessages.clear();
+    m_successfulFitSegmentCount = 0;
+
+    if (mergeSpec.isEmpty())
+        return 0;
 
     QVector<fit_result> peakParAll;
     bool fitflag[3] = {false, false, false};
@@ -204,8 +208,11 @@ bool ParseData::getResult(QVector<mergeSpecData> mergeSpec)
         delete[] singleSpectrum;
     }
 
-    if (peakParAll.size() < 3)
-        return false;
+    if (peakParAll.size() < 3) {
+        m_fitFailureMessages.append(
+            QStringLiteral("谱仪%1能谱拟合失败，解析失败").arg(mDetId));
+        return 0;
+    }
 
     QVector<double> initialValue = {
         peakParAll[1].c0, peakParAll[1].c1, peakParAll[1].c2,
@@ -220,6 +227,7 @@ bool ParseData::getResult(QVector<mergeSpecData> mergeSpec)
 
     int spec_id = 0;
     for (const mergeSpecData &spec : mergeSpec) {
+        const int segmentIndex = spec_id + 1;
         QVector<double> fit_c = initialValue;
         fit_c[6] = 10.0;
         fit_c[7] = 1.0;
@@ -234,19 +242,23 @@ bool ParseData::getResult(QVector<mergeSpecData> mergeSpec)
         bool exitflag[2] = {false, false};
         QVector<fit_result> peakFindInit = peakPar0;
         if (!PeakFind(singleSpectrum, peakFindInit, exitflag)) {
+            m_fitFailureMessages.append(
+                QStringLiteral("谱仪%1第%2段能谱拟合失败，解析失败").arg(mDetId).arg(segmentIndex));
             delete[] singleSpectrum;
-            return false;
+            ++spec_id;
+            continue;
         }
 
         if (!exitflag[0] || !exitflag[1]) {
             if (!exitflag[0])
-                qDebug() << "511keV peak height < 100, stop processing";
+                qDebug() << "511keV peak height < 100, stop processing segment" << segmentIndex;
             if (!exitflag[1])
-                qDebug() << "909keV peak height < 100, stop processing";
+                qDebug() << "909keV peak height < 100, stop processing segment" << segmentIndex;
+            m_fitFailureMessages.append(
+                QStringLiteral("谱仪%1第%2段能谱拟合失败，解析失败").arg(mDetId).arg(segmentIndex));
             delete[] singleSpectrum;
-            if (spec_id == 0)
-                return false;
-            break;
+            ++spec_id;
+            continue;
         }
 
         peakPar0 = peakFindInit;
@@ -261,8 +273,11 @@ bool ParseData::getResult(QVector<mergeSpecData> mergeSpec)
         const double deathRatio = deadTimeRateFromSegment(spec);
         double peakCount = 0.0;
         if (!SpecStripping(singleSpectrum, newEnergyScal, fit_c, stripFlag, deathRatio, &peakCount)) {
+            m_fitFailureMessages.append(
+                QStringLiteral("谱仪%1第%2段能谱拟合失败，解析失败").arg(mDetId).arg(segmentIndex));
             delete[] singleSpectrum;
-            return false;
+            ++spec_id;
+            continue;
         }
 
         initialValue = fit_c;
@@ -271,13 +286,18 @@ bool ParseData::getResult(QVector<mergeSpecData> mergeSpec)
 
         qDebug() << "SpecStripping End, specID:" << spec_id << "peakCount:" << peakCount;
         ++spec_id;
+        ++m_successfulFitSegmentCount;
         delete[] singleSpectrum;
     }
 
-    if (count909_count.size() > 1)
-        fit909data();
+    if (m_successfulFitSegmentCount > 1) {
+        if (!fit909data()) {
+            m_fitFailureMessages.append(
+                QStringLiteral("谱仪%1衰减曲线拟合失败").arg(mDetId));
+        }
+    }
 
-    return spec_id > 0;
+    return m_successfulFitSegmentCount;
 }
 
 /**
@@ -843,6 +863,8 @@ QVector<specStripData> ParseData::GetCount909Data()
 void ParseData::clearFitResult()
 {
     mInitialCount = 0.0;
+    m_successfulFitSegmentCount = 0;
+    m_fitFailureMessages.clear();
     count909_time.clear();
     count909_count.clear(); //909keV计数，采用峰面积求得
     count909_fitcount.clear(); //909keV计数随时间变化的拟合曲线
@@ -852,6 +874,7 @@ void ParseData::clearFitResult()
     specStripData_y.clear(); //拟合数据点y坐标
     specStripData_fity.clear(); //拟合曲线y
     specStripData_residualRate.clear(); //残差
+    specStrip_rightCH.clear();
 }
 
 /**
@@ -1250,8 +1273,10 @@ void ParseData::mergeSpecTime_offline(quint64 timeBin, quint64 start_time, quint
 bool ParseData::getResult_offline(quint64 timeBin, quint64 start_time, quint64 end_time)
 {
     mergeSpecTime_offline(timeBin, start_time, end_time);
-    bool flag = getResult(m_mergeSpec);
-    return flag;
+    if (m_mergeSpec.isEmpty())
+        return false;
+    getResult(m_mergeSpec);
+    return m_successfulFitSegmentCount > 0;
 }
 
 void ParseData::addCompressedSpectrumToSegment(mergeSpecData &seg, const H5Spectrum &spec, quint64 lossTimeNs)
@@ -1283,7 +1308,7 @@ void ParseData::addCompressedSpectrumToSegment(mergeSpecData &seg, const H5Spect
  * @param windowLeft   解析窗口左端点 UTC（fusionTime + timeStart）
  * @param windowRight  解析窗口右端点 UTC（fusionTime + timeEnd）
  * @param stepSec      合并时间步长 Time_Bin，单位 s
- * @return 至少合并出一段且 getResult 成功时返回 true
+ * @return 至少合并出一段能谱时返回 true（拟合失败不影响合并结果保留）
  */
 bool ParseData::getResult_offlineMultiFileUtc(const QStringList &filePaths,
                                               quint32 detectorId,
@@ -1414,7 +1439,7 @@ bool ParseData::getResult_offlineMultiFileUtc(const QStringList &filePaths,
             continue;
         }
 
-        qInfo().nospace() << "Merge file:" << QFileInfo(filePath).fileName()
+        qDebug().nospace() << "Merge file:" << QFileInfo(filePath).fileName()
                           << " det" << detectorId
                           << " fileStartMs" << fileStartMs
                           << " measureTimeMs" << measureTimeMs
@@ -1434,5 +1459,6 @@ bool ParseData::getResult_offlineMultiFileUtc(const QStringList &filePaths,
                   return a.currentTime < b.currentTime;
               });
 
-    return getResult(m_mergeSpec);
+    getResult(m_mergeSpec);
+    return true;
 }

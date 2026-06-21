@@ -68,6 +68,12 @@ public:
     
     QVector<mergeSpecData> GetMergeSpec(){ return m_mergeSpec;}
 
+    /** @brief 最近一次 getResult 成功拟合的分段能谱数量 */
+    int successfulFitSegmentCount() const { return m_successfulFitSegmentCount; }
+
+    /** @brief 最近一次 getResult 中各分段拟合失败信息 */
+    QStringList fitFailureMessages() const { return m_fitFailureMessages; }
+
     //获取剥谱图像数据,给出第i个能谱的剥谱数据，三条曲线数据
     QVector<specStripData> GetStripData(int specID);
 
@@ -178,7 +184,8 @@ public:
     int mDetId; //探测器编号
 
 private:
-    bool getResult(QVector<mergeSpecData> mergeSpec);
+    /** @return 成功完成剥谱/拟合的分段能谱数量 */
+    int getResult(QVector<mergeSpecData> mergeSpec);
 
     void clearFitResult();
 
@@ -233,6 +240,8 @@ private:
 
     double mInitialCount = 0.0; //对数拟合后，给出来的初始计数率
     QVector<int> specStrip_rightCH; //存放所有剥谱图形的右端点下标
+    int m_successfulFitSegmentCount = 0;
+    QStringList m_fitFailureMessages;
 };
 
 #endif // PARSEDATA_H

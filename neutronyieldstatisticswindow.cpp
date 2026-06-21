@@ -1026,13 +1026,29 @@ void NeutronYieldStatisticsWindow::updatePictureForDetector(int detID)
     if (detID < 1 || detID > DET_NUM)
         return;
 
-    if (!mDealSucess.value(detID, false)) {
-        QMessageBox::information(this, tr("提示"), tr("谱仪%1不存在解析成功的数据！").arg(detID));
+    const QVector<ParseData::mergeSpecData> mergeSpecData = dealFile[detID - 1]->GetMergeSpec();
+    const QVector<specStripData> count909_picture = dealFile[detID - 1]->GetCount909Data();
+    const bool hasMergeSpec = !mergeSpecData.isEmpty();
+    const bool hasFitData = !count909_picture.isEmpty();
+
+    if (!hasMergeSpec && !hasFitData) {
+        if (!mDealSucess.value(detID, false)) {
+            QMessageBox::information(this, tr("提示"), tr("谱仪%1不存在解析成功的数据！").arg(detID));
+        }
         return;
     }
 
-    QVector<specStripData> count909_picture = dealFile[detID - 1]->GetCount909Data();
-    if (count909_picture.isEmpty())
+    // 分段合并能谱：合并成功即可绘制，不依赖拟合结果
+    if (hasMergeSpec) {
+        std::vector<ParseData::mergeSpecData> allSpec_vec;
+        allSpec_vec.reserve(static_cast<size_t>(mergeSpecData.size()));
+        for (const auto &data : mergeSpecData)
+            allSpec_vec.push_back(data);
+        slotUpdateMultiSegmentPlotDatas(allSpec_vec);
+    }
+
+    // 909 计数曲线与 909 段剥谱图：仅在有成功拟合的分段时绘制
+    if (!hasFitData)
         return;
 
     std::vector<double> time;
@@ -1062,14 +1078,6 @@ void NeutronYieldStatisticsWindow::updatePictureForDetector(int detID)
             specResidual.push_back(data.residual_rate);
         }
         slotUpdateSpec_909keV(energy, specCount, fitSpecCount, specResidual);
-    }
-
-    QVector<ParseData::mergeSpecData> mergeSpecData = dealFile[detID - 1]->GetMergeSpec();
-    if (!mergeSpecData.isEmpty()) {
-        std::vector<ParseData::mergeSpecData> allSpec_vec;
-        for (auto data : mergeSpecData)
-            allSpec_vec.push_back(data);
-        slotUpdateMultiSegmentPlotDatas(allSpec_vec);
     }
 }
 
@@ -1828,7 +1836,7 @@ void NeutronYieldStatisticsWindow::on_action_startCalculate_triggered()
         dealFile[detID - 1] = new ParseData();
         dealFile[detID - 1]->setStartTime(static_cast<int>(beginTimeForDetector(detID, fusionTime)));
 
-        bool parseOk = dealFile[detID - 1]->getResult_offlineMultiFileUtc(
+        bool mergeOk = dealFile[detID - 1]->getResult_offlineMultiFileUtc(
             h5FilePaths,
             static_cast<quint32>(detID),
             fusionTime,
@@ -1836,7 +1844,11 @@ void NeutronYieldStatisticsWindow::on_action_startCalculate_triggered()
             windowRight,
             timeStep);
 
-        if (!parseOk) {
+        const QStringList fitErrors = dealFile[detID - 1]->fitFailureMessages();
+        for (const QString &msg : fitErrors)
+            emit reporWriteLog(msg, QtWarningMsg);
+
+        if (!mergeOk) {
             emit reporWriteLog(tr("谱仪%1解析失败").arg(detID));
             emit reporWriteLog(QString("谱仪%1解析完成").arg(detID));
             continue;
@@ -1844,6 +1856,11 @@ void NeutronYieldStatisticsWindow::on_action_startCalculate_triggered()
 
         mDealSucess[detID] = true;
         emit sigSuccess(detID);
+
+        if (dealFile[detID - 1]->successfulFitSegmentCount() == 0 && fitErrors.isEmpty()) {
+            emit reporWriteLog(tr("谱仪%1能谱拟合失败，解析失败").arg(detID), QtWarningMsg);
+        }
+
         emit reporWriteLog(QString("谱仪%1解析完成").arg(detID));
     }
 
