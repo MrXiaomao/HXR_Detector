@@ -98,7 +98,7 @@ else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
 
 
-DESTDIR = $$PWD/../build_Zr_ActivationPro
+DESTDIR = $$PWD/../build_ZrActivationPro
 contains(QT_ARCH, x86_64) {
     # x64
     DESTDIR = $$DESTDIR/x64

@@ -134,14 +134,6 @@ CommHelper::CommHelper(QObject *parent)
         }
     });
 
-    // connect(this, &CommHelper::detectorOnline, this, [=](quint8 index){
-    //     // 探测器在线，那么POE电源肯定是开启的
-    //     QHuaWeiSwitcherHelper *switcherHelper = indexOfHuaWeiSwitcher(index);
-    //     if (nullptr == switcherHelper)
-    //         return false;
-
-    //     emit  switcherHelper->syncPoePowerStatus(indexOfPort(index), true);
-    // });
 }
 
 void CommHelper::shutdown()
@@ -293,12 +285,6 @@ void CommHelper::initSocket()
 
             channel->setContext((void*)(intptr_t)index);
             QMetaObject::invokeMethod(this, "detectorOnline", Qt::QueuedConnection, Q_ARG(quint8, index));
-
-            // 探测器在线，那么POE电源肯定是开启的
-            QHuaWeiSwitcherHelper *switcherHelper = indexOfHuaWeiSwitcher(index);
-            if (switcherHelper){
-                emit  switcherHelper->syncPoePowerStatus(indexOfPort(index), true);
-            }
 
             mTempUpdateTime[index] = 0;
             if (!mPoePowerClosing)

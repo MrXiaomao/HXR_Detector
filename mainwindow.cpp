@@ -1237,9 +1237,9 @@ void MainWindow::onPoePowerStatusReport(quint8 index, bool on)
     if(on)
     {
         if (row == 0)
-            qInfo().nospace() << "时间同步触发模块POE电源状态: 开，模块开机中...";
+            qInfo().nospace() << "时间同步触发模块POE电源状态: 开";
         else
-            qInfo().nospace() << "谱仪[#" << index << "]POE电源状态: 开，谱仪开机中...";
+            qInfo().nospace() << "谱仪[#" << index << "]POE电源状态: 开";
     }else{
         if (row == 0)
             qInfo().nospace() << "时间同步触发模块已关机，POE电源状态: 关";

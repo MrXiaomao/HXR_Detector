@@ -201,16 +201,15 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
             //根据结果来判断
             mRespondString.replace("\r\n","\n");
 
-            QString warnEnableCmd = QStringLiteral("Warning: This port is enabled already.");
-            QString warnDisabledCmd = QStringLiteral("Warning: This port is disabled already.");
             QString switchCmd = QStringLiteral("[HUAWEI-GigabitEthernet0/0/%1]").arg(mCurrentPoeIndex);//进入interface GigabitEthernet之后
-            QString switchCmd2 = QStringLiteral("<HUAWEI>");//进入视图之前
             QString switchCmd3 = QStringLiteral("[HUAWEI]");//进入视图之后
             QString queryCmd = QStringLiteral("display poe power-state interface GigabitEthernet0/0/%1\r\n").arg(mCurrentPoeIndex);
             QString enterInterfaceCmd = QStringLiteral("interface GigabitEthernet 0/0/%1\r\n").arg(mCurrentPoeIndex);
 
             if (mCurrentCommand == queryCmd){
-                if (mRespondString.endsWith(switchCmd3.toLatin1())){
+                // 系统视图或接口视图下查询均可完成
+                if (mRespondString.endsWith(switchCmd3.toLatin1()) ||
+                    mRespondString.endsWith(switchCmd.toLatin1())){
                     QList<QByteArray> lines = mRespondString.split('\n');
                     mRespondString.clear();
 
@@ -251,59 +250,13 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
             }
             else if (mCurrentCommand == "poe enable\r\n"){
                 if (mRespondString.endsWith(switchCmd.toLatin1())){
-                    QList<QByteArray> lines = mRespondString.split('\n');
                     mRespondString.clear();
-                    if (lines.size() == 2){
-                        //POE打开成功
-                        qint8 index = this->indexOfPort(mCurrentPoeIndex);
-                        if (index > 0)
-                        {                            
-                            mMapPoeState[mCurrentPoeIndex] = true;
-                            QMetaObject::invokeMethod(this, "reportPoePowerStatus", Qt::QueuedConnection, Q_ARG(quint8, index), Q_ARG(bool, true));
-                        }
-                    }
-                    else if (lines.size() == 3){
-                        //POE之前已经打开
-                        if (lines.at(1) == QString("Warning: This port is enabled already.")){
-                            qint8 index = this->indexOfPort(mCurrentPoeIndex);
-                            if (index > 0)
-                            {
-                                mMapPoeState[mCurrentPoeIndex] = true;
-                                QMetaObject::invokeMethod(this, "reportPoePowerStatus", Qt::QueuedConnection, Q_ARG(quint8, index), Q_ARG(bool, true));
-                            }
-                        }
-                    }
-
-                    // 执行下一条指令
                     executeNextAction();
                 }
             }
             else if (mCurrentCommand == "undo poe enable\r\n"){
                 if (mRespondString.endsWith(switchCmd.toLatin1())){
-                    QList<QByteArray> lines = mRespondString.split('\n');
                     mRespondString.clear();
-                    if (lines.size() == 2){
-                        //POE关闭成功
-                        qint8 index = this->indexOfPort(mCurrentPoeIndex);
-                        if (index > 0)
-                        {
-                            mMapPoeState[mCurrentPoeIndex] = false;
-                            QMetaObject::invokeMethod(this, "reportPoePowerStatus", Qt::QueuedConnection, Q_ARG(quint8, index), Q_ARG(bool, false));
-                        }
-                    }
-                    else if (lines.size() == 3){
-                        //POE之前已经关闭
-                        if (lines.at(1) == QString("Warning: This port is disabled already.")){
-                            qint8 index = this->indexOfPort(mCurrentPoeIndex);
-                            if (index > 0)
-                            {
-                                mMapPoeState[mCurrentPoeIndex] = false;
-                                QMetaObject::invokeMethod(this, "reportPoePowerStatus", Qt::QueuedConnection, Q_ARG(quint8, index), Q_ARG(bool, false));
-                            }
-                        }
-                    }
-
-                    // 执行下一条指令
                     executeNextAction();
                 }
             }
@@ -359,10 +312,6 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
         }
     });
 
-    connect(this, &QHuaWeiSwitcherHelper::syncPoePowerStatus, this, [=](quint8 index, bool on){
-        mMapPoeState[index] = on;
-        QMetaObject::invokeMethod(this, "reportPoePowerStatus", Qt::QueuedConnection, Q_ARG(quint8, index), Q_ARG(bool, true));
-    });
 }
 
 //判断谱仪编号是否存在
@@ -430,10 +379,7 @@ void QHuaWeiSwitcherHelper::queryPowerStatus()
     {
         QMutexLocker locker(&mActionLocker);
         for (auto iter = mMapAssociatedDetector.begin(); iter!=mMapAssociatedDetector.end(); ++iter){
-            if (!mMapPoeState.contains(*iter) || !mMapPoeState[*iter]){//已经在线的就不用再重复查询了
-                //mActionsWait.push_back(ACTION_WAIT(*iter, acSwitchInterface));
-                mActionsWait.push_back(ACTION_WAIT(*iter, acQueryState));
-            }
+            mActionsWait.push_back(ACTION_WAIT(*iter, acQueryState));
         }
 
         mCurrentPoeIndex = mMapAssociatedDetector[0];
@@ -510,6 +456,7 @@ bool QHuaWeiSwitcherHelper::openSwitcherPOEPower(quint8 port/* = 0*/)
                 if (!mMapPoeState.contains(*iter) || !mMapPoeState[*iter]){
                     mActionsWait.push_back(ACTION_WAIT(*iter, acSwitchInterface));
                     mActionsWait.push_back(ACTION_WAIT(*iter, acOpenPoe));
+                    mActionsWait.push_back(ACTION_WAIT(*iter, acQueryState));
                 }
             }
         }
@@ -517,6 +464,7 @@ bool QHuaWeiSwitcherHelper::openSwitcherPOEPower(quint8 port/* = 0*/)
             if (!mMapPoeState.contains(port) || !mMapPoeState[port]){
                 mActionsWait.push_back(ACTION_WAIT(port, acSwitchInterface));
                 mActionsWait.push_back(ACTION_WAIT(port, acOpenPoe));
+                mActionsWait.push_back(ACTION_WAIT(port, acQueryState));
             }
         }
     }
@@ -554,6 +502,7 @@ bool QHuaWeiSwitcherHelper::closeSwitcherPOEPower(quint8 port/* = 0*/, bool disc
                 if (!mMapPoeState.contains(*iter) || mMapPoeState[*iter]){
                     mActionsWait.push_back(ACTION_WAIT(*iter, acSwitchInterface));
                     mActionsWait.push_back(ACTION_WAIT(*iter, acClosePoe));
+                    mActionsWait.push_back(ACTION_WAIT(*iter, acQueryState));
                 }
             }
         }
@@ -561,6 +510,7 @@ bool QHuaWeiSwitcherHelper::closeSwitcherPOEPower(quint8 port/* = 0*/, bool disc
             if (!mMapPoeState.contains(port) || mMapPoeState[port]){
                 mActionsWait.push_back(ACTION_WAIT(port, acSwitchInterface));
                 mActionsWait.push_back(ACTION_WAIT(port, acClosePoe));
+                mActionsWait.push_back(ACTION_WAIT(port, acQueryState));
             }
         }
     }
