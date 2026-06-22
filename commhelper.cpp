@@ -527,6 +527,8 @@ void CommHelper::flushNetRawBuffersOnWorkerThread(bool forceFlushAll)
 {
     if (!mMeasuring && !forceFlushAll)
         return;
+    if (mCurrentWorkMode == CommandAdapter::WorkMode::wmParticle)
+        return;
 
     for (int det = 1; det <= DET_NUM; ++det) {
         QByteArray pendingRaw;
@@ -551,8 +553,10 @@ void CommHelper::flushNetRawBuffersOnWorkerThread(bool forceFlushAll)
 // 网口原始数据
 void CommHelper::onRawNetData_Thread(quint8 detID, const QByteArray& data)
 {
-    // 主线程汇总测量数据，后台线程每1s批量写入文件
+    // 主线程汇总测量数据，后台线程每1s批量写入文件（粒子模式仅写解析后的 CSV）
     if (!mMeasuring || detID < 1 || detID > DET_NUM || data.isEmpty())
+        return;
+    if (mCurrentWorkMode == CommandAdapter::WorkMode::wmParticle)
         return;
 
     QMutexLocker lock(&mSpectrumRawMutexByDetector[detID]);
@@ -598,6 +602,8 @@ void CommHelper::onSpectrumData_Thread(quint8 detID, const QByteArray& data)
 {
     // 主线程汇总能谱分包，后台线程每10s批量写入文件
     if (!mMeasuring || detID < 1 || detID > DET_NUM || data.isEmpty())
+        return;
+    if (mCurrentWorkMode == CommandAdapter::WorkMode::wmParticle)
         return;
 
     QMutexLocker lock(&mSpectrumRawMutexByDetector[detID]);
@@ -1238,6 +1244,7 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
     constexpr int kReserveRawBytesPerDetector = 1024 * 1024; // 每路探测器预留1MB网口原始数据，50ms能谱刷新频率下0.625MB/s
 
     mMeasureStartTime = tmStart.toString("yyyy-MM-dd_HHmmss");// QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
+    mCurrentWorkMode = workMode;
     mMeasuring = true;
     // 初始化
     for (int i = 1; i <= DET_NUM; ++i) {
@@ -1459,6 +1466,7 @@ void CommHelper::stopMeasure(quint8 index/* = 0*/)
         }
 
         mMeasuring = false;
+        mCurrentWorkMode = CommandAdapter::WorkMode::wmSpectrum;
         HDF5Settings::instance()->closeH5Spectrum();
     }
     else if (index >= 1 && index <= DET_NUM){ //关闭单个通道
@@ -1501,6 +1509,7 @@ void CommHelper::stopMeasure(quint8 index/* = 0*/)
             //关闭能谱文件
             if (mDetectFileProcessor.isEmpty()){
                 mMeasuring = false;
+                mCurrentWorkMode = CommandAdapter::WorkMode::wmSpectrum;
                 HDF5Settings::instance()->closeH5Spectrum();
             }
         }

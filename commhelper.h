@@ -261,6 +261,7 @@ private:
     // QMutex mMutexTriggerTime;
     QString mMeasureStartTime;//测量开始时刻
     bool mMeasuring = false; // 是否正在测量
+    CommandAdapter::WorkMode mCurrentWorkMode = CommandAdapter::WorkMode::wmSpectrum;
 
     QMap<quint8, DataProcessor*> mDetectorDataProcessor;//32路探测器数据处理器
     QMap<quint8, QFile*> mDetectFileProcessor;  //32路探测器的测量数据文件句柄，不包含温度数据的数据包，可以是：能谱数据、波形数据、粒子数据。
@@ -271,7 +272,7 @@ private:
     std::array<QMutex, DET_NUM + 1> mSpectrumH5MutexByDetector;
     SpectrumH5FlushThread* mSpectrumH5FlushThread = nullptr;
     
-    // 每路探测器原始网口数据；后台线程定时批量写入 *.dat
+    // 每路探测器原始网口数据；后台线程定时批量写入 *.dat（粒子模式不写原始二进制）
     std::array<QByteArray, DET_NUM + 1> mPendingNetRawByDetector;
     std::array<QMutex, DET_NUM + 1> mSpectrumRawMutexByDetector;
     SpectrumRawFlushThread* mSpectrumRawFlushThread = nullptr;
