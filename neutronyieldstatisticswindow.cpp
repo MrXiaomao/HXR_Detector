@@ -14,6 +14,10 @@
 #include <QAction>
 #include <QToolButton>
 #include <QHeaderView>
+#include <QProgressBar>
+#include <QThread>
+#include <QProgressBar>
+#include <QThread>
 
 #include <QJsonArray>
 #include <QJsonObject>
@@ -166,6 +170,13 @@ NeutronYieldStatisticsWindow::NeutronYieldStatisticsWindow(bool isDarkTheme, QWi
 
 NeutronYieldStatisticsWindow::~NeutronYieldStatisticsWindow()
 {
+    if (mParseWorker)
+        mParseWorker->requestCancel();
+    if (mParseWorkerThread) {
+        mParseWorkerThread->quit();
+        mParseWorkerThread->wait(3000);
+    }
+
     for (int i = 0; i < DET_NUM; ++i) {
         delete dealFile[i];
         dealFile[i] = nullptr;
@@ -209,6 +220,14 @@ void NeutronYieldStatisticsWindow::initUi()
         });
         systemClockTimer->start(900);
     }
+
+    mProgressBar = new QProgressBar(ui->statusbar);
+    mProgressBar->setObjectName(QStringLiteral("progressBar_parse"));
+    mProgressBar->setMinimumWidth(220);
+    mProgressBar->setMaximumWidth(420);
+    mProgressBar->setTextVisible(true);
+    mProgressBar->hide();
+    ui->statusbar->addPermanentWidget(mProgressBar);
 
     // 布局
     {
@@ -383,10 +402,8 @@ void NeutronYieldStatisticsWindow::initUi()
                 updateShotTimeModeUi();
         });
         connect(ui->spinBox_channelId, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int detId) {
-            if (isPerChannelShotTimeMode()) {
+            if (isPerChannelShotTimeMode())
                 syncMeasureDateTimeForDetector(detId);
-                updatePictureForDetector(detId);
-            }
         });
         connect(ui->spinBox_pictureDet, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int detId) {
             if (!isPerChannelShotTimeMode())
@@ -441,6 +458,8 @@ void NeutronYieldStatisticsWindow::initUi()
             }
         }
     }
+
+    setParseBusy(false);
 }
 
 void NeutronYieldStatisticsWindow::initFileListTable()
@@ -1025,6 +1044,13 @@ void NeutronYieldStatisticsWindow::updatePictureForDetector(int detID)
 {
     if (detID < 1 || detID > DET_NUM)
         return;
+
+    if (!dealFile[detID - 1]) {
+        if (!mDealSucess.value(detID, false)) {
+            QMessageBox::information(this, tr("提示"), tr("谱仪%1不存在解析成功的数据！").arg(detID));
+        }
+        return;
+    }
 
     const QVector<ParseData::mergeSpecData> mergeSpecData = dealFile[detID - 1]->GetMergeSpec();
     const QVector<specStripData> count909_picture = dealFile[detID - 1]->GetCount909Data();
@@ -1709,6 +1735,11 @@ void NeutronYieldStatisticsWindow::on_action_exit_triggered()
 
 void NeutronYieldStatisticsWindow::on_action_startCalculate_triggered()
 {
+    if (mParseWorkerThread) {
+        QMessageBox::information(this, tr("提示"), tr("解析正在进行中，请先停止当前任务。"));
+        return;
+    }
+
     mInterrupted = false;
 
     const int startTime = ui->spinBox_timeStart->value() * 60;
@@ -1819,64 +1850,149 @@ void NeutronYieldStatisticsWindow::on_action_startCalculate_triggered()
                                .arg(fusionTime.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss"))));
     }
 
-    QString detectorList;
+    NeutronYieldParseJob job;
+    job.h5FilePaths = h5FilePaths;
+    job.detIds = detIds;
+    job.fusionTime = fusionTime;
+    job.windowLeft = windowLeft;
+    job.windowRight = windowRight;
+    job.timeStepSec = timeStep;
+    job.perChannelMode = perChannelMode;
     for (int detID : detIds) {
-        if (detID < 1 || detID > DET_NUM) {
-            emit reporWriteLog(tr("无效通道号 %1，已跳过").arg(detID), QtWarningMsg);
-            continue;
-        }
-
-        detectorList += QString::number(detID) + ",";
-
-        if (mInterrupted)
-            break;
-
-        mDealSucess[detID] = false;
-        delete dealFile[detID - 1];
-        dealFile[detID - 1] = new ParseData();
-        dealFile[detID - 1]->setStartTime(static_cast<int>(beginTimeForDetector(detID, fusionTime)));
-
-        bool mergeOk = dealFile[detID - 1]->getResult_offlineMultiFileUtc(
-            h5FilePaths,
-            static_cast<quint32>(detID),
-            fusionTime,
-            windowLeft,
-            windowRight,
-            timeStep);
-
-        const QStringList fitErrors = dealFile[detID - 1]->fitFailureMessages();
-        for (const QString &msg : fitErrors)
-            emit reporWriteLog(msg, QtWarningMsg);
-
-        if (!mergeOk) {
-            emit reporWriteLog(tr("谱仪%1解析失败").arg(detID));
-            emit reporWriteLog(QString("谱仪%1解析完成").arg(detID));
-            continue;
-        }
-
-        mDealSucess[detID] = true;
-        emit sigSuccess(detID);
-
-        if (dealFile[detID - 1]->successfulFitSegmentCount() == 0 && fitErrors.isEmpty()) {
-            emit reporWriteLog(tr("谱仪%1能谱拟合失败，解析失败").arg(detID), QtWarningMsg);
-        }
-
-        emit reporWriteLog(QString("谱仪%1解析完成").arg(detID));
+        if (detID >= 1 && detID <= DET_NUM)
+            job.beginTimeByDet.insert(detID, static_cast<int>(beginTimeForDetector(detID, fusionTime)));
     }
 
-    QString msg;
-    if (perChannelMode) {
-        const int detID = detIds.isEmpty() ? 0 : detIds.first();
-        msg = mDealSucess.value(detID, false)
-            ? tr("谱仪%1解析成功。").arg(detID)
-            : tr("谱仪%1解析失败。").arg(detID);
-    } else {
-        if (!detectorList.isEmpty())
-            detectorList.chop(1);
-        msg = QString(tr("文件全部解析完成，包含谱仪：%1")).arg(detectorList);
+    startParseWorker(job);
+}
+
+
+void NeutronYieldStatisticsWindow::startParseWorker(const NeutronYieldParseJob &job)
+{
+    if (mParseWorkerThread)
+        return;
+
+    mInterrupted = false;
+
+    if (mProgressBar) {
+        mProgressBar->setRange(0, 1);
+        mProgressBar->setValue(0);
+        mProgressBar->show();
     }
-    emit reporWriteLog(msg);
-    QMessageBox::information(this, tr("提示"), msg);
+
+    setParseBusy(true);
+
+    mParseWorker = new NeutronYieldParseWorker();
+    mParseWorkerThread = new QThread(this);
+    mParseWorker->moveToThread(mParseWorkerThread);
+
+    connect(mParseWorkerThread, &QThread::started, mParseWorker, [this, job]() {
+        mParseWorker->run(job);
+    });
+    connect(mParseWorker, &NeutronYieldParseWorker::progress,
+            this, &NeutronYieldStatisticsWindow::onParseProgress, Qt::QueuedConnection);
+    connect(mParseWorker, &NeutronYieldParseWorker::logMessage,
+            this, &NeutronYieldStatisticsWindow::onParseLogMessage, Qt::QueuedConnection);
+    connect(mParseWorker, &NeutronYieldParseWorker::channelFinished,
+            this, &NeutronYieldStatisticsWindow::onParseChannelFinished, Qt::QueuedConnection);
+    connect(mParseWorker, &NeutronYieldParseWorker::finished,
+            this, &NeutronYieldStatisticsWindow::onParseFinished, Qt::QueuedConnection);
+    connect(mParseWorkerThread, &QThread::finished,
+            this, &NeutronYieldStatisticsWindow::onParseWorkerThreadFinished);
+
+    mParseWorkerThread->start();
+}
+
+void NeutronYieldStatisticsWindow::setParseBusy(bool busy)
+{
+    ui->action_startCalculate->setEnabled(!busy);
+    ui->action_stopCalculate->setEnabled(busy);
+    ui->action_open->setEnabled(!busy);
+    ui->bt_addFiles->setEnabled(!busy);
+    ui->bt_removeFile->setEnabled(!busy);
+    ui->bt_clearFiles->setEnabled(!busy);
+    ui->btn_sort->setEnabled(!busy);
+}
+
+void NeutronYieldStatisticsWindow::onParseProgress(int value, int maximum, const QString &message)
+{
+    if (mProgressBar) {
+        mProgressBar->setMaximum(qMax(1, maximum));
+        mProgressBar->setValue(qBound(0, value, mProgressBar->maximum()));
+    }
+    ui->statusbar->showMessage(message);
+}
+
+void NeutronYieldStatisticsWindow::onParseLogMessage(const QString &msg, QtMsgType type)
+{
+    emit reporWriteLog(msg, type);
+}
+
+void NeutronYieldStatisticsWindow::onParseChannelFinished(int detId, bool mergeOk, const QStringList &fitErrors)
+{
+    for (const QString &msg : fitErrors)
+        emit reporWriteLog(msg, QtWarningMsg);
+
+    mDealSucess[detId] = false;
+
+    if (!mergeOk || !mParseWorker) {
+        emit reporWriteLog(tr("谱仪%1解析失败").arg(detId));
+        emit reporWriteLog(QString("谱仪%1解析完成").arg(detId));
+        return;
+    }
+
+    ParseData *parsed = mParseWorker->takeParseData(detId);
+    if (!parsed) {
+        emit reporWriteLog(tr("谱仪%1解析失败").arg(detId));
+        emit reporWriteLog(QString("谱仪%1解析完成").arg(detId));
+        return;
+    }
+
+    delete dealFile[detId - 1];
+    dealFile[detId - 1] = parsed;
+
+    mDealSucess[detId] = true;
+    emit sigSuccess(detId);
+
+    if (dealFile[detId - 1]->successfulFitSegmentCount() == 0 && fitErrors.isEmpty()) {
+        emit reporWriteLog(tr("谱仪%1能谱拟合失败，解析失败").arg(detId), QtWarningMsg);
+    }
+
+    emit reporWriteLog(QString("谱仪%1解析完成").arg(detId));
+}
+
+void NeutronYieldStatisticsWindow::onParseFinished(bool cancelled, const QString &summaryMessage)
+{
+    if (cancelled)
+        emit reporWriteLog(tr("解析被中断"));
+
+    if (mProgressBar) {
+        mProgressBar->setValue(mProgressBar->maximum());
+        mProgressBar->hide();
+    }
+
+    emit reporWriteLog(summaryMessage);
+
+    if (!cancelled)
+        QMessageBox::information(this, tr("提示"), summaryMessage);
+
+    if (mParseWorkerThread)
+        mParseWorkerThread->quit();
+}
+
+void NeutronYieldStatisticsWindow::onParseWorkerThreadFinished()
+{
+    if (mParseWorker) {
+        mParseWorker->deleteLater();
+        mParseWorker = nullptr;
+    }
+    if (mParseWorkerThread) {
+        mParseWorkerThread->deleteLater();
+        mParseWorkerThread = nullptr;
+    }
+
+    setParseBusy(false);
+    ui->statusbar->showMessage(tr("就绪"));
 }
 
 
@@ -1884,6 +2000,8 @@ void NeutronYieldStatisticsWindow::on_action_stopCalculate_triggered()
 {
     emit reporWriteLog(tr("中断解析"));
     mInterrupted = true;
+    if (mParseWorker)
+        mParseWorker->requestCancel();
 }
 
 void NeutronYieldStatisticsWindow::updateYieldSpatialDistributionForRow(int row)

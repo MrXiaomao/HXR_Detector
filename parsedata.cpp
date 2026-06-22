@@ -106,6 +106,37 @@ ParseData::ParseData() {
 
 ParseData::~ParseData() {}
 
+void ParseData::setParseProgressCallback(ParseProgressCallback callback)
+{
+    m_parseProgressCallback = std::move(callback);
+}
+
+void ParseData::clearParseProgressCallback()
+{
+    m_parseProgressCallback = nullptr;
+}
+
+void ParseData::setParseCancelFlag(std::atomic<bool> *flag)
+{
+    m_parseCancelFlag = flag;
+}
+
+bool ParseData::isParseCancelled() const
+{
+    if (m_parseCancelFlag && m_parseCancelFlag->load(std::memory_order_relaxed))
+        return true;
+    return m_localCancelFlag.load(std::memory_order_relaxed);
+}
+
+void ParseData::reportParseProgress(ParseProgressPhase phase, int current, int total) const
+{
+    if (!m_parseProgressCallback)
+        return;
+    const int safeTotal = qMax(1, total);
+    const int safeCurrent = qBound(0, current, safeTotal);
+    m_parseProgressCallback(phase, safeCurrent, safeTotal);
+}
+
 void ParseData::mergeSpecTime_online(const H5Spectrum& specPack)
 {
     // -------- 0. 先做道址压缩：8192 道 -> 2048 道，每 4 道求和 --------
@@ -226,7 +257,11 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
     bool stripFlag[2] = {fitflag[1], fitflag[2]};
 
     int spec_id = 0;
+    const int totalSegments = mergeSpec.size();
     for (const mergeSpecData &spec : mergeSpec) {
+        if (isParseCancelled())
+            break;
+
         const int segmentIndex = spec_id + 1;
         QVector<double> fit_c = initialValue;
         fit_c[6] = 10.0;
@@ -246,6 +281,7 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
                 QStringLiteral("谱仪%1第%2段能谱拟合失败，解析失败").arg(mDetId).arg(segmentIndex));
             delete[] singleSpectrum;
             ++spec_id;
+            reportParseProgress(ParseProgressPhase::Fit, spec_id, totalSegments);
             continue;
         }
 
@@ -258,6 +294,7 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
                 QStringLiteral("谱仪%1第%2段能谱拟合失败，解析失败").arg(mDetId).arg(segmentIndex));
             delete[] singleSpectrum;
             ++spec_id;
+            reportParseProgress(ParseProgressPhase::Fit, spec_id, totalSegments);
             continue;
         }
 
@@ -277,6 +314,7 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
                 QStringLiteral("谱仪%1第%2段能谱拟合失败，解析失败").arg(mDetId).arg(segmentIndex));
             delete[] singleSpectrum;
             ++spec_id;
+            reportParseProgress(ParseProgressPhase::Fit, spec_id, totalSegments);
             continue;
         }
 
@@ -287,8 +325,12 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
         qDebug() << "SpecStripping End, specID:" << spec_id << "peakCount:" << peakCount;
         ++spec_id;
         ++m_successfulFitSegmentCount;
+        reportParseProgress(ParseProgressPhase::Fit, spec_id, totalSegments);
         delete[] singleSpectrum;
     }
+
+    if (isParseCancelled())
+        return m_successfulFitSegmentCount;
 
     if (m_successfulFitSegmentCount > 1) {
         if (!fit909data()) {
@@ -1339,6 +1381,9 @@ bool ParseData::getResult_offlineMultiFileUtc(const QStringList &filePaths,
 
     // -------- 2. 逐文件读取并分段合并 --------
     for (const QString &filePath : filePaths) {
+        if (isParseCancelled())
+            return false;
+
         if (filePath.isEmpty() || !QFileInfo::exists(filePath))
             continue;
 
@@ -1406,6 +1451,9 @@ bool ParseData::getResult_offlineMultiFileUtc(const QStringList &filePaths,
             const int completeBins = filtered.size() / spectraPerBin;
             int lastSpecID = 0;
             for (int bin = 0; bin < completeBins; ++bin) {
+                if (isParseCancelled())
+                    return false;
+
                 const int binStart = bin * spectraPerBin;
                 const int binEnd = binStart + spectraPerBin;
 
@@ -1430,6 +1478,9 @@ bool ParseData::getResult_offlineMultiFileUtc(const QStringList &filePaths,
                 seg.currentTime = rightEndpointMs - fusionMs;
                 m_mergeSpec.append(seg);
                 ++fileMergedCount;
+                reportParseProgress(ParseProgressPhase::Merge,
+                                    m_mergeSpec.size(),
+                                    m_mergeSpec.size());
             }
         }
 
@@ -1453,12 +1504,17 @@ bool ParseData::getResult_offlineMultiFileUtc(const QStringList &filePaths,
     if (m_mergeSpec.isEmpty() || totalRawRows == 0)
         return false;
 
+    if (isParseCancelled())
+        return false;
+
     // -------- 4. 按合并段时刻排序后串联，执行寻峰/剥谱 --------
     std::sort(m_mergeSpec.begin(), m_mergeSpec.end(),
               [](const mergeSpecData &a, const mergeSpecData &b) {
                   return a.currentTime < b.currentTime;
               });
 
+    const int totalSegments = m_mergeSpec.size();
+    reportParseProgress(ParseProgressPhase::Fit, 0, totalSegments);
     getResult(m_mergeSpec);
-    return true;
+    return !isParseCancelled();
 }

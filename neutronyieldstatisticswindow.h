@@ -13,9 +13,12 @@
 #include "QGoodWindowHelper"
 #include "qcustomplothelper.h"
 #include "parsedata.h"
+#include "neutronyieldparseworker.h"
 
 class CrasterParabolicHeatmapWidget;
 class QTableWidgetItem;
+class QProgressBar;
+class QThread;
 
 namespace Ui {
 class NeutronYieldStatisticsWindow;
@@ -137,6 +140,15 @@ private slots:
 
     void on_bt_saveResult_clicked();
 
+    void onParseProgress(int value, int maximum, const QString &message);
+    void onParseLogMessage(const QString &msg, QtMsgType type);
+    void onParseChannelFinished(int detId, bool mergeOk, const QStringList &fitErrors);
+    void onParseFinished(bool cancelled, const QString &summaryMessage);
+    void onParseWorkerThreadFinished();
+
+    void setParseBusy(bool busy);
+    void startParseWorker(const NeutronYieldParseJob &job);
+
 private:
     struct H5FileChannelMeta {
         QMap<int, QDateTime> firstDateTime;
@@ -198,6 +210,10 @@ private:
     QMap<int, Sensor> myield; //存放各个通道中子产额。通道编号：1-DET_NUM，通道经纬度，通道的中子产额
     ParseData* dealFile[DET_NUM];
     QStringList mFilePaths; // 待解析的文件列表（按表格顺序）
+
+    QProgressBar *mProgressBar = nullptr;
+    NeutronYieldParseWorker *mParseWorker = nullptr;
+    QThread *mParseWorkerThread = nullptr;
 };
 
 #endif // NEUTRONYIELDSTATISTICSWINDOW_H

@@ -11,7 +11,17 @@
 #include <QVector>
 #include <QTextStream> // 添加文本流支持
 
+#include <atomic>
+#include <functional>
+
 #include "globalsettings.h"
+
+enum class ParseProgressPhase {
+    Merge,
+    Fit
+};
+
+using ParseProgressCallback = std::function<void(ParseProgressPhase phase, int current, int total)>;
 
 // 存放拟合参数值 fit_type = c0*exp(-0.5*pow((x-c1)/c2,2)) + c3*x + c4;
 struct fit_result{
@@ -120,6 +130,10 @@ public:
         T0_beforeShot = time;
     }
 
+    void setParseProgressCallback(ParseProgressCallback callback);
+    void clearParseProgressCallback();
+    void setParseCancelFlag(std::atomic<bool> *flag);
+
     /**
      * @brief 解析H5文件，读取指定探测器的所有能谱数据，目前不支持对正在测量的实验数据的分析（没做文件锁保护）。
      * @param filePath 文件名
@@ -190,6 +204,13 @@ private:
     void clearFitResult();
 
     void addCompressedSpectrumToSegment(mergeSpecData &seg, const H5Spectrum &spec, quint64 lossTimeNs);
+
+    bool isParseCancelled() const;
+    void reportParseProgress(ParseProgressPhase phase, int current, int total) const;
+
+    ParseProgressCallback m_parseProgressCallback;
+    std::atomic<bool> m_localCancelFlag{false};
+    std::atomic<bool> *m_parseCancelFlag = nullptr;
 
     QVector<mergeSpecData> m_mergeSpec; //对原始数据汇总后的各时段能谱，对丢包带来的死时间做了相应记录
     QVector<H5Spectrum> m_allSpec;// 从HDF5文件中读取到特定通道的所有能谱
