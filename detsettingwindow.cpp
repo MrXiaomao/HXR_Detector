@@ -263,7 +263,7 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
          梯形成型基本配置
         ***********************************************************/
         //梯形成型时间常数配置
-        {
+        /*{
             if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FE 10"))){
                 quint16 d1 = cachePool.mid(6, 2).toHex().toUShort(&ok, 16);
                 quint16 d2 = cachePool.mid(8, 2).toHex().toUShort(&ok, 16);
@@ -274,7 +274,7 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
                     queryMsg = "梯形成型时间常数与本地设置不一致。";
                 }
             }
-        }
+        }*/
 
         //上升沿、平顶、下降沿长度配置
         {
@@ -461,8 +461,8 @@ void DetSettingWindow::logHardwareParametersFromUi(const QString &reason, quint8
     snapshot.waveformTriggerMode = static_cast<quint8>(ui->comboBox_waveformTriggerMode->currentIndex());
     snapshot.waveformLength = static_cast<quint32>(ui->comboBox_waveformLength->currentText().toUInt());
     snapshot.trapShapeEnable = ui->trapShapeEnable->isChecked();
-    snapshot.trapShapeTimeConstD1 = static_cast<quint16>(ui->sb_trapShapeTimeConstD1->value());
-    snapshot.trapShapeTimeConstD2 = static_cast<quint16>(ui->sb_trapShapeTimeConstD2->value());
+    // snapshot.trapShapeTimeConstD1 = static_cast<quint16>(ui->sb_trapShapeTimeConstD1->value());
+    // snapshot.trapShapeTimeConstD2 = static_cast<quint16>(ui->sb_trapShapeTimeConstD2->value());
     snapshot.trapShapeRisePoint = static_cast<quint8>(ui->spinBox_trapShapeRisePoint->value());
     snapshot.trapShapePeakPoint = static_cast<quint8>(ui->spinBox_trapShapePeakPoint->value());
     snapshot.trapShapeFallPoint = static_cast<quint8>(ui->spinBox_trapShapeFallPoint->value());
@@ -481,12 +481,12 @@ void DetSettingWindow::logHardwareParameters(const QString &reason, quint8 detId
 
 void DetSettingWindow::on_pushButton_save_clicked()
 {
-    quint16 d1 = ui->sb_trapShapeTimeConstD1->value();
+    /*quint16 d1 = ui->sb_trapShapeTimeConstD1->value();
     quint16 d2 = ui->sb_trapShapeTimeConstD2->value();
     if (ui->trapShapeEnable->isChecked() && d1 >= d2){
         QMessageBox::warning(this, tr("保存参数设置"), tr("梯形成型常量错误，d1必须小于d2"));
         return;
-    }
+    }*/
 
     QString savedDetectors;
     bool hasOnlineSaved = false;
@@ -645,9 +645,9 @@ void DetSettingWindow::saveAt(quint8 detId)
     //是否启用
     detParameter->trapShapeEnable = ui->trapShapeEnable->isChecked();
     //时间常数D1
-    detParameter->trapShapeTimeConstD1 = static_cast<quint16>(ui->sb_trapShapeTimeConstD1->value());
+    // detParameter->trapShapeTimeConstD1 = static_cast<quint16>(ui->sb_trapShapeTimeConstD1->value());
     //时间常数D2
-    detParameter->trapShapeTimeConstD2 = static_cast<quint16>(ui->sb_trapShapeTimeConstD2->value());
+    // detParameter->trapShapeTimeConstD2 = static_cast<quint16>(ui->sb_trapShapeTimeConstD2->value());
     //上升沿
     detParameter->trapShapeRisePoint = static_cast<quint8>(ui->spinBox_trapShapeRisePoint->value());
     //平顶
@@ -715,9 +715,9 @@ void DetSettingWindow::loadAt(quint8 detId, bool recordLog)
     //是否启用
     ui->trapShapeEnable->setChecked(detParameter->trapShapeEnable);
     //时间常数D1
-    ui->sb_trapShapeTimeConstD1->setValue(detParameter->trapShapeTimeConstD1);
+    // ui->sb_trapShapeTimeConstD1->setValue(detParameter->trapShapeTimeConstD1);
     //时间常数D2
-    ui->sb_trapShapeTimeConstD2->setValue(detParameter->trapShapeTimeConstD2);
+    // ui->sb_trapShapeTimeConstD2->setValue(detParameter->trapShapeTimeConstD2);
     //上升沿
     ui->spinBox_trapShapeRisePoint->setValue(detParameter->trapShapeRisePoint);
     //平顶

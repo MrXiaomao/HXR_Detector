@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>800</width>
-    <height>700</height>
+    <width>913</width>
+    <height>705</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -267,113 +267,107 @@
        </widget>
       </item>
       <item>
-       <widget class="QGroupBox" name="trapShapeEnable">
-        <property name="title">
-         <string>梯形成型</string>
-        </property>
-        <property name="checkable">
-         <bool>true</bool>
-        </property>
-        <layout class="QGridLayout" name="gridLayout_5">
-         <item row="6" column="0">
-          <widget class="QLabel" name="label_34">
-           <property name="text">
-            <string>平顶：</string>
+       <widget class="QWidget" name="widget_6" native="true">
+        <layout class="QVBoxLayout" name="verticalLayout_4">
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QGroupBox" name="trapShapeEnable">
+           <property name="title">
+            <string>脉冲缩短算法参数设置</string>
            </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+           <layout class="QGridLayout" name="gridLayout_5">
+            <item row="2" column="0">
+             <widget class="QLabel" name="label_33">
+              <property name="text">
+               <string>上升沿：</string>
+              </property>
+             </widget>
+            </item>
+            <item row="4" column="0">
+             <widget class="QLabel" name="label_35">
+              <property name="text">
+               <string>下降沿：</string>
+              </property>
+             </widget>
+            </item>
+            <item row="4" column="1">
+             <widget class="QSpinBox" name="spinBox_trapShapeFallPoint">
+              <property name="maximum">
+               <number>255</number>
+              </property>
+              <property name="value">
+               <number>10</number>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="1">
+             <widget class="QSpinBox" name="spinBox_trapShapePeakPoint">
+              <property name="maximum">
+               <number>255</number>
+              </property>
+              <property name="value">
+               <number>15</number>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="0">
+             <widget class="QLabel" name="label_34">
+              <property name="text">
+               <string>平顶：</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="1">
+             <widget class="QSpinBox" name="spinBox_trapShapeRisePoint">
+              <property name="maximum">
+               <number>255</number>
+              </property>
+              <property name="value">
+               <number>10</number>
+              </property>
+             </widget>
+            </item>
+           </layout>
           </widget>
          </item>
-         <item row="1" column="0">
-          <widget class="QLabel" name="label_28">
-           <property name="text">
-            <string>时间常数d1：</string>
+         <item>
+          <widget class="QGroupBox" name="groupBox">
+           <property name="title">
+            <string>α/γ甄别参数设置</string>
            </property>
-          </widget>
-         </item>
-         <item row="5" column="1">
-          <widget class="QSpinBox" name="spinBox_trapShapeRisePoint">
-           <property name="maximum">
-            <number>255</number>
-           </property>
-           <property name="value">
-            <number>10</number>
-           </property>
-          </widget>
-         </item>
-         <item row="4" column="1">
-          <widget class="QLabel" name="label_31">
-           <property name="styleSheet">
-            <string notr="true">color: rgb(255, 0, 0);</string>
-           </property>
-           <property name="text">
-            <string>注：d1一定小于d2。</string>
-           </property>
-          </widget>
-         </item>
-         <item row="7" column="1">
-          <widget class="QSpinBox" name="spinBox_trapShapeFallPoint">
-           <property name="maximum">
-            <number>255</number>
-           </property>
-           <property name="value">
-            <number>10</number>
-           </property>
-          </widget>
-         </item>
-         <item row="3" column="0">
-          <widget class="QLabel" name="label_32">
-           <property name="text">
-            <string>时间常数d2：</string>
-           </property>
-          </widget>
-         </item>
-         <item row="5" column="0">
-          <widget class="QLabel" name="label_33">
-           <property name="text">
-            <string>上升沿：</string>
-           </property>
-          </widget>
-         </item>
-         <item row="1" column="1">
-          <widget class="QSpinBox" name="sb_trapShapeTimeConstD1">
-           <property name="minimum">
-            <number>1</number>
-           </property>
-           <property name="maximum">
-            <number>65535</number>
-           </property>
-           <property name="value">
-            <number>59310</number>
-           </property>
-          </widget>
-         </item>
-         <item row="6" column="1">
-          <widget class="QSpinBox" name="spinBox_trapShapePeakPoint">
-           <property name="maximum">
-            <number>255</number>
-           </property>
-           <property name="value">
-            <number>15</number>
-           </property>
-          </widget>
-         </item>
-         <item row="7" column="0">
-          <widget class="QLabel" name="label_35">
-           <property name="text">
-            <string>下降沿：</string>
-           </property>
-          </widget>
-         </item>
-         <item row="3" column="1">
-          <widget class="QSpinBox" name="sb_trapShapeTimeConstD2">
-           <property name="minimum">
-            <number>1</number>
-           </property>
-           <property name="maximum">
-            <number>65535</number>
-           </property>
-           <property name="value">
-            <number>24111</number>
-           </property>
+           <layout class="QGridLayout" name="gridLayout_2">
+            <item row="0" column="0">
+             <widget class="QLabel" name="label">
+              <property name="focusPolicy">
+               <enum>Qt::StrongFocus</enum>
+              </property>
+              <property name="text">
+               <string>上阈值：</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="1">
+             <widget class="QDoubleSpinBox" name="doubleSpinBox"/>
+            </item>
+            <item row="1" column="0">
+             <widget class="QLabel" name="label_2">
+              <property name="text">
+               <string>下阈值：</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="1">
+             <widget class="QDoubleSpinBox" name="doubleSpinBox_2"/>
+            </item>
+           </layout>
           </widget>
          </item>
         </layout>
