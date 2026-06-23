@@ -33,6 +33,11 @@
 #include <log4qt/propertyconfigurator.h>
 #include <log4qt/loggerrepository.h>
 #include <log4qt/fileappender.h>
+#include <log4qt/writerappender.h>
+
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+#include <QStringConverter>
+#endif
 
 QMainWindow *mMainWindow = nullptr;
 QMutex mutexMsg;
@@ -85,6 +90,25 @@ static QString exitLogMessage(const QString &moduleKey)
     if (moduleKey == QStringLiteral("spectrumH5Rebuild"))
         return QObject::tr("能谱H5重建模块退出");
     return QObject::tr("主程序退出");
+}
+
+static void setLog4QtAppenderUtf8Encoding(Log4Qt::WriterAppender *appender)
+{
+    if (!appender)
+        return;
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    appender->setEncoding(QTextCodec::codecForName("UTF-8"));
+#else
+    appender->setEncoding(QStringConverter::Encoding::Utf8);
+#endif
+}
+
+static void applyUtf8EncodingToAllLog4QtAppenders()
+{
+    const QList<Log4Qt::AppenderSharedPtr> appenders = Log4Qt::Logger::rootLogger()->appenders();
+    for (const Log4Qt::AppenderSharedPtr &appender : appenders) {
+        setLog4QtAppenderUtf8Encoding(qobject_cast<Log4Qt::WriterAppender *>(appender.data()));
+    }
 }
 
 bool gMatlabInited = false;
@@ -154,6 +178,9 @@ int main(int argc, char *argv[])
 
     splash.showMessage(QObject::tr("启动中，请稍等..."), Qt::AlignLeft | Qt::AlignBottom, Qt::white);
 
+    // 日志初始化前统一 locale 为 UTF-8，避免追加写入已有日志文件时使用系统 GBK 编码
+    QTextCodec::setCodecForLocale(QTextCodec::codecForName("UTF-8"));
+
     // 启用新的日子记录类
     QString filename = QFileInfo(QCoreApplication::applicationFilePath()).baseName();
     QStringList args = QCoreApplication::arguments();
@@ -180,18 +207,20 @@ int main(int argc, char *argv[])
         /***************************配置日志的输出位置***********/
         //输出到控制台
         Log4Qt::ConsoleAppender *consoleAppender = new Log4Qt::ConsoleAppender(layout, Log4Qt::ConsoleAppender::STDOUT_TARGET);
+        setLog4QtAppenderUtf8Encoding(consoleAppender);
         consoleAppender->activateOptions();
-        consoleAppender->setEncoding(QTextCodec::codecForName("UTF-8"));
         logger->addAppender(consoleAppender);
 
-        //输出到文件(如果需要把离线处理单独保存日志文件，可以改这里)        
+        //输出到文件(如果需要把离线处理单独保存日志文件，可以改这里)
         Log4Qt::DailyFileAppender *dailiAppender = new Log4Qt::DailyFileAppender(layout, "logs/.log", QString("%1_yyyy-MM-dd").arg(filename));
         dailiAppender->setAppendFile(true);
         dailiAppender->setImmediateFlush(true);
+        setLog4QtAppenderUtf8Encoding(dailiAppender);
         dailiAppender->activateOptions();
-        dailiAppender->setEncoding(QTextCodec::codecForName("UTF-8"));
         logger->addAppender(dailiAppender);
     }
+
+    applyUtf8EncodingToAllLog4QtAppenders();
 
     // 确保logs目录存在
     QDir dir(QDir::currentPath() + "/logs");
@@ -232,7 +261,6 @@ int main(int argc, char *argv[])
     // QFontIcon::addFont(":/icons/icons/fontawesome-webfont-v6.6.0-brands-400.ttf");
     // QFontIcon::instance()->setColor(isDarkTheme?Qt::white:Qt::black);
 
-    QTextCodec::setCodecForLocale(QTextCodec::codecForMib(106));/* Utf8 */
     QGoodWindowHelper w;
     if (args.contains("-m") && args.contains("countRateStatistics")){
         QApplication::setApplicationName("溴化镧配套软件离线数据分析-计数率统计");
