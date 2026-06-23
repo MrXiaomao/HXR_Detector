@@ -1655,7 +1655,10 @@ void CommHelper::handleDetectorDisconnection(quint8 index)
             Q_ARG(QString, peerAddress),
             Q_ARG(quint16, peerPort));
 
-        qInfo().nospace() << "谱仪[#" << index << "]下线，已执行断开连接处理";
+        if (0 == index)
+            qInfo().nospace() << "时间同步模块下线，已执行断开连接处理";
+        else
+            qInfo().nospace() << "谱仪[#" << index << "]下线，已执行断开连接处理";
         return; // 找到并处理完成，退出
     }
 
