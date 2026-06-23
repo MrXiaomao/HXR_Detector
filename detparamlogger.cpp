@@ -14,7 +14,8 @@ QString formatDetParameter(const DetParameter *det)
         "spectrumRefreshTime=%8ms spectrumLength=%9 spectrumEn=[%10,%11]keV "
         "waveformTriggerMode=%12 waveformLength=%13 "
         "trapShapeEnable=%14 trapD1=%15 trapD2=%16 trapRise=%17 trapPeak=%18 trapFall=%19 "
-        "highVoltageEnable=%20 highVoltageOutLevel=%21V")
+        "highVoltageEnable=%20 highVoltageOutLevel=%21V "
+        "alphaGammaUpperThold=%22 alphaGammaLowerThold=%23")
         .arg(det->id)
         .arg(QString::fromLatin1(det->det_Ip_port))
         .arg(det->longitude, 0, 'f', 6)
@@ -35,7 +36,9 @@ QString formatDetParameter(const DetParameter *det)
         .arg(det->trapShapePeakPoint)
         .arg(det->trapShapeFallPoint)
         .arg(det->highVoltageEnable ? QStringLiteral("true") : QStringLiteral("false"))
-        .arg(det->highVoltageOutLevel);
+        .arg(det->highVoltageOutLevel)
+        .arg(det->alphaGammaUpperThold)
+        .arg(det->alphaGammaLowerThold);
 }
 
 void logDetParameters(const QString &reason, const DetParameter *det)

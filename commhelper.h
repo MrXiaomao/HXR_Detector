@@ -94,7 +94,8 @@ public:
      开始测量
     */
     void startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode measureMode, 
-        CommandAdapter::WorkMode workMode, quint8 index = 0, const QString& shotTime = QString());
+        CommandAdapter::WorkMode workMode, quint8 index = 0, const QString& shotTime = QString(),
+        bool sendAlphaGammaThold = false);
         
     /*
      停止测量
@@ -102,6 +103,8 @@ public:
     void stopMeasure(quint8 index = 0);
 
     bool isMeasuring() const;
+
+    CommandAdapter::WorkMode currentWorkMode() const { return mCurrentWorkMode; }
 
     /*
      设置发次信息

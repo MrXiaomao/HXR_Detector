@@ -339,7 +339,7 @@
           </widget>
          </item>
          <item>
-          <widget class="QGroupBox" name="groupBox">
+          <widget class="QGroupBox" name="alpha_gamma_settings">
            <property name="title">
             <string>α/γ甄别参数设置</string>
            </property>
@@ -355,7 +355,17 @@
              </widget>
             </item>
             <item row="0" column="1">
-             <widget class="QDoubleSpinBox" name="doubleSpinBox"/>
+             <widget class="QSpinBox" name="spinBox_alphaGammaUpperThold">
+              <property name="minimum">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <number>8192</number>
+              </property>
+              <property name="value">
+               <number>8192</number>
+              </property>
+             </widget>
             </item>
             <item row="1" column="0">
              <widget class="QLabel" name="label_2">
@@ -365,7 +375,17 @@
              </widget>
             </item>
             <item row="1" column="1">
-             <widget class="QDoubleSpinBox" name="doubleSpinBox_2"/>
+             <widget class="QSpinBox" name="spinBox_alphaGammaLowerThold">
+              <property name="minimum">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <number>8192</number>
+              </property>
+              <property name="value">
+               <number>6500</number>
+              </property>
+             </widget>
             </item>
            </layout>
           </widget>
@@ -441,7 +461,7 @@
         </column>
         <column>
          <property name="text">
-          <string>触发阈值</string>
+          <string>触发阈值(0-65535)</string>
          </property>
         </column>
         <column>

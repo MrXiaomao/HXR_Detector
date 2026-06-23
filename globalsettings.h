@@ -760,6 +760,10 @@ typedef struct _DetParameter{
     //DAC高压输出电平
     quint16 highVoltageOutLevel;
 
+    //α/γ甄别阈值（粒子模式）
+    quint16 alphaGammaUpperThold;
+    quint16 alphaGammaLowerThold;
+
     _DetParameter(){
         id = 1;
 
@@ -819,6 +823,10 @@ typedef struct _DetParameter{
         highVoltageEnable = true;
         //DAC高压输出电平
         highVoltageOutLevel = 800;
+
+        //α/γ甄别阈值
+        alphaGammaUpperThold = 8192;
+        alphaGammaLowerThold = 6500;
     }
 }DetParameter;
 #pragma pack(pop)

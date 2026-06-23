@@ -66,7 +66,14 @@ public:
             editor->addItem(QStringLiteral("10.0"));
             return editor;
         }
-        else if (index.column() == 5 || index.column() == 6 || index.column() == 7){// 阈值/死时间/高压
+        else if (index.column() == 5){// 触发阈值
+            QLineEdit* editor = new QLineEdit(parent);
+            auto *validator = new QIntValidator(0, 65535, editor);
+            editor->setValidator(validator);
+            editor->setInputMethodHints(Qt::ImhFormattedNumbersOnly);
+            return editor;
+        }
+        else if (index.column() == 6 || index.column() == 7){// 死时间/高压
             QLineEdit* editor = new QLineEdit(parent);
 
             QIntValidator* validator = nullptr;
@@ -100,7 +107,16 @@ public:
     // 设置模型数据
     void setModelData(QWidget *editor, QAbstractItemModel *model, const QModelIndex &index) const override
     {
-        if (index.column() == 2 || index.column() == 3 || index.column() == 5 || index.column() == 6 || index.column() == 7 ){
+        if (index.column() == 5) {
+            auto *lineEdit = static_cast<QLineEdit *>(editor);
+            bool ok = false;
+            int v = lineEdit->text().trimmed().toInt(&ok);
+            if (!ok)
+                v = 0;
+            model->setData(index, QString::number(qBound(0, v, 65535)), Qt::EditRole);
+            return;
+        }
+        if (index.column() == 2 || index.column() == 3 || index.column() == 6 || index.column() == 7 ){
             return QStyledItemDelegate::setModelData(editor, model, index);
         }
         else if (index.column() == 4){

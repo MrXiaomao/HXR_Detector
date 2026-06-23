@@ -1238,7 +1238,8 @@ void CommHelper::setShotInformation(const QString shotDir, const QString shotNum
  * @param index index=0时则认为是全部探测器一起开始测量
  */
 void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode measureMode,
-    CommandAdapter::WorkMode workMode, quint8 index/* = 0*/, const QString& shotTime/* = QString()*/)
+    CommandAdapter::WorkMode workMode, quint8 index/* = 0*/, const QString& shotTime/* = QString()*/,
+    bool sendAlphaGammaThold/* = false*/)
 {
     constexpr int kReserveH5PerDetector = 60; // 每路探测器预留60个能谱数据
     constexpr int kReserveRawBytesPerDetector = 1024 * 1024; // 每路探测器预留1MB网口原始数据，50ms能谱刷新频率下0.625MB/s
@@ -1304,7 +1305,7 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
                 }
 
                 if (measureMode == CommandAdapter::MeasureMode::mmManual)
-                    detectorDataProcessor->startMeasure(workMode);
+                    detectorDataProcessor->startMeasure(workMode, sendAlphaGammaThold);
                 else
                     detectorDataProcessor->startAutoMeasure(tmStart, workMode);
                 emit measureStart(index);
@@ -1352,7 +1353,7 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
             }
 
             if (measureMode == CommandAdapter::MeasureMode::mmManual)
-                detectorDataProcessor->startMeasure(workMode);
+                detectorDataProcessor->startMeasure(workMode, sendAlphaGammaThold);
             else
                 detectorDataProcessor->startAutoMeasure(tmStart, workMode);
             emit measureStart(index);

@@ -52,7 +52,7 @@ public:
     /*
      * 开始测量
      */
-    void startMeasure(CommandAdapter::WorkMode workMode);
+    void startMeasure(CommandAdapter::WorkMode workMode, bool sendAlphaGammaThold = false);
     void startAutoMeasure(QDateTime tmStart, CommandAdapter::WorkMode workMode);
 
     /*

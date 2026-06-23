@@ -38,6 +38,20 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
         spinBox->installEventFilter(this);
     }
 
+    auto clampAlphaGammaSpinBox = [](QSpinBox *spinBox) {
+        bool ok = false;
+        int v = spinBox->text().trimmed().toInt(&ok);
+        if (!ok)
+            v = spinBox->minimum();
+        spinBox->setValue(qBound(spinBox->minimum(), v, spinBox->maximum()));
+    };
+    connect(ui->spinBox_alphaGammaUpperThold, &QSpinBox::editingFinished, this, [=]() {
+        clampAlphaGammaSpinBox(ui->spinBox_alphaGammaUpperThold);
+    });
+    connect(ui->spinBox_alphaGammaLowerThold, &QSpinBox::editingFinished, this, [=]() {
+        clampAlphaGammaSpinBox(ui->spinBox_alphaGammaLowerThold);
+    });
+
     QList<QComboBox*> comboBoxs = this->findChildren<QComboBox*>();
     for (auto comboBox: comboBoxs){
         comboBox->installEventFilter(this);
@@ -307,6 +321,23 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
         }
 
         /*********************************************************
+         α/γ甄别阈值配置
+        ***********************************************************/
+        {
+            if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A F7 10"))){
+                quint16 upperThold = cachePool.mid(6, 2).toHex().toUShort(&ok, 16);
+                quint16 lowerThold = cachePool.mid(8, 2).toHex().toUShort(&ok, 16);
+                qInfo().noquote() << "α/γ甄别上阈值：" << upperThold << "，下阈值：" << lowerThold;
+                ui->spinBox_alphaGammaUpperThold->setValue(upperThold);
+                ui->spinBox_alphaGammaLowerThold->setValue(lowerThold);
+
+                if (queryMsg.isEmpty() && (upperThold != detParameter->alphaGammaUpperThold || lowerThold != detParameter->alphaGammaLowerThold)){
+                    queryMsg = "α/γ甄别阈值与本地设置不一致。";
+                }
+            }
+        }
+
+        /*********************************************************
          工作模式配置
         ***********************************************************/
         {
@@ -466,6 +497,8 @@ void DetSettingWindow::logHardwareParametersFromUi(const QString &reason, quint8
     snapshot.trapShapeRisePoint = static_cast<quint8>(ui->spinBox_trapShapeRisePoint->value());
     snapshot.trapShapePeakPoint = static_cast<quint8>(ui->spinBox_trapShapePeakPoint->value());
     snapshot.trapShapeFallPoint = static_cast<quint8>(ui->spinBox_trapShapeFallPoint->value());
+    snapshot.alphaGammaUpperThold = static_cast<quint16>(ui->spinBox_alphaGammaUpperThold->value());
+    snapshot.alphaGammaLowerThold = static_cast<quint16>(ui->spinBox_alphaGammaLowerThold->value());
 
     DetParamLogger::logDetParameters(reason + QStringLiteral(" (界面快照 det#%1)").arg(detId), &snapshot);
 }
@@ -487,6 +520,27 @@ void DetSettingWindow::on_pushButton_save_clicked()
         QMessageBox::warning(this, tr("保存参数设置"), tr("梯形成型常量错误，d1必须小于d2"));
         return;
     }*/
+
+    const quint16 upperThold = static_cast<quint16>(ui->spinBox_alphaGammaUpperThold->value());
+    const quint16 lowerThold = static_cast<quint16>(ui->spinBox_alphaGammaLowerThold->value());
+    if (upperThold <= lowerThold) {
+        QMessageBox::warning(this, tr("保存参数设置"), tr("α/γ甄别阈值错误，上阈值必须大于下阈值。"));
+        return;
+    }
+
+    for (int row = 0; row < ui->tableWidget->rowCount(); ++row) {
+        if (auto *cb = qobject_cast<QCheckBox*>(ui->tableWidget->cellWidget(row, 0))) {
+            if (!cb->isChecked())
+                continue;
+            if (QTableWidgetItem *tholdItem = ui->tableWidget->item(row, 5)) {
+                bool ok = false;
+                int v = tholdItem->text().trimmed().toInt(&ok);
+                if (!ok)
+                    v = 0;
+                tholdItem->setText(QString::number(qBound(0, v, 65535)));
+            }
+        }
+    }
 
     QString savedDetectors;
     bool hasOnlineSaved = false;
@@ -654,6 +708,11 @@ void DetSettingWindow::saveAt(quint8 detId)
     detParameter->trapShapePeakPoint = static_cast<quint8>(ui->spinBox_trapShapePeakPoint->value());
     //下降沿
     detParameter->trapShapeFallPoint = static_cast<quint8>(ui->spinBox_trapShapeFallPoint->value());
+
+    //α/γ甄别阈值
+    detParameter->alphaGammaUpperThold = static_cast<quint16>(ui->spinBox_alphaGammaUpperThold->value());
+    detParameter->alphaGammaLowerThold = static_cast<quint16>(ui->spinBox_alphaGammaLowerThold->value());
+
     detParameters[detId] = detParameter;
     settings->setDetParameter(detParameters);
     settings->export_LocalDetPara();
@@ -725,6 +784,10 @@ void DetSettingWindow::loadAt(quint8 detId, bool recordLog)
     //下降沿
     ui->spinBox_trapShapeFallPoint->setValue(detParameter->trapShapeFallPoint);
 
+    //α/γ甄别阈值
+    ui->spinBox_alphaGammaUpperThold->setValue(detParameter->alphaGammaUpperThold);
+    ui->spinBox_alphaGammaLowerThold->setValue(detParameter->alphaGammaLowerThold);
+
     //高压电源
     //是否启用
     //ui->highVoltageEnable->setChecked(detParameter->highVoltageEnable);
@@ -787,6 +850,21 @@ void DetSettingWindow::on_tableWidget_itemChanged(QTableWidgetItem *item)
         }
     }
 
+    // 限制触发阈值输入范围（FA12：0000~FFFF），超出则钳制到边界值
+    if (item->column() == 5) {
+        bool ok = false;
+        int v = item->text().trimmed().toInt(&ok);
+        if (!ok)
+            v = 0;
+        const int clamped = qBound(0, v, 65535);
+        if (item->text() != QString::number(clamped)) {
+            ui->tableWidget->blockSignals(true);
+            item->setText(QString::number(clamped));
+            ui->tableWidget->blockSignals(false);
+        }
+        return;
+    }
+
     // 限制经纬度输入范围
     if (item->column() != 2 && item->column() != 3)
         return;
@@ -827,6 +905,8 @@ void DetSettingWindow::showEvent(QShowEvent */*event*/)
         ui->tableWidget->item(i - 1, 7)->setText(QString::number(detParameter->highVoltageOutLevel));
         ui->tableWidget->item(i - 1, 7)->setCheckState(detParameter->highVoltageEnable ? Qt::Checked : Qt::Unchecked);
     }
+
+    loadAt(currentSelectedDetId(), false);
 
     mBlockParameterLogging = false;
 }

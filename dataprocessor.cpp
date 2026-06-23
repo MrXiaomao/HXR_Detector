@@ -213,7 +213,7 @@ bool DataProcessor::isFreeSocket()
     return mTcpSocket == nullptr;
 }
 
-void DataProcessor::startMeasure(CommandAdapter::WorkMode workMode)
+void DataProcessor::startMeasure(CommandAdapter::WorkMode workMode, bool sendAlphaGammaThold)
 {
     /*开始测量之前清空解析缓存，防止野数据存在*/
     requestParserResetOnDataThread();
@@ -227,6 +227,12 @@ void DataProcessor::startMeasure(CommandAdapter::WorkMode workMode)
     //#13 能谱工作模式=1|0|23|1234000FFF1000000001ABCD
     //#14 粒子工作模式=1|0|24|1234000FFF1000000002ABCD
     this->sendWorkMode(false, workMode);
+
+    if (sendAlphaGammaThold && workMode == WorkMode::wmParticle) {
+        const DetParameter *detParameter = HDF5Settings::instance()->getDetParameters().value(mIndex);
+        if (detParameter)
+            this->sendAlphaGammaThold(false, detParameter->alphaGammaUpperThold, detParameter->alphaGammaLowerThold);
+    }
 
     //#15 开始测量=1|0|25|1234000FEA1000000001ABCD
     this->sendStartMeasure(CommandAdapter::MeasureMode::mmManual);

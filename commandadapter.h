@@ -62,6 +62,9 @@ public:
     //触发阈值
     void sendTriggerThold(bool isRead = true, quint16 triggerThold = 100);
 
+    //α/γ甄别上下阈值（粒子模式）
+    void sendAlphaGammaThold(bool isRead = true, quint16 upperThold = 8192, quint16 lowerThold = 6500);
+
     /*********************************************************
      波形基本配置
     ***********************************************************/
@@ -194,6 +197,8 @@ private:
     static const QByteArray kCmdDeadHead;
     // 阈值指令头部
     static const QByteArray kCmdThresHead;
+    // α/γ甄别阈值指令头部
+    static const QByteArray kCmdAlphaGammaTholdHead;
     // 波形长度指令头部
     static const QByteArray kCmdWaveformLengthHead;
     // 能谱刷新时间指令头部

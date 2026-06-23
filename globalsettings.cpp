@@ -278,6 +278,8 @@ void HDF5Settings::writeDetParStrAttr(H5::DataSet& dataset)
     writeStrAttr(dataset, "TShapeFall", "梯形成型下降沿点数");
     writeStrAttr(dataset, "HV_Enable", "高压使能(0/1)");
     writeStrAttr(dataset, "HV_Out", "DAC 高压输出电平(0~4095)");
+    writeStrAttr(dataset, "AlphaGammaUpper", "α/γ甄别上阈值(1~8192)");
+    writeStrAttr(dataset, "AlphaGammaLower", "α/γ甄别下阈值(1~8192)");
 }
 
 // 写一个标量字符串 attribute（可变长）
@@ -691,6 +693,12 @@ H5::CompType HDF5Settings::createCfgDataType()
         type.insertMember("HV_Enable", HOFFSET(DetParameter, highVoltageEnable), H5::PredType::NATIVE_HBOOL);
         //DAC高压输出电平
         type.insertMember("HV_Out", HOFFSET(DetParameter, highVoltageOutLevel), H5::PredType::NATIVE_USHORT);
+    }
+
+    //α/γ甄别阈值
+    {
+        type.insertMember("AlphaGammaUpper", HOFFSET(DetParameter, alphaGammaUpperThold), H5::PredType::NATIVE_USHORT);
+        type.insertMember("AlphaGammaLower", HOFFSET(DetParameter, alphaGammaLowerThold), H5::PredType::NATIVE_USHORT);
     }
 
     return type;

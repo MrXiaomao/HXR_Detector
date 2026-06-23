@@ -9,6 +9,7 @@ const QByteArray CommandAdapter::kCmdTempHead = QByteArray::fromHex("12 34 00 0A
 const QByteArray CommandAdapter::kCmdGainHead = QByteArray::fromHex("12 34 00 0A FA 10");
 const QByteArray CommandAdapter::kCmdDeadHead = QByteArray::fromHex("12 34 00 0A FA 11");
 const QByteArray CommandAdapter::kCmdThresHead = QByteArray::fromHex("12 34 00 0A FA 12");
+const QByteArray CommandAdapter::kCmdAlphaGammaTholdHead = QByteArray::fromHex("12 34 00 0A F7 10");
 const QByteArray CommandAdapter::kCmdWaveformLengthHead = QByteArray::fromHex("12 34 00 0A FC 10");
 const QByteArray CommandAdapter::kCmdSpectrumRefreshTimeHead = QByteArray::fromHex("12 34 00 0A FD 10");
 const QByteArray CommandAdapter::kCmdTrapezoidTimeConstantHead = QByteArray::fromHex("12 34 00 0A FE 10");
@@ -228,6 +229,17 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
             needNotifyNextCmd = true;
         }
 
+        // α/γ甄别阈值
+        if (!handled && hasHeadAt(pos, kCmdAlphaGammaTholdHead)) {
+            quint16 upperThold = qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(cachePool.constData() + pos + 6));
+            quint16 lowerThold = qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(cachePool.constData() + pos + 8));
+            qInfo().noquote() << "参数查询，α/γ甄别上阈值：" << upperThold << "，下阈值：" << lowerThold;
+            emit reportParamterData(mIndex, paramChunkAt(pos));
+            pos += kCmdLen;
+            handled = true;
+            needNotifyNextCmd = true;
+        }
+
         // 波形基本配置
         if (!handled && hasHeadAt(pos, kCmdWaveformLengthHead)) {
             quint8 triggerMode = static_cast<quint8>(cachePool.at(pos + 7));
@@ -419,6 +431,25 @@ void CommandAdapter::sendTriggerThold(bool isRead, quint16 triggerThold){
         pushCmd({"读:触发阈值", askCurrentCmd});
     else
         pushCmd({QString("写：触发阈值%1").arg(triggerThold), askCurrentCmd});
+}
+
+//α/γ甄别上下阈值
+void CommandAdapter::sendAlphaGammaThold(bool isRead, quint16 upperThold, quint16 lowerThold){
+    QByteArray askCurrentCmd = QByteArray::fromHex(QString("12 34 00 0F F7 10 00 00 00 00 AB CD").toUtf8());
+    if (isRead)
+        askCurrentCmd[3] = 0x0A;
+    else{
+        askCurrentCmd[3] = 0x0F;
+        askCurrentCmd[6] = ((upperThold >> 8) & 0xFF);
+        askCurrentCmd[7] = (upperThold & 0xFF);
+        askCurrentCmd[8] = ((lowerThold >> 8) & 0xFF);
+        askCurrentCmd[9] = (lowerThold & 0xFF);
+    }
+
+    if (isRead)
+        pushCmd({"读：α/γ甄别上下阈值", askCurrentCmd});
+    else
+        pushCmd({QString("写：α/γ甄别上阈值%1，下阈值%2").arg(upperThold).arg(lowerThold), askCurrentCmd});
 }
 
 /*********************************************************
