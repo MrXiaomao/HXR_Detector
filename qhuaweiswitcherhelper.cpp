@@ -166,14 +166,13 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
         else if(mRespondString.endsWith("<HUAWEI>") && !mSwitcherIsLoginOk){
             mSwitcherIsLoginOk = true;
             mRespondString.clear();
-qDebug() << "返回交换机POE口电源查询状态[777]：" << mRespondString;
+
             QString data = "system-view\r\n";
             mTelnet->write(data.toLatin1());
         }
         else if(mRespondString.endsWith("[HUAWEI]") && mSwitcherIsLoginOk && !mSwitcherInSystemView)
         {
             mSwitcherInSystemView = true;
-            qDebug() << "返回交换机POE口电源查询状态[666]：" << mRespondString;
             mRespondString.clear();
             
             // 如果是重连成功，重置重连标志
@@ -260,7 +259,7 @@ qDebug() << "返回交换机POE口电源查询状态[777]：" << mRespondString;
                         }
                     }
                     else{
-                        qDebug() << "返回交换机POE口电源查询状态[消息2]：" << mRespondString;
+                        qDebug() << "返回交换机POE口电源查询状态[异常]：" << mRespondString;
                     }
 
                     mRespondString.clear();
@@ -269,8 +268,7 @@ qDebug() << "返回交换机POE口电源查询状态[777]：" << mRespondString;
                 }
             }
             else if (mCurrentAction == acSwitchInterface){//if (mCurrentCommand == enterInterfaceCmd){
-                if (mRespondString.endsWith(switchCmd.toLatin1())){
-                    qDebug() << "返回交换机POE口电源查询状态[111]：" << mRespondString;
+                if (mRespondString.endsWith(switchCmd.toLatin1())){                    
                     mRespondString.clear();
 
                     // 执行下一条指令
@@ -280,7 +278,6 @@ qDebug() << "返回交换机POE口电源查询状态[777]：" << mRespondString;
             else if (mCurrentAction == acOpenPoe){//if (mCurrentCommand == "poe enable\r\n"){
                 if (mRespondString.endsWith(switchCmd.toLatin1())){
                     qDebug() << "返回交换机POE口电源控制状态[开]：" << mCurrentPoeIndex;
-                    qDebug() << "返回交换机POE口电源查询状态[222]：" << mRespondString;
                     mRespondString.clear();
                     executeNextAction();
                 }
@@ -288,7 +285,6 @@ qDebug() << "返回交换机POE口电源查询状态[777]：" << mRespondString;
             else if (mCurrentAction == acClosePoe){//if (mCurrentCommand == "undo poe enable\r\n"){
                 if (mRespondString.endsWith(switchCmd.toLatin1())){
                     qDebug() << "返回交换机POE口电源控制状态[关]：" << mCurrentPoeIndex;
-                    qDebug() << "返回交换机POE口电源查询状态[333]：" << mRespondString;
                     mRespondString.clear();
                     executeNextAction();
                 }
@@ -299,7 +295,6 @@ qDebug() << "返回交换机POE口电源查询状态[777]：" << mRespondString;
         }
         else if (mRespondString.endsWith("]") && mRespondString.contains("[HUAWEI-GigabitEthernet")){
             mSwitcherEventLoop.quit();
-            qDebug() << "返回交换机POE口电源查询状态[444]：" << mRespondString;
             mRespondString.clear();
         }
 
@@ -791,8 +786,6 @@ void QHuaWeiSwitcherHelper::executeNextAction(bool keepFirst)
     mSwitcherIsBusy.store(false);
     restartHeartbeatCheck();
 
-    _action lastAct = mCurrentAction;
-    quint8 lastPoeIndex = mCurrentPoeIndex;
     _action nextAct = acNone;
     quint8 nextPoeIndex = 0xff;
     bool notifyIdle = false;
@@ -817,11 +810,6 @@ void QHuaWeiSwitcherHelper::executeNextAction(bool keepFirst)
             emit poeActionQueueIdle();
         }, Qt::QueuedConnection);
         return ;
-    }
-
-    if (lastAct == nextAct && lastPoeIndex == nextPoeIndex){
-        qDebug() << "交换机下发这里异常：索引=" << lastPoeIndex << "，行为=" << lastAct;
-        return;
     }
 
     mCurrentPoeIndex = nextPoeIndex;
