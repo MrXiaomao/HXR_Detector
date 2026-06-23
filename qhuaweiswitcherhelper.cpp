@@ -1,15 +1,22 @@
 ﻿#include "qhuaweiswitcherhelper.h"
 #include "globalsettings.h"
 
+#ifndef USE_QTELNET
 #include <QTcpSocket>
 using QTelnet = QTcpSocket;
-
+#else
+#include <QTelnet.h>
+#endif
 
 QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
     : QObject{parent}
     , mState(State::Disconnected)
     , mIp(ip)
 {
+    mFileCommand = new QFile(QString("./logs/Switcher-%1.log").arg(QDateTime::currentDateTime().toString("yyyy-MM-dd-HHmmss")));
+    mFileCommand->open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Append);
+    mTextStream = new QTextStream(mFileCommand);
+
     mTelnet = new QTelnet(this);
     mHeartbeatTimer = new QTimer(this);
     connect(mHeartbeatTimer, &QTimer::timeout, this, &QHuaWeiSwitcherHelper::performHeartbeatCheck);
@@ -20,6 +27,7 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
     mWaitingHeartbeatResponse = false;
     mIsReconnecting = false;
 
+#ifndef USE_QTELNET
     connect(mTelnet, &QTcpSocket::readyRead,this,[=](){
         while (mTelnet->bytesAvailable() > 0)
         {
@@ -39,7 +47,15 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
             }
 
             mRespondString.append(dest);
+
+            *mTextStream << rx_current;
         }
+
+#else
+    connect(mTelnet, &QTelnet::readyRead,this,[=](const QByteArray& dest){
+        mRespondString.append(dest);
+        *mTextStream << dest;
+#endif
         //qDebug() << "STR2:" << mRespondString;
 
         // switch (mState) {
@@ -150,13 +166,14 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
         else if(mRespondString.endsWith("<HUAWEI>") && !mSwitcherIsLoginOk){
             mSwitcherIsLoginOk = true;
             mRespondString.clear();
-
+qDebug() << "返回交换机POE口电源查询状态[777]：" << mRespondString;
             QString data = "system-view\r\n";
             mTelnet->write(data.toLatin1());
         }
         else if(mRespondString.endsWith("[HUAWEI]") && mSwitcherIsLoginOk && !mSwitcherInSystemView)
         {
             mSwitcherInSystemView = true;
+            qDebug() << "返回交换机POE口电源查询状态[666]：" << mRespondString;
             mRespondString.clear();
             
             // 如果是重连成功，重置重连标志
@@ -195,7 +212,7 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
              * Warning: This port is enabled already.
              * [HUAWEI-GigabitEthernet0/0/1]undo poe enable
              * [HUAWEI-GigabitEthernet0/0/1]undo poe enable
-             * Warning: This port is disabled already.
+             * Warning: .
             */
 
             //根据结果来判断
@@ -206,12 +223,13 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
             QString queryCmd = QStringLiteral("display poe power-state interface GigabitEthernet0/0/%1\r\n").arg(mCurrentPoeIndex);
             QString enterInterfaceCmd = QStringLiteral("interface GigabitEthernet 0/0/%1\r\n").arg(mCurrentPoeIndex);
 
-            if (mCurrentCommand == queryCmd){
+            if (mCurrentAction == acQueryState){
+            //if (mCurrentCommand == queryCmd){
                 // 系统视图或接口视图下查询均可完成
                 if (mRespondString.endsWith(switchCmd3.toLatin1()) ||
                     mRespondString.endsWith(switchCmd.toLatin1())){
                     QList<QByteArray> lines = mRespondString.split('\n');
-                    mRespondString.clear();
+
 
                     QMap<QString, QString> mapValues;
                     for (auto line : lines)
@@ -221,6 +239,7 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
                             mapValues[values[0].trimmed()] = values[1].trimmed();
                     }
 
+                    qDebug() << "返回交换机POE口电源查询状态：" << mCurrentPoeIndex;
                     qint8 index = this->indexOfPort(mCurrentPoeIndex);
                     if (index > 0)
                     {
@@ -228,34 +247,48 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
                             qDebug() << mCurrentCommand << mapValues["Error"];//参数错误，应该是POE索引超出了最大范围
                         else if (mapValues["Power enable state"] == "enable"){
                             mMapPoeState[mCurrentPoeIndex] = true;
+                            qDebug() << "返回交换机POE口电源查询状态[开]：" << mCurrentPoeIndex;
                             QMetaObject::invokeMethod(this, "reportPoePowerStatus", Qt::QueuedConnection, Q_ARG(quint8, index), Q_ARG(bool, true));
                         }
-                        else{
+                        else if (mapValues["Power enable state"] == "disable"){
                             mMapPoeState[mCurrentPoeIndex] = false;
+                            qDebug() << "返回交换机POE口电源查询状态[关]：" << mCurrentPoeIndex;
                             QMetaObject::invokeMethod(this, "reportPoePowerStatus", Qt::QueuedConnection, Q_ARG(quint8, index), Q_ARG(bool, false));
                         }
+                        else{
+                            qDebug() << "返回交换机POE口电源查询状态[消息]：" << mRespondString;
+                        }
+                    }
+                    else{
+                        qDebug() << "返回交换机POE口电源查询状态[消息2]：" << mRespondString;
                     }
 
+                    mRespondString.clear();
                     // 查询下一个POE供电口状态
                     executeNextAction();
                 }
             }
-            else if (mCurrentCommand == enterInterfaceCmd){
+            else if (mCurrentAction == acSwitchInterface){//if (mCurrentCommand == enterInterfaceCmd){
                 if (mRespondString.endsWith(switchCmd.toLatin1())){
+                    qDebug() << "返回交换机POE口电源查询状态[111]：" << mRespondString;
                     mRespondString.clear();
 
                     // 执行下一条指令
                     executeNextAction();
                 }
             }
-            else if (mCurrentCommand == "poe enable\r\n"){
+            else if (mCurrentAction == acOpenPoe){//if (mCurrentCommand == "poe enable\r\n"){
                 if (mRespondString.endsWith(switchCmd.toLatin1())){
+                    qDebug() << "返回交换机POE口电源控制状态[开]：" << mCurrentPoeIndex;
+                    qDebug() << "返回交换机POE口电源查询状态[222]：" << mRespondString;
                     mRespondString.clear();
                     executeNextAction();
                 }
             }
-            else if (mCurrentCommand == "undo poe enable\r\n"){
+            else if (mCurrentAction == acClosePoe){//if (mCurrentCommand == "undo poe enable\r\n"){
                 if (mRespondString.endsWith(switchCmd.toLatin1())){
+                    qDebug() << "返回交换机POE口电源控制状态[关]：" << mCurrentPoeIndex;
+                    qDebug() << "返回交换机POE口电源查询状态[333]：" << mRespondString;
                     mRespondString.clear();
                     executeNextAction();
                 }
@@ -266,6 +299,7 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
         }
         else if (mRespondString.endsWith("]") && mRespondString.contains("[HUAWEI-GigabitEthernet")){
             mSwitcherEventLoop.quit();
+            qDebug() << "返回交换机POE口电源查询状态[444]：" << mRespondString;
             mRespondString.clear();
         }
 
@@ -296,7 +330,7 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
     });
 
     // 监听连接状态变化，在断开时停止心跳检测
-    connect(mTelnet, &QTcpSocket::stateChanged, this, [=](QAbstractSocket::SocketState socketState){
+    connect(mTelnet, &QTelnet::stateChanged, this, [=](QAbstractSocket::SocketState socketState){
         if (socketState == QAbstractSocket::UnconnectedState) {
             stopHeartbeatCheck();
             qDebug().nospace().noquote() << "交换机[" << mIp << "]连接断开[QTelnet::stateChanged]";
@@ -312,6 +346,14 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
         }
     });
 
+}
+
+QHuaWeiSwitcherHelper::~QHuaWeiSwitcherHelper()
+{
+    delete mTextStream;
+    mTextStream = nullptr;
+    delete mFileCommand;
+    mFileCommand = nullptr;
 }
 
 //判断谱仪编号是否存在
@@ -381,16 +423,17 @@ void QHuaWeiSwitcherHelper::queryPowerStatus()
         for (auto iter = mMapAssociatedDetector.begin(); iter!=mMapAssociatedDetector.end(); ++iter){
             mActionsWait.push_back(ACTION_WAIT(*iter, acQueryState));
         }
-
-        mCurrentPoeIndex = mMapAssociatedDetector[0];
-        mCurrentAction = acQueryState;
     }
 
     mTelnet->disconnectFromHost();
     mTelnet->connectToHost(mIp, 23);
-    mTelnet->waitForConnected(1000);
+    //mTelnet->waitForConnected(1000);
     if (mTelnet->state() == QAbstractSocket::ConnectedState){
         emit switcherConnected(mIp);
+
+        if (!mSwitcherIsBusy.load() || (mBusyStartTimer.isValid() && mBusyStartTimer.elapsed() >= 30000)/*距离上次指令执行已经超过30s*/){
+            executeNextAction(true);
+        }
     }
     else
     {
@@ -412,7 +455,7 @@ void QHuaWeiSwitcherHelper::forceOpenPower()
     {
         mTelnet->disconnectFromHost();
         mTelnet->connectToHost(mIp, 23);
-        mTelnet->waitForConnected(1000);
+        //mTelnet->waitForConnected(1000);
         if (mTelnet->state() == QAbstractSocket::ConnectedState){
             emit switcherConnected(mIp);
         }
@@ -469,7 +512,7 @@ bool QHuaWeiSwitcherHelper::openSwitcherPOEPower(quint8 port/* = 0*/)
         }
     }
 
-    if (!mSwitcherIsBusy.load() || (mBusyStartTimer.isValid() && mBusyStartTimer.elapsed() >= 30000)/*距离上次指令执行已经超过5s*/){
+    if (!mSwitcherIsBusy.load() || (mBusyStartTimer.isValid() && mBusyStartTimer.elapsed() >= 30000)/*距离上次指令执行已经超过30s*/){
         executeNextAction(true);
     }
 
@@ -748,11 +791,15 @@ void QHuaWeiSwitcherHelper::executeNextAction(bool keepFirst)
     mSwitcherIsBusy.store(false);
     restartHeartbeatCheck();
 
+    _action lastAct = mCurrentAction;
+    quint8 lastPoeIndex = mCurrentPoeIndex;
+    _action nextAct = acNone;
+    quint8 nextPoeIndex = 0xff;
     bool notifyIdle = false;
     {
         QMutexLocker locket(&mActionLocker);
         if (mActionsWait.isEmpty())
-            return;
+            return ;
 
         if (!keepFirst)
             mActionsWait.removeFirst();
@@ -760,8 +807,8 @@ void QHuaWeiSwitcherHelper::executeNextAction(bool keepFirst)
         if (mActionsWait.isEmpty()) {
             notifyIdle = true;
         } else {
-            mCurrentPoeIndex = mActionsWait[0].poeIndex;
-            mCurrentAction = mActionsWait[0].action;
+            nextPoeIndex = mActionsWait[0].poeIndex;
+            nextAct = mActionsWait[0].action;
         }
     }
 
@@ -769,12 +816,40 @@ void QHuaWeiSwitcherHelper::executeNextAction(bool keepFirst)
         QMetaObject::invokeMethod(this, [this]() {
             emit poeActionQueueIdle();
         }, Qt::QueuedConnection);
+        return ;
+    }
+
+    if (lastAct == nextAct && lastPoeIndex == nextPoeIndex){
+        qDebug() << "交换机下发这里异常：索引=" << lastPoeIndex << "，行为=" << lastAct;
         return;
     }
 
+    mCurrentPoeIndex = nextPoeIndex;
+    mCurrentAction = nextAct;
     if (mCurrentAction == acQueryState){
         qDebug() << "查询交换机POE口电源状态：" << mCurrentPoeIndex;
         mCurrentCommand = QString("display poe power-state interface GigabitEthernet0/0/%1\r\n").arg(mCurrentPoeIndex);
+        /*
+            [HUAWEI-GigabitEthernet0/0/1]display poe power-state interface GigabitEthernet0/0/1\r\n
+            Legacy detect           : disable
+            Power enable state      : disable
+            Power fast-on state     : disable
+            Single-class state      : disable
+            Power-up mode           : at
+            Power-on delay(s)       : 0
+            PD power auto-neg state : disable
+            PD power-up mode        : -
+            PD support mode         : -
+            Power ON/OFF            : off
+            Power status            : Disabled
+            PD class                : -
+            Reference power(mW)     : -
+            Power priority          : Low
+            Max power(mW)           : 30000
+            Current power(mW)       : 0
+            Peak power(mW)          : 0
+            Average power(mW)       : 0
+        */
     }
     else if (mCurrentAction == acOpenPoe){
         qDebug() << "控制交换机POE口电源打开：" << mCurrentPoeIndex;
@@ -794,8 +869,8 @@ void QHuaWeiSwitcherHelper::executeNextAction(bool keepFirst)
     }
 
     mBusyStartTimer.start();
-    QTimer::singleShot(0, this, [=](){
-        mSwitcherIsBusy.store(true);
+    mSwitcherIsBusy.store(true);
+    QTimer::singleShot(100, this, [=](){
         if (mCurrentAction == acKeepLive){
             mWaitingHeartbeatResponse = true;
             mLastHeartbeatTime.start();
@@ -803,6 +878,8 @@ void QHuaWeiSwitcherHelper::executeNextAction(bool keepFirst)
             mBusyStartTimer.start();
         }
 
+        *mTextStream << "\n==================================================\n";
+        *mTextStream << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz :") << mCurrentCommand;
         mTelnet->write(mCurrentCommand.toLatin1());
     });
 }

@@ -1153,11 +1153,11 @@ void MainWindow::onSwitcherLogged(const QString& ip)
     /// 再给设备上电
     if (mEnableAutoMeasure)
     {
-        // 打开谱仪设备电源
-        commHelper->openPower();
-
         // 打开时钟同步模块电源
         commHelper->openSwitcherExtendPOEPower();
+
+        // 打开谱仪设备电源
+        commHelper->openPower();
 
         // 第三步 30s之后开始自动测量
         ui->action_stopAllMeasure->setEnabled(false);

@@ -568,6 +568,7 @@ void CommHelper::onTemperatureTimeout_Thread(quint8 detID)
 {
     emit reportTemperatureTimeout(detID);//上报温度超时报警
 
+    return;
     handleDetectorDisconnection(detID);
 
     //如果该探测器在手动关闭POE供电列表中，则不处理

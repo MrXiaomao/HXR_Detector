@@ -14,9 +14,15 @@
 #include <QMap>
 #include <QElapsedTimer>
 #include <QMutex>
+#include <QFile>
+#include <QTextStream>
 
 #define USE_ACTION_WAIT 1
+#ifndef USE_QTELNET
 class QTcpSocket;
+#else
+class QTelnet;
+#endif
 
 enum _action{
     acNone = 0x00,
@@ -50,6 +56,7 @@ public:
     };
 
     explicit QHuaWeiSwitcherHelper(QString ip, QObject *parent = nullptr);
+    ~QHuaWeiSwitcherHelper();
 
     QString ip() const{
         return mIp;
@@ -116,7 +123,12 @@ signals:
 
 
 private:
+#ifndef USE_QTELNET
     QTcpSocket *mTelnet = nullptr;//华为交换机控制POE电源
+#else
+    QTelnet *mTelnet = nullptr;//华为交换机控制POE电源
+#endif
+
     QTimer *mHeartbeatTimer = nullptr;//心跳检测定时器
 
     State mState;//交换机状态
@@ -164,6 +176,9 @@ private:
     // bool mBatchOff = false;//批量关
     // bool mSingleOff = false;//批量关
     // quint8 mCurrentQueryPort = 0;
+
+    QFile* mFileCommand;//记录指令
+    QTextStream*mTextStream;
 };
 
 #endif // QHUAWEISWITCHERHELPER_H
