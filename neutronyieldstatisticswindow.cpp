@@ -1355,6 +1355,7 @@ void NeutronYieldStatisticsWindow::initSpectrumCustomPlot()
     ui->widget_flowLayoutContainer->setLayout(flowLayout);
 
     QCustomPlotHelper* customPlotHelper = new QCustomPlotHelper(customPlot, this);
+    customPlot->setProperty("enable-dataTracer", true);
     customPlot->setAntialiasedElements(QCP::aeAll);
     customPlot->legend->setVisible(false);
     customPlot->xAxis->setTickLabelRotation(-45);
@@ -1392,6 +1393,7 @@ void NeutronYieldStatisticsWindow::initCountCustomPlot()
     customPlotHelper->setClearMarkerActionVisible(false);
     customPlotHelper->setStraightLineActionVisible(true);
     customPlotHelper->setRangeSelectActionVisible(false);
+    customPlot->setProperty("enable-dataTracer", true);
 
     customPlot->setAntialiasedElements(QCP::aeAll);
     customPlot->legend->setVisible(false);
@@ -1976,12 +1978,10 @@ void NeutronYieldStatisticsWindow::onParseChannelFinished(int detId, bool mergeO
     delete dealFile[detId - 1];
     dealFile[detId - 1] = parsed;
 
-    mDealSucess[detId] = true;
-    emit sigSuccess(detId);
-
-    if (dealFile[detId - 1]->successfulFitSegmentCount() == 0 && fitErrors.isEmpty()) {
-        emit reporWriteLog(tr("谱仪%1能谱拟合失败，解析失败").arg(detId), QtWarningMsg);
-    }
+    const bool fitOk = dealFile[detId - 1]->successfulFitSegmentCount() > 0;
+    mDealSucess[detId] = fitOk;
+    if (fitOk)
+        emit sigSuccess(detId);
 
     emit reporWriteLog(QString("谱仪%1解析完成").arg(detId));
 }

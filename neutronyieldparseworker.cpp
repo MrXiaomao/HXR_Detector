@@ -89,7 +89,10 @@ void NeutronYieldParseWorker::run(const NeutronYieldParseJob &job)
         parseData->clearParseProgressCallback();
 
         const QStringList fitErrors = parseData->fitFailureMessages();
-        if (mergeOk) {
+        const bool fitOk = parseData->successfulFitSegmentCount() > 0;
+        const bool channelOk = mergeOk && fitOk;
+
+        if (channelOk) {
             if (ParseData *old = mParseResults.value(detID, nullptr))
                 delete old;
             mParseResults.insert(detID, parseData);
@@ -97,7 +100,7 @@ void NeutronYieldParseWorker::run(const NeutronYieldParseJob &job)
             delete parseData;
         }
 
-        emit channelFinished(detID, mergeOk, fitErrors);
+        emit channelFinished(detID, channelOk, fitErrors);
 
         if (mCancelled.load(std::memory_order_relaxed))
             break;

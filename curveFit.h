@@ -16,6 +16,8 @@
 namespace CurveFit {
     const int gauss_arr_count_min = 10; //高斯拟合数据点数最小值
     constexpr double kDefaultSpectrumFitR2Min = 0.8; // 能谱拟合优度 R² 默认下限
+    /** 寻峰 fit_gauss_linear2 不做 R² 门槛时使用 */
+    constexpr double kNoSpectrumFitR2Check = -1.0;
 
     /**
      * @brief 定义线性函数 f=kx+b

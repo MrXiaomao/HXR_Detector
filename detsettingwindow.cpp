@@ -12,11 +12,23 @@
 #include <QGroupBox>
 #include <QHeaderView>
 
+namespace {
+constexpr int kSpectrumRefreshTimeSpinMax = 60 * 60 * 1000; // 1 hour，单位 ms（协议字段为 4 字节 quint32）
+
+int spectrumRefreshTimeToSpinValue(quint32 ms)
+{
+    return static_cast<int>(qMin<quint32>(ms, static_cast<quint32>(kSpectrumRefreshTimeSpinMax)));
+}
+} // namespace
+
 DetSettingWindow::DetSettingWindow(QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::DetSettingWindow)
 {
     ui->setupUi(this);
+
+    ui->spinBox_spectrumRefreshTime->setMinimum(1);
+    ui->spinBox_spectrumRefreshTime->setMaximum(kSpectrumRefreshTimeSpinMax);
 
     // 设置每个列宽都可拉伸
     QHeaderView* header = ui->tableWidget->horizontalHeader();
@@ -265,7 +277,7 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
             if (cachePool.startsWith(QByteArray::fromHex("12 34 00 0A FD 10"))){
                 quint32 spectrumRefreshTime = cachePool.mid(6, 4).toHex().toUInt(&ok, 16);
                 qInfo().noquote() << "能谱刷新时间/ms：" << spectrumRefreshTime;
-                ui->spinBox_spectrumRefreshTime->setValue(spectrumRefreshTime);
+                ui->spinBox_spectrumRefreshTime->setValue(spectrumRefreshTimeToSpinValue(spectrumRefreshTime));
 
                 if (queryMsg.isEmpty() && (spectrumRefreshTime != detParameter->spectrumRefreshTime)){
                     queryMsg = "能谱刷新时间与本地设置不一致。";
@@ -754,7 +766,7 @@ void DetSettingWindow::loadAt(quint8 detId, bool recordLog)
 
     //能谱设置
     //能谱刷新时间（毫秒）
-    ui->spinBox_spectrumRefreshTime->setValue(detParameter->spectrumRefreshTime);
+    ui->spinBox_spectrumRefreshTime->setValue(spectrumRefreshTimeToSpinValue(detParameter->spectrumRefreshTime));
     //能谱长度
     ui->comboBox_spectrumLength->setCurrentText(QString::number(detParameter->spectrumLength));
 

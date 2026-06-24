@@ -238,15 +238,19 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
         if (!initial_PeakFind(singleSpectrum, energy_scale, peakParAll, fitflag)) {
             delete[] singleSpectrum;
             m_fitFailureMessages.append(
-                QStringLiteral("谱仪%1能谱拟合失败，解析失败").arg(mDetId));
+                QStringLiteral("谱仪%1初寻峰失败（511/909 keV），解析失败").arg(mDetId));
             return 0;
         }
         delete[] singleSpectrum;
+        if (!fitflag[1]) {
+            qInfo().nospace() << "Detector" << mDetId
+                              << "846keV peak not found on first segment, single-Gauss stripping will be used";
+        }
     }
 
-    if (peakParAll.size() < 3 || !fitflag[0] || !fitflag[1] || !fitflag[2]) {
+    if (peakParAll.size() < 3 || !fitflag[0] || !fitflag[2]) {
         m_fitFailureMessages.append(
-            QStringLiteral("谱仪%1能谱拟合失败，解析失败").arg(mDetId));
+            QStringLiteral("谱仪%1初寻峰失败（511/909 keV），解析失败").arg(mDetId));
         return 0;
     }
 
@@ -353,7 +357,7 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
  * @param energy_scale 能量刻度系数y=ax+b。energy_scale = {a，b};
  * @param fit_c_2 拟合参数初值，拟合成功后，更新拟合参数
  * @param exitflag[3] 511/846/909 keV寻峰成功与否的标志位，0:没找到峰；1：找到了峰；初值为2
- * @return 511/846/909 keV 寻峰及精拟合均成功时返回 true
+ * @return 511/909 keV 寻峰成功时返回 true（846 keV 可选，失败时走单高斯剥谱）
  */
 bool ParseData::initial_PeakFind(double* spectrum, double energy_scale[], QVector<fit_result>& fit_c_2, bool* exitflag)
 {
@@ -491,28 +495,30 @@ bool ParseData::initial_PeakFind(double* spectrum, double energy_scale[], QVecto
         //选用上次的拟合结果作为拟合初值
         double p[5] = {temp_result.c0, temp_result.c1, temp_result.c2, temp_result.c3, temp_result.c4};
 
-        //拟合并给出结果
-        if (CurveFit::fit_gauss_linear2(fitPoints, p, mSpectrumFitR2Min)) {
-            //更新拟合结果
+        //拟合并给出结果（寻峰不做 R² 门槛，失败时保留粗寻峰结果）
+        if (CurveFit::fit_gauss_linear2(fitPoints, p, CurveFit::kNoSpectrumFitR2Check)) {
             fit_c_2[e].c0 = p[0];
             fit_c_2[e].c1 = p[1];
             fit_c_2[e].c2 = p[2];
             fit_c_2[e].c3 = p[3];
             fit_c_2[e].c4 = p[4];
         } else {
-            qDebug() << "CurveFit::fit_gauss_linear2 failed, peak:" << m_energyCalibration[e];
-            exitflag[e] = false;
-            fit_c_2[e].c0 = 0.0;
-            fit_c_2[e].c1 = 0.0;
-            fit_c_2[e].c2 = 0.0;
-            fit_c_2[e].c3 = 0.0;
-            fit_c_2[e].c4 = 0.0;
+            qDebug() << "CurveFit::fit_gauss_linear2 failed, peak:" << m_energyCalibration[e]
+                     << ", keep coarse peak find result";
+            if (e == 1) {
+                exitflag[e] = false;
+                fit_c_2[e].c0 = 0.0;
+                fit_c_2[e].c1 = 0.0;
+                fit_c_2[e].c2 = 0.0;
+                fit_c_2[e].c3 = 0.0;
+                fit_c_2[e].c4 = 0.0;
+            }
         }
     }
 
     delete[] spectrum_smooth1;
     delete[] spectrum_smooth2;
-    return exitflag[0] && exitflag[1] && exitflag[2] && fit_c_2.size() >= 3;
+    return exitflag[0] && exitflag[2] && fit_c_2.size() >= 3;
 }
 
 
@@ -653,22 +659,16 @@ bool ParseData::PeakFind(double* spectrum, QVector<fit_result>& init_c, bool* ex
         //选用上次的拟合结果作为拟合初值
         double p[5] = {temp_result.c0, temp_result.c1, temp_result.c2, temp_result.c3, temp_result.c4};
 
-        //拟合并给出结果
-        if (CurveFit::fit_gauss_linear2(fitPoints, p, mSpectrumFitR2Min)) {
-            //更新拟合结果
+        //拟合并给出结果（寻峰不做 R² 门槛，失败时保留粗寻峰结果）
+        if (CurveFit::fit_gauss_linear2(fitPoints, p, CurveFit::kNoSpectrumFitR2Check)) {
             fit_c_2[e].c0 = p[0];
             fit_c_2[e].c1 = p[1];
             fit_c_2[e].c2 = p[2];
             fit_c_2[e].c3 = p[3];
             fit_c_2[e].c4 = p[4];
         } else {
-            qDebug() << "CurveFit::fit_gauss_linear2 failed, peak:" << m_energyCalibration[e];
-            exitflag[e] = false;
-            fit_c_2[e].c0 = 0.0;
-            fit_c_2[e].c1 = 0.0;
-            fit_c_2[e].c2 = 0.0;
-            fit_c_2[e].c3 = 0.0;
-            fit_c_2[e].c4 = 0.0;
+            qDebug() << "CurveFit::fit_gauss_linear2 failed, peak:" << m_energyCalibration[e]
+                     << ", keep coarse peak find result";
         }
 
         if (fit_c_2[e].c0 < kPeakHeightMin)

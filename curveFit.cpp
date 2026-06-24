@@ -416,7 +416,7 @@ namespace CurveFit {
                 qDebug().noquote() << "fit_gauss_linear2 failed: not converged";
                 return false;
             }
-            if (rep.r2 < r2Min) {
+            if (r2Min >= 0.0 && rep.r2 < r2Min) {
                 qDebug().noquote() << "fit_gauss_linear2 failed: R2=" << rep.r2 << "<" << r2Min;
                 return false;
             }
@@ -501,7 +501,7 @@ namespace CurveFit {
                 qDebug().noquote() << "fit_gauss_ploy4 failed: not converged";
                 return false;
             }
-            if (rep.r2 < r2Min) {
+            if (r2Min >= 0.0 && rep.r2 < r2Min) {
                 qDebug().noquote() << "fit_gauss_ploy4 failed: R2=" << rep.r2 << "<" << r2Min;
                 return false;
             }
@@ -592,7 +592,7 @@ namespace CurveFit {
                 qDebug().noquote() << "fit_2gauss_ploy4 failed: not converged";
                 return false;
             }
-            if (rep.r2 < r2Min) {
+            if (r2Min >= 0.0 && rep.r2 < r2Min) {
                 qDebug().noquote() << "fit_2gauss_ploy4 failed: R2=" << rep.r2 << "<" << r2Min;
                 return false;
             }

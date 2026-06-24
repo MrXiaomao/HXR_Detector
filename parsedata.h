@@ -115,7 +115,7 @@ public:
      * @param spectrum 能谱2048道
      * @param init_c 上一次寻峰结果
      * @param exitflag 寻峰标志位，false:没找到峰，true:找到了峰
-     * @return 511/909 keV 寻峰及精拟合均成功时返回 true
+     * @return 511/909 keV 寻峰成功时返回 true
      */
     bool PeakFind(double* spectrum, QVector<fit_result>& init_c, bool* exitflag);
 
