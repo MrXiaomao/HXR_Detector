@@ -1115,22 +1115,13 @@ void MainWindow::onSystemTimer()
     // 能谱刷新需根据刷新时长来决定，最小1s刷新一次
     if (commHelper->isMeasuring() && (t % m_specPlotRefreshTime) == 0){
         // 开始测量以后，有一段冷却时长，这段时间内可以不用刷新能谱
-        if (mPlotAlready.load()){
+        if (mCountRatePlotReady.exchange(false)) {
             ui->spectroMeter1_top->replot(QCustomPlot::rpQueuedReplot);
             ui->spectroMeter2_top->replot(QCustomPlot::rpQueuedReplot);
-
-            //能谱图像 y轴自动缩放
-            ui->spectroMeter1_bottom->yAxis->rescale();
-            ui->spectroMeter1_bottom->yAxis->setRangeUpper(
-                ui->spectroMeter1_bottom->yAxis->range().upper * 1.1); // 留10%余量
-            ui->spectroMeter1_bottom->replot(QCustomPlot::rpQueuedReplot);
-
-            ui->spectroMeter2_bottom->yAxis->rescale();
-            ui->spectroMeter2_bottom->yAxis->setRangeUpper(
-                ui->spectroMeter2_bottom->yAxis->range().upper * 1.1); // 留10%余量
-            ui->spectroMeter2_bottom->replot(QCustomPlot::rpQueuedReplot);
-
-            mPlotAlready.store(false);
+        }
+        if (mSpectrumPlotReady.exchange(false)) {
+            replotSpectrumBottom(ui->spectroMeter1_bottom, true);
+            replotSpectrumBottom(ui->spectroMeter2_bottom, true);
         }
     }
 
@@ -2560,7 +2551,7 @@ void MainWindow::updateSpecPlotData(int detectorId, const quint32 spectrum[]) {
         return;
     }
     graph->setData(x, y);
-    mPlotAlready.store(true);
+    mSpectrumPlotReady.store(true);
 }
 
 // 添加计数率显示更新函数
@@ -2579,12 +2570,12 @@ void MainWindow::updateCountRatePlotData(int detectorId, double fpgaTime, double
 
     if (customPlot->property("enableAutoScale").toBool()) {
         customPlot->rescaleAxes(true);
-        mPlotAlready.store(true);
+        mCountRatePlotReady.store(true);
         return;
     }
 
     if (!customPlot->property("enableFixedScale").toBool()) {
-        mPlotAlready.store(true);
+        mCountRatePlotReady.store(true);
         return;
     }
 
@@ -2635,7 +2626,7 @@ void MainWindow::updateCountRatePlotData(int detectorId, double fpgaTime, double
 
     const double pad = (y_max - y_min) * 0.1;
     customPlot->yAxis->setRange(y_min - pad, y_max + pad);
-    mPlotAlready.store(true);
+    mCountRatePlotReady.store(true);
 }
 
 #include "localsettingwindow.h"
@@ -3053,6 +3044,33 @@ QCPGraph* MainWindow::getGraph(int detectorId, bool isSpectrum)
     if (!customPlot) nullptr;
 
     return  customPlot->graph((detectorId-1) % (DET_NUM/2));
+}
+
+void MainWindow::replotSpectrumBottom(QCustomPlot *plot, bool allowYRescale)
+{
+    if (!plot)
+        return;
+
+    double yMax = 0.0;
+    bool hasData = false;
+    for (int i = 0; i < plot->graphCount(); ++i) {
+        QCPGraph *graph = plot->graph(i);
+        if (!graph || graph->data()->isEmpty())
+            continue;
+        hasData = true;
+        bool foundRange = false;
+        const QCPRange valueRange = graph->getValueRange(foundRange, QCP::sdBoth);
+        if (foundRange)
+            yMax = qMax(yMax, valueRange.upper);
+    }
+
+    if (!hasData)
+        return;
+
+    if (allowYRescale && yMax > 0.0)
+        plot->yAxis->setRange(0, yMax * 1.1);
+
+    plot->replot(QCustomPlot::rpQueuedReplot);
 }
 
 void MainWindow::on_checkBox_continueMeasure_toggled(bool toggled)

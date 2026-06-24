@@ -328,7 +328,9 @@ private:
     void startMeasure();
     void stopMeasure();
     void logMeasureStartInfo();
-    std::atomic<bool> mPlotAlready = false;//数据刷新准备好了
+    std::atomic<bool> mCountRatePlotReady = false; // 计数率曲线待刷新
+    std::atomic<bool> mSpectrumPlotReady = false;  // 能谱曲线待刷新
+    void replotSpectrumBottom(QCustomPlot *plot, bool allowYRescale);
 
     QMutex mPlotLocker;
 };

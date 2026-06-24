@@ -15,6 +15,7 @@
 #include <functional>
 
 #include "globalsettings.h"
+#include "curveFit.h"
 
 enum class ParseProgressPhase {
     Merge,
@@ -114,7 +115,7 @@ public:
      * @param spectrum 能谱2048道
      * @param init_c 上一次寻峰结果
      * @param exitflag 寻峰标志位，false:没找到峰，true:找到了峰
-     * @return 暂时不使用，恒为true
+     * @return 511/909 keV 寻峰及精拟合均成功时返回 true
      */
     bool PeakFind(double* spectrum, QVector<fit_result>& init_c, bool* exitflag);
 
@@ -133,6 +134,8 @@ public:
     void setParseProgressCallback(ParseProgressCallback callback);
     void clearParseProgressCallback();
     void setParseCancelFlag(std::atomic<bool> *flag);
+    void setSpectrumFitR2Min(double r2Min) { mSpectrumFitR2Min = r2Min; }
+    double spectrumFitR2Min() const { return mSpectrumFitR2Min; }
 
     /**
      * @brief 解析H5文件，读取指定探测器的所有能谱数据，目前不支持对正在测量的实验数据的分析（没做文件锁保护）。
@@ -263,6 +266,7 @@ private:
     QVector<int> specStrip_rightCH; //存放所有剥谱图形的右端点下标
     int m_successfulFitSegmentCount = 0;
     QStringList m_fitFailureMessages;
+    double mSpectrumFitR2Min = CurveFit::kDefaultSpectrumFitR2Min;
 };
 
 #endif // PARSEDATA_H

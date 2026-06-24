@@ -375,7 +375,7 @@ namespace CurveFit {
         return 1;
     }
 
-    bool fit_gauss_linear2(QVector<QPointF> points, double* fit_c)
+    bool fit_gauss_linear2(QVector<QPointF> points, double* fit_c, double r2Min)
     {
         int paraNum = 5; //待拟合参数个数
         int num = points.size();
@@ -411,7 +411,15 @@ namespace CurveFit {
             alglib::lsfitsetcond(state, epsx, maxits); //参数存储到state中
             alglib::lsfitfit(state, function_gauss_linear2); //参数存储到state中
             lsfitresults(state, c, rep); //参数存储到state中
-            // printf("fit_gauss_linear2 c:%s\n", c.tostring(1).c_str());
+
+            if (rep.terminationtype < 1) {
+                qDebug().noquote() << "fit_gauss_linear2 failed: not converged";
+                return false;
+            }
+            if (rep.r2 < r2Min) {
+                qDebug().noquote() << "fit_gauss_linear2 failed: R2=" << rep.r2 << "<" << r2Min;
+                return false;
+            }
 
             //取出拟合参数c
             for(int i=0; i<paraNum; i++){
@@ -448,7 +456,7 @@ namespace CurveFit {
         return 1;
     }
 
-    bool fit_gauss_ploy4(QVector<QPointF> points, double* fit_c, QVector<double> &residual_rate)
+    bool fit_gauss_ploy4(QVector<QPointF> points, double* fit_c, QVector<double> &residual_rate, double r2Min)
     {
         int paraNum = 8; //待拟合参数个数
         int num = points.size();
@@ -489,6 +497,15 @@ namespace CurveFit {
             alglib::lsfitfit(state, function_gauss_poly4);
             lsfitresults(state, c, rep); //参数存储到state中
 
+            if (rep.terminationtype < 1) {
+                qDebug().noquote() << "fit_gauss_ploy4 failed: not converged";
+                return false;
+            }
+            if (rep.r2 < r2Min) {
+                qDebug().noquote() << "fit_gauss_ploy4 failed: R2=" << rep.r2 << "<" << r2Min;
+                return false;
+            }
+
             //取出拟合参数c
             for(int i=0;i<paraNum;i++){
                 fit_c[i] = c[i];
@@ -496,6 +513,7 @@ namespace CurveFit {
 
             //计算残差率
             double chi_square_sum = 0.0;
+            residual_rate.clear();
             for(int i=0; i<num; i++)
             {
                 double x_temp = fit_x.at(i);
@@ -529,7 +547,7 @@ namespace CurveFit {
         return 1;
     }
 
-    bool fit_2gauss_ploy4(QVector<QPointF> points, double* fit_c, QVector<double> &residual_rate)
+    bool fit_2gauss_ploy4(QVector<QPointF> points, double* fit_c, QVector<double> &residual_rate, double r2Min)
     {
         int paraNum = 11; //待拟合参数个数
         int num = points.size();
@@ -570,6 +588,15 @@ namespace CurveFit {
             alglib::lsfitfit(state, function_2gauss_poly4);
             lsfitresults(state, c, rep); //参数存储到state中
 
+            if (rep.terminationtype < 1) {
+                qDebug().noquote() << "fit_2gauss_ploy4 failed: not converged";
+                return false;
+            }
+            if (rep.r2 < r2Min) {
+                qDebug().noquote() << "fit_2gauss_ploy4 failed: R2=" << rep.r2 << "<" << r2Min;
+                return false;
+            }
+
             //取出拟合参数c
             for(int i=0;i<paraNum;i++){
                 fit_c[i] = c[i];
@@ -577,6 +604,7 @@ namespace CurveFit {
 
             //计算残差率
             double chi_square_sum = 0.0;
+            residual_rate.clear();
             for(int i=0; i<num; i++)
             {
                 double x_temp = fit_x.at(i);

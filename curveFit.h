@@ -14,6 +14,9 @@
 #pragma once
 
 namespace CurveFit {
+    const int gauss_arr_count_min = 10; //高斯拟合数据点数最小值
+    constexpr double kDefaultSpectrumFitR2Min = 0.8; // 能谱拟合优度 R² 默认下限
+
     /**
      * @brief 定义线性函数 f=kx+b
      * @param c 拟合参数c
@@ -140,7 +143,8 @@ namespace CurveFit {
      * @param fit_c 待拟合参数一维数组c的初值 拟合成功后，会将拟合结果存放在fit_c中
      * @return 拟合是否成功
      */
-    bool fit_gauss_linear2(QVector<QPointF> points, double* fit_c);
+    bool fit_gauss_linear2(QVector<QPointF> points, double* fit_c,
+                           double r2Min = kDefaultSpectrumFitR2Min);
 
     /**
      * @brief 高斯+4阶多项式拟合
@@ -150,7 +154,8 @@ namespace CurveFit {
      * @param residual_rate 每个数据点的拟合相对残差
      * @return 拟合是否成功
      */
-    bool fit_gauss_ploy4(QVector<QPointF> points, double* fit_c, QVector<double> &residual_rate);
+    bool fit_gauss_ploy4(QVector<QPointF> points, double* fit_c, QVector<double> &residual_rate,
+                         double r2Min = kDefaultSpectrumFitR2Min);
 
     /**
      * @brief 双高斯+4阶多项式拟合
@@ -161,7 +166,8 @@ namespace CurveFit {
      * @param residual_rate 每个数据点的拟合相对残差
      * @return 拟合是否成功
      */
-    bool fit_2gauss_ploy4(QVector<QPointF> points, double* fit_c, QVector<double> &residual_rate);
+    bool fit_2gauss_ploy4(QVector<QPointF> points, double* fit_c, QVector<double> &residual_rate,
+                          double r2Min = kDefaultSpectrumFitR2Min);
 
     /**
      * @brief 对909全能峰计数随时间变化曲线进行拟合
@@ -177,7 +183,5 @@ namespace CurveFit {
      * @brief 909 全能峰计数随时间指数衰减拟合 func = a*exp(-ln2/(78.4*60)*t)
      */
     bool fit_exp_decay(QVector<QPointF> points, double *fit_a, QVector<double> &residual_rate);
-
-    const int gauss_arr_count_min = 10; //高斯拟合数据点数最小值
 }
 

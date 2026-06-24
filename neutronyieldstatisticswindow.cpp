@@ -23,6 +23,7 @@
 #include <QJsonObject>
 #include <QJsonDocument>
 #include <QMessageBox>
+#include <QSettings>
 #include <math.h>
 #include <algorithm>
 #include <cstring>
@@ -457,6 +458,13 @@ void NeutronYieldStatisticsWindow::initUi()
                 splitterV2->restoreState(settingsSystem.value("Global/splitterV2/State").toByteArray());
             }
         }
+    }
+
+    {
+        QSettings nySettings(QStringLiteral("./config/NeutronYield.ini"), QSettings::IniFormat);
+        ui->doubleSpinBox_fitR2Min->setValue(
+            nySettings.value(QStringLiteral("Parse/spectrumFitR2Min"),
+                             CurveFit::kDefaultSpectrumFitR2Min).toDouble());
     }
 
     setParseBusy(false);
@@ -1745,10 +1753,21 @@ void NeutronYieldStatisticsWindow::on_action_startCalculate_triggered()
     const int startTime = ui->spinBox_timeStart->value() * 60;
     const int endTime = ui->spinBox_timeEnd->value() * 60;
     const int timeStep = ui->spinBox_step->value() * 60;
+    const double spectrumFitR2Min = ui->doubleSpinBox_fitR2Min->value();
 
     if (startTime >= endTime) {
         QMessageBox::information(this, tr("提示"), tr("退出解析！输入的解析时间起点>=解析时间终点。"));
         return;
+    }
+
+    if (spectrumFitR2Min <= 0.0 || spectrumFitR2Min > 1.0) {
+        QMessageBox::information(this, tr("提示"), tr("拟合优度下限 R² 须在 (0, 1] 范围内。"));
+        return;
+    }
+
+    {
+        QSettings nySettings(QStringLiteral("./config/NeutronYield.ini"), QSettings::IniFormat);
+        nySettings.setValue(QStringLiteral("Parse/spectrumFitR2Min"), spectrumFitR2Min);
     }
 
     const QStringList allFilePaths = filePathsFromTable();
@@ -1806,6 +1825,7 @@ void NeutronYieldStatisticsWindow::on_action_startCalculate_triggered()
     const QString step = QString::number(timeStep / 60);
     const QString f_segment = QString::number((endTime - startTime) * 1.0 / timeStep, 'f', 1);
     const QString i_segment = QString::number((endTime - startTime) / timeStep);
+    const QString fitR2Text = QString::number(spectrumFitR2Min, 'f', 2);
 
     QString msgTip;
     if (perChannelMode) {
@@ -1815,32 +1835,35 @@ void NeutronYieldStatisticsWindow::on_action_startCalculate_triggered()
                             "\n起点时间：%3"
                             "\n结束时间：%4"
                             "\n时间步长：%5分钟"
+                            "\n拟合优度下限 R²：%8"
                             "\n计算结果：%6条曲线，根据整除原则，将只显示%7条曲线"
                             "\n\n点击[Yes]开始解析"
                             "\n点击[No]返回重新修改"))
                    .arg(detIds.first())
                    .arg(fusionTime.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss")))
-                   .arg(tmStart, tmEnd, step, f_segment, i_segment);
+                   .arg(tmStart, tmEnd, step, f_segment, i_segment, fitR2Text);
     } else {
         msgTip = QString(tr("模式：统一打靶时刻"
                             "\n打靶时刻：%1"
                             "\n起点时间：%2"
                             "\n结束时间：%3"
                             "\n时间步长：%4分钟"
+                            "\n拟合优度下限 R²：%7"
                             "\n计算结果：%5条曲线，根据整除原则，将只显示%6条曲线"
                             "\n\n点击[Yes]开始解析"
                             "\n点击[No]返回重新修改"))
                    .arg(fusionTime.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss")))
-                   .arg(tmStart, tmEnd, step, f_segment, i_segment);
+                   .arg(tmStart, tmEnd, step, f_segment, i_segment, fitR2Text);
     }
     if (QMessageBox::question(this, tr("提示"), msgTip, QMessageBox::Yes, QMessageBox::No) != QMessageBox::Yes)
         return;
 
     emit reporWriteLog(tr("开始解析..."));
-    emit reporWriteLog(tr("解析窗口：%1 ~ %2，步长 %3 s，全局 %4 段")
+    emit reporWriteLog(tr("解析窗口：%1 ~ %2，步长 %3 s，全局 %4 段，拟合优度下限 R²=%5")
                            .arg(tmStart, tmEnd)
                            .arg(timeStep)
-                           .arg((endTime - startTime) / timeStep));
+                           .arg((endTime - startTime) / timeStep)
+                           .arg(fitR2Text));
     if (perChannelMode) {
         emit reporWriteLog(tr("分通道模式：谱仪 %1，打靶时刻 %2")
                                .arg(detIds.first())
@@ -1858,6 +1881,7 @@ void NeutronYieldStatisticsWindow::on_action_startCalculate_triggered()
     job.windowRight = windowRight;
     job.timeStepSec = timeStep;
     job.perChannelMode = perChannelMode;
+    job.spectrumFitR2Min = spectrumFitR2Min;
     for (int detID : detIds) {
         if (detID >= 1 && detID <= DET_NUM)
             job.beginTimeByDet.insert(detID, static_cast<int>(beginTimeForDetector(detID, fusionTime)));
@@ -1912,6 +1936,7 @@ void NeutronYieldStatisticsWindow::setParseBusy(bool busy)
     ui->bt_removeFile->setEnabled(!busy);
     ui->bt_clearFiles->setEnabled(!busy);
     ui->btn_sort->setEnabled(!busy);
+    ui->doubleSpinBox_fitR2Min->setEnabled(!busy);
 }
 
 void NeutronYieldStatisticsWindow::onParseProgress(int value, int maximum, const QString &message)

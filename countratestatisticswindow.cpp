@@ -25,8 +25,11 @@
 #include <QPainter>
 #include <QProgressDialog>
 #include <QTextCodec>
+#include <QTableWidget>
 #include <vector>
 #include <limits>
+
+#include "H5Cpp.h"
 
 namespace {
 constexpr int kDetectorsPerPlot = 16;
@@ -36,6 +39,84 @@ constexpr int kStatsTableRowHeight = 25;
 constexpr hsize_t kH5SpectrumColumnCount = sizeof(H5Spectrum) / sizeof(quint32);
 /** 单通道解析结果点数上限（约 24h @ 50ms/帧），超出则中止该通道并提示 */
 constexpr int kMaxCountPointsPerDetector = 2'000'000;
+
+class H5ErrorStackSilencer {
+public:
+    H5ErrorStackSilencer()
+    {
+        H5Eget_auto(H5E_DEFAULT, &mOldFunc, &mOldClientData);
+        H5Eset_auto(H5E_DEFAULT, nullptr, nullptr);
+    }
+    ~H5ErrorStackSilencer()
+    {
+        H5Eset_auto(H5E_DEFAULT, mOldFunc, mOldClientData);
+    }
+
+private:
+    H5E_auto2_t mOldFunc = nullptr;
+    void *mOldClientData = nullptr;
+};
+
+std::string h5FilePathStd(const QString &filePath)
+{
+    QTextCodec *gbk_codec = QTextCodec::codecForName("GBK");
+    return gbk_codec->fromUnicode(filePath).toStdString();
+}
+
+QString detectorGroupName(int detectorIndex)
+{
+    return QStringLiteral("Detector#%1").arg(detectorIndex);
+}
+
+bool h5GroupExists(const H5::H5File &file, const std::string &groupName)
+{
+    return H5Lexists(file.getId(), groupName.c_str(), H5P_DEFAULT) > 0;
+}
+
+void clearDetectorStatisticsRow(QTableWidget *table, int detectorIndex)
+{
+    const int row = detectorIndex + 1;
+    if (!table || row <= 1 || row >= table->rowCount())
+        return;
+    for (int col = 1; col <= 9; ++col) {
+        QTableWidgetItem *item = table->item(row, col);
+        if (!item) {
+            item = new QTableWidgetItem;
+            table->setItem(row, col, item);
+        }
+        item->setText(QString());
+        item->setTextAlignment(Qt::AlignCenter);
+    }
+}
+
+void clearAllDetectorStatisticsRows(QTableWidget *table)
+{
+    for (int index = 1; index <= DET_NUM; ++index)
+        clearDetectorStatisticsRow(table, index);
+}
+
+/** @return 首个存在 Spectrum 数据集且行数>0 的通道号，0 表示未找到 */
+int firstDetectorWithSpectrumRows(H5::H5File &file)
+{
+    for (int index = 1; index <= DET_NUM; ++index) {
+        const std::string groupName = detectorGroupName(index).toStdString();
+        if (!h5GroupExists(file, groupName))
+            continue;
+        try {
+            H5::Group group = file.openGroup(groupName);
+            H5::DataSet dataset = group.openDataSet("Spectrum");
+            H5::DataSpace fileSpace = dataset.getSpace();
+            hsize_t dims[2] = {0, 0};
+            fileSpace.getSimpleExtentDims(dims, nullptr);
+            dataset.close();
+            group.close();
+            if (dims[0] > 0)
+                return index;
+        } catch (H5::Exception &) {
+        }
+    }
+    return 0;
+}
 }
 
 CountRateStatisticsWindow::CountRateStatisticsWindow(bool isDarkTheme, QWidget *parent)
@@ -953,61 +1034,65 @@ void CountRateStatisticsWindow::on_action_open_triggered()
     settings.setValue("mainWindow/LastFilePath", filePath);
     ui->textBrowser_filepath->setText(filePath);
 
-    // 解析文件，获取能谱范围时长
-    {
-        // 1. 打开文件
-        QTextCodec* gbk_codec = QTextCodec::codecForName("GBK");
-        QByteArray filePathBytes = gbk_codec->fromUnicode(filePath);
-        H5::H5File file(filePathBytes.toStdString(), H5F_ACC_RDONLY);
+    // 解析文件，获取能谱范围时长（从首个有数据的通道读取）
+    try {
+        H5ErrorStackSilencer silence;
+        H5::H5File file(h5FilePathStd(filePath), H5F_ACC_RDONLY);
 
-        // 2. 打开分组核数据集
-        H5::Group group = file.openGroup("Detector#1");
-        H5::DataSet dataset = group.openDataSet("Spectrum");
-
-        // 3. 确认数据类型匹配（可选，用于错误检查）
-        H5::CompType fileType = dataset.getCompType();
-        if (fileType != H5::PredType::NATIVE_UINT) {
+        const int probeIndex = firstDetectorWithSpectrumRows(file);
+        if (probeIndex <= 0) {
+            ui->line_measure_endT->clear();
+            emit reporWriteLog(tr("文件中未找到任何有效探测器通道数据"), QtWarningMsg);
             file.close();
             return;
         }
 
-        // 4. 初始文件空间
+        const std::string groupName = detectorGroupName(probeIndex).toStdString();
+        H5::Group group = file.openGroup(groupName);
+        H5::DataSet dataset = group.openDataSet("Spectrum");
+
+        H5::CompType fileType = dataset.getCompType();
+        if (fileType != H5::PredType::NATIVE_UINT) {
+            emit reporWriteLog(tr("通道#%1 数据类型不匹配，无法读取测量时长").arg(probeIndex), QtWarningMsg);
+            dataset.close();
+            group.close();
+            file.close();
+            return;
+        }
+
         H5::DataSpace file_space = dataset.getSpace();
         hsize_t current_dims[2];
         file_space.getSimpleExtentDims(current_dims, NULL);
-        hsize_t rows = current_dims[0];
-        hsize_t cols = current_dims[1];
-        if (rows<=0){
-            group.close();
+        const hsize_t rows = current_dims[0];
+        const hsize_t cols = current_dims[1];
+        if (rows <= 0) {
+            emit reporWriteLog(tr("通道#%1 无可用数据").arg(probeIndex), QtWarningMsg);
             dataset.close();
-            file_space.close();
+            group.close();
             file.close();
             return;
         }
 
-        // 5. 内存空间：只读取一行
         hsize_t mem_dims[2] = {1, cols};
         H5::DataSpace mem_space(2, mem_dims);
-        uint32_t* row_data = new uint32_t[cols];
+        std::vector<uint32_t> row_data(cols);
 
-        // 6. 指定数据读取位置
         hsize_t start[2] = {0, 0};
         hsize_t count[2] = {1, cols};
         file_space.selectHyperslab(H5S_SELECT_SET, count, start);
-
-        // 7. 读取数据
-        dataset.read(row_data, H5::PredType::NATIVE_UINT, mem_space, file_space);
-        FullSpectrum* data = reinterpret_cast<FullSpectrum*>(row_data);
+        dataset.read(row_data.data(), H5::PredType::NATIVE_UINT, mem_space, file_space);
+        const FullSpectrum *data = reinterpret_cast<const FullSpectrum *>(row_data.data());
 
         ui->line_measure_endT->setText(QString::number(rows * data->measureTime / 1000));
-        emit reporWriteLog(tr("测量时长/s：%1").arg(ui->line_measure_endT->text()));
+        emit reporWriteLog(tr("参考通道#%1，测量时长/s：%2").arg(probeIndex).arg(ui->line_measure_endT->text()));
 
-        delete[] row_data;
-        row_data = nullptr;
-
-        group.close();
         dataset.close();
-        file_space.close();
+        group.close();
+        file.close();
+    } catch (H5::Exception &e) {
+        emit reporWriteLog(tr("打开文件失败：%1").arg(QString::fromUtf8(e.getDetailMsg().c_str())), QtWarningMsg);
+    } catch (...) {
+        emit reporWriteLog(tr("打开文件失败"), QtWarningMsg);
     }
 }
 
@@ -1027,9 +1112,16 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
     mMapSpectrum.clear();
     mMapSpectrumCorrect.clear();
     clearAllPlots();
+    clearAllDetectorStatisticsRows(ui->tableWidget);
     qApp->setOverrideCursor(QCursor(Qt::WaitCursor));
     const quint32 tmStart = ui->spinBox_timeStart->value();
     const quint32 tmEnd = ui->spinBox_timeEnd->value();
+    if (tmStart > tmEnd) {
+        qApp->restoreOverrideCursor();
+        emit reporWriteLog(tr("解析时间起点不能大于终点"), QtWarningMsg);
+        return;
+    }
+    emit reporWriteLog(tr("解析时间区间：[%1, %2]").arg(tmStart).arg(tmEnd));
     const QString filePath = ui->textBrowser_filepath->toPlainText();
     if (filePath.isEmpty()) {
         qApp->restoreOverrideCursor();
@@ -1038,15 +1130,20 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
     }
 
     try {
-        QTextCodec* gbk_codec = QTextCodec::codecForName("GBK");
-        QByteArray filePathBytes = gbk_codec->fromUnicode(filePath);
-        H5::H5File file(filePathBytes.toStdString(), H5F_ACC_RDONLY);
+        H5ErrorStackSilencer silence;
+        H5::H5File file(h5FilePathStd(filePath), H5F_ACC_RDONLY);
 
         // 预扫描各通道行数，用于进度条总量
         hsize_t totalRowsAll = 0;
+        int skippedChannels = 0;
         for (int index = 1; index <= DET_NUM; ++index) {
+            const std::string groupName = detectorGroupName(index).toStdString();
+            if (!h5GroupExists(file, groupName)) {
+                ++skippedChannels;
+                continue;
+            }
             try {
-                H5::Group group = file.openGroup(QString("Detector#%1").arg(index).toStdString());
+                H5::Group group = file.openGroup(groupName);
                 H5::DataSet dataset = group.openDataSet("Spectrum");
                 H5::DataSpace fileSpace = dataset.getSpace();
                 hsize_t dims[2] = {0, 0};
@@ -1054,8 +1151,19 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                 totalRowsAll += dims[0];
                 dataset.close();
                 group.close();
-            } catch (...) {
+            } catch (H5::Exception &) {
+                ++skippedChannels;
             }
+        }
+
+        if (totalRowsAll == 0) {
+            qApp->restoreOverrideCursor();
+            emit reporWriteLog(tr("文件中未找到可解析的探测器通道数据"), QtWarningMsg);
+            file.close();
+            return;
+        }
+        if (skippedChannels > 0) {
+            emit reporWriteLog(tr("预扫描：%1 个通道无数据，解析时将跳过").arg(skippedChannels), QtWarningMsg);
         }
 
         const int progressMax = static_cast<int>(qMin(totalRowsAll, static_cast<hsize_t>(std::numeric_limits<int>::max())));
@@ -1080,6 +1188,7 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
             QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
         };
 
+        int channelsWithDataInRange = 0;
         for (int index = 1; index <= DET_NUM; ++index)
         {
             if (mInterrupted)
@@ -1088,9 +1197,18 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                 break;
             }
 
+            const std::string groupName = detectorGroupName(index).toStdString();
+            if (!h5GroupExists(file, groupName)) {
+                emit reporWriteLog(tr("通道#%1 无数据（%2 不存在），已跳过")
+                                       .arg(index)
+                                       .arg(QString::fromStdString(groupName)),
+                                   QtWarningMsg);
+                continue;
+            }
+
             try
             {
-                H5::Group group = file.openGroup(QString("Detector#%1").arg(index).toStdString().c_str());
+                H5::Group group = file.openGroup(groupName);
                 H5::DataSet dataset = group.openDataSet("Spectrum");
 
                 H5::CompType fileType = dataset.getCompType();
@@ -1261,10 +1379,29 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                     ensureCell(index + 1, 7)->setText(QString::number(minVDeathTime * deadTimeScale, 'f', 3));
                     ensureCell(index + 1, 8)->setText(QString::number(maxVDeathTime * deadTimeScale, 'f', 3));
                     ensureCell(index + 1, 9)->setText(QString::number(totalDeathTime / ref * deadTimeScale, 'f', 3));
+                    ++channelsWithDataInRange;
+                } else {
+                    mMapCount.remove(index);
+                    mMapCountCorrect.remove(index);
+                    mMapSpectrum.remove(index);
+                    mMapSpectrumCorrect.remove(index);
+                    clearDetectorStatisticsRow(ui->tableWidget, index);
+                    emit reporWriteLog(tr("通道#%1 在时间区间 [%2, %3] 内无数据，已跳过")
+                                           .arg(index)
+                                           .arg(tmStart)
+                                           .arg(tmEnd),
+                                       QtWarningMsg);
                 }
 
                 dataset.close();
                 group.close();
+            }
+            catch (H5::Exception &e)
+            {
+                emit reporWriteLog(tr("通道#%1 读取失败：%2，已跳过")
+                                       .arg(index)
+                                       .arg(QString::fromUtf8(e.getDetailMsg().c_str())),
+                                   QtWarningMsg);
             }
             catch (...)
             {
@@ -1273,6 +1410,21 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
         }
 
         file.close();
+        if (channelsWithDataInRange > 0) {
+            emit reporWriteLog(tr("时间区间 [%1, %2] 内成功解析 %3 个通道")
+                                   .arg(tmStart)
+                                   .arg(tmEnd)
+                                   .arg(channelsWithDataInRange));
+        } else {
+            emit reporWriteLog(tr("所有通道在时间区间 [%1, %2] 内均无数据")
+                                   .arg(tmStart)
+                                   .arg(tmEnd),
+                               QtWarningMsg);
+        }
+    } catch (H5::Exception &e) {
+        emit reporWriteLog(tr("打开或解析文件失败：%1")
+                               .arg(QString::fromUtf8(e.getDetailMsg().c_str())),
+                           QtWarningMsg);
     } catch (...) {
         emit reporWriteLog(tr("打开或解析文件失败"), QtWarningMsg);
     }
