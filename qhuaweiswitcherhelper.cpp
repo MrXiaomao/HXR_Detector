@@ -240,30 +240,9 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
 
                     qDebug() << "返回交换机POE口电源查询状态：" << mCurrentPoeIndex;
                     qint8 index = this->indexOfPort(mCurrentPoeIndex);
-                    if (index > 0)
-                    {
-                        if (mapValues.contains("Error"))// "Wrong parameter found at '^' position."
-                            qDebug() << mCurrentCommand << mapValues["Error"];//参数错误，应该是POE索引超出了最大范围
-                        else if (mapValues["Power enable state"] == "enable"){
-                            mMapPoeState[mCurrentPoeIndex] = true;
-                            qDebug() << "返回交换机POE口电源查询状态[开]：" << mCurrentPoeIndex;
-                            QMetaObject::invokeMethod(this, "reportPoePowerStatus", Qt::QueuedConnection, Q_ARG(quint8, index), Q_ARG(bool, true));
-                        }
-                        else if (mapValues["Power enable state"] == "disable"){
-                            mMapPoeState[mCurrentPoeIndex] = false;
-                            qDebug() << "返回交换机POE口电源查询状态[关]：" << mCurrentPoeIndex;
-                            QMetaObject::invokeMethod(this, "reportPoePowerStatus", Qt::QueuedConnection, Q_ARG(quint8, index), Q_ARG(bool, false));
-                        }
-                        else{
-                            qDebug() << "返回交换机POE口电源查询状态[消息]：" << mRespondString;
-                        }
-                    }
-                    else{
-                        qDebug() << "返回交换机POE口电源查询状态[异常]：" << mRespondString;
-                    }
+                    handlePoeQueryResult(mCurrentPoeIndex, index, mapValues);
 
                     mRespondString.clear();
-                    // 查询下一个POE供电口状态
                     executeNextAction();
                 }
             }
@@ -319,6 +298,7 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
         mSwitcherInSystemView = false;
         QMutexLocker locker(&mActionLocker);
         mActionsWait.clear();// 交换机都下线了，就把之前的动作都清空吧
+        mVerifyByPort.clear();
         stopHeartbeatCheck();  // 停止心跳检测
         qDebug().nospace().noquote() << "交换机[" << mIp << "]连接错误，错误码：" << socketError;
         emit switcherDisconnected(mIp);
@@ -335,6 +315,7 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
             mSwitcherIsBusy.store(false);
             QMutexLocker locker(&mActionLocker);
             mActionsWait.clear();// 交换机都下线了，就把之前的动作都清空吧
+            mVerifyByPort.clear();
         } else if (socketState == QAbstractSocket::ConnectedState && mSwitcherInSystemView) {
             // 如果已经登录成功，重新启动心跳检测
             startHeartbeatCheck();
@@ -492,17 +473,13 @@ bool QHuaWeiSwitcherHelper::openSwitcherPOEPower(quint8 port/* = 0*/)
                     );
 
                 if (!mMapPoeState.contains(*iter) || !mMapPoeState[*iter]){
-                    mActionsWait.push_back(ACTION_WAIT(*iter, acSwitchInterface));
-                    mActionsWait.push_back(ACTION_WAIT(*iter, acOpenPoe));
-                    mActionsWait.push_back(ACTION_WAIT(*iter, acQueryState));
+                    enqueuePoeOpenActions(*iter);
                 }
             }
         }
         else{
             if (!mMapPoeState.contains(port) || !mMapPoeState[port]){
-                mActionsWait.push_back(ACTION_WAIT(port, acSwitchInterface));
-                mActionsWait.push_back(ACTION_WAIT(port, acOpenPoe));
-                mActionsWait.push_back(ACTION_WAIT(port, acQueryState));
+                enqueuePoeOpenActions(port);
             }
         }
     }
@@ -537,19 +514,11 @@ bool QHuaWeiSwitcherHelper::closeSwitcherPOEPower(quint8 port/* = 0*/, bool disc
                         }
                     ), mActionsWait.end()
                 );
-                if (!mMapPoeState.contains(*iter) || mMapPoeState[*iter]){
-                    mActionsWait.push_back(ACTION_WAIT(*iter, acSwitchInterface));
-                    mActionsWait.push_back(ACTION_WAIT(*iter, acClosePoe));
-                    mActionsWait.push_back(ACTION_WAIT(*iter, acQueryState));
-                }
+                enqueuePoeCloseActions(*iter);
             }
         }
         else{
-            if (!mMapPoeState.contains(port) || mMapPoeState[port]){
-                mActionsWait.push_back(ACTION_WAIT(port, acSwitchInterface));
-                mActionsWait.push_back(ACTION_WAIT(port, acClosePoe));
-                mActionsWait.push_back(ACTION_WAIT(port, acQueryState));
-            }
+            enqueuePoeCloseActions(port);
         }
     }
 
@@ -781,6 +750,191 @@ void QHuaWeiSwitcherHelper::logout()
 /*
  执行下一个动作
 */
+void QHuaWeiSwitcherHelper::enqueuePoeOpenActions(quint8 port)
+{
+    PoeVerifyContext ctx;
+    ctx.intent = PoeIntent::Open;
+    ctx.retryCount = 0;
+    ctx.waitingRetry = false;
+    mVerifyByPort[port] = ctx;
+
+    mActionsWait.push_back(ACTION_WAIT(port, acSwitchInterface));
+    mActionsWait.push_back(ACTION_WAIT(port, acOpenPoe));
+    mActionsWait.push_back(ACTION_WAIT(port, acQueryState));
+}
+
+void QHuaWeiSwitcherHelper::enqueuePoeCloseActions(quint8 port)
+{
+    PoeVerifyContext ctx;
+    ctx.intent = PoeIntent::Close;
+    ctx.retryCount = 0;
+    ctx.waitingRetry = false;
+    mVerifyByPort[port] = ctx;
+
+    mActionsWait.push_back(ACTION_WAIT(port, acSwitchInterface));
+    mActionsWait.push_back(ACTION_WAIT(port, acClosePoe));
+    mActionsWait.push_back(ACTION_WAIT(port, acQueryState));
+}
+
+bool QHuaWeiSwitcherHelper::verifyPoeState(const QMap<QString, QString> &mapValues, PoeIntent intent) const
+{
+    const QString enableState = mapValues.value(QStringLiteral("Power enable state"));
+    const QString powerOnOff = mapValues.value(QStringLiteral("Power ON/OFF"));
+    const QString powerStatus = mapValues.value(QStringLiteral("Power status"));
+
+    if (enableState.isEmpty())
+        return false;
+
+    if (enableState == QStringLiteral("enable") && powerOnOff == QStringLiteral("off")) {
+        if (intent == PoeIntent::Open && powerStatus == QStringLiteral("Detecting"))
+            return true;
+        return false;
+    }
+    if (enableState == QStringLiteral("disable") && powerOnOff == QStringLiteral("on"))
+        return false;
+
+    if (intent == PoeIntent::Close)
+        return enableState == QStringLiteral("disable");
+    if (intent == PoeIntent::Open)
+        return enableState == QStringLiteral("enable")
+               && (powerOnOff == QStringLiteral("on") || powerStatus == QStringLiteral("Detecting"));
+
+    return true;
+}
+
+void QHuaWeiSwitcherHelper::applyVerifiedPoeState(quint8 port, qint8 detIndex,
+                                                  const QMap<QString, QString> &mapValues,
+                                                  PoeIntent intent)
+{
+    const bool poweredOn = (intent == PoeIntent::Open);
+    mMapPoeState[port] = poweredOn;
+
+    if (detIndex <= 0)
+        return;
+
+    qDebug().nospace() << "POE校验通过 谱仪[#" << detIndex << "] 端口" << port
+                       << (poweredOn ? " 开" : " 关")
+                       << " enable=" << mapValues.value(QStringLiteral("Power enable state"))
+                       << " onOff=" << mapValues.value(QStringLiteral("Power ON/OFF"))
+                       << " status=" << mapValues.value(QStringLiteral("Power status"));
+
+    QMetaObject::invokeMethod(this, "reportPoePowerStatus", Qt::QueuedConnection,
+                              Q_ARG(quint8, detIndex), Q_ARG(bool, poweredOn));
+}
+
+void QHuaWeiSwitcherHelper::schedulePoeRetry(quint8 port, PoeIntent intent, int delayMs)
+{
+    mVerifyByPort[port].waitingRetry = true;
+
+    QTimer::singleShot(delayMs, this, [this, port, intent]() {
+        if (!mVerifyByPort.contains(port))
+            return;
+
+        mVerifyByPort[port].waitingRetry = false;
+
+        {
+            QMutexLocker locker(&mActionLocker);
+            mActionsWait.push_back(ACTION_WAIT(port, acSwitchInterface));
+            if (intent == PoeIntent::Open)
+                mActionsWait.push_back(ACTION_WAIT(port, acOpenPoe));
+            else
+                mActionsWait.push_back(ACTION_WAIT(port, acClosePoe));
+            mActionsWait.push_back(ACTION_WAIT(port, acQueryState));
+        }
+
+        if (!mSwitcherIsBusy.load()
+            || (mBusyStartTimer.isValid() && mBusyStartTimer.elapsed() >= 30000)) {
+            executeNextAction(true);
+        }
+    });
+}
+
+void QHuaWeiSwitcherHelper::handlePoeQueryResult(quint8 port, qint8 detIndex,
+                                                 const QMap<QString, QString> &mapValues)
+{
+    if (mapValues.contains(QStringLiteral("Error"))) {
+        qDebug() << mCurrentCommand << mapValues.value(QStringLiteral("Error"));
+        if (!mVerifyByPort.contains(port) || mVerifyByPort[port].intent == PoeIntent::None)
+            return;
+    }
+
+    const QString enableState = mapValues.value(QStringLiteral("Power enable state"));
+    const QString powerOnOff = mapValues.value(QStringLiteral("Power ON/OFF"));
+    const QString powerStatus = mapValues.value(QStringLiteral("Power status"));
+    const QString targetLabel = detIndex > 0
+            ? QStringLiteral("谱仪[#%1]").arg(detIndex)
+            : QStringLiteral("POE端口%1").arg(port);
+
+    if (!mVerifyByPort.contains(port) || mVerifyByPort[port].intent == PoeIntent::None) {
+        if (detIndex > 0) {
+            if (enableState == QStringLiteral("enable")) {
+                mMapPoeState[port] = true;
+                qDebug() << "返回交换机POE口电源查询状态[开]：" << port;
+                QMetaObject::invokeMethod(this, "reportPoePowerStatus", Qt::QueuedConnection,
+                                          Q_ARG(quint8, detIndex), Q_ARG(bool, true));
+            } else if (enableState == QStringLiteral("disable")) {
+                mMapPoeState[port] = false;
+                qDebug() << "返回交换机POE口电源查询状态[关]：" << port;
+                QMetaObject::invokeMethod(this, "reportPoePowerStatus", Qt::QueuedConnection,
+                                          Q_ARG(quint8, detIndex), Q_ARG(bool, false));
+            } else {
+                qDebug() << "返回交换机POE口电源查询状态[消息]：" << enableState << powerOnOff << powerStatus;
+            }
+        } else {
+            qDebug() << "返回交换机POE口电源查询状态[异常] port=" << port;
+        }
+        return;
+    }
+
+    PoeVerifyContext &ctx = mVerifyByPort[port];
+    const PoeIntent intent = ctx.intent;
+    const QString intentText = (intent == PoeIntent::Open) ? QStringLiteral("开电") : QStringLiteral("关电");
+
+    if (verifyPoeState(mapValues, intent)) {
+        applyVerifiedPoeState(port, detIndex, mapValues, intent);
+        mVerifyByPort.remove(port);
+        return;
+    }
+
+    if (ctx.retryCount < kMaxPoeRetries) {
+        const int attempt = ctx.retryCount + 1;
+        const int delayMs = kRetryDelaysMs[ctx.retryCount];
+        qDebug().nospace() << "POE校验失败 " << targetLabel << " 端口" << port
+                           << " 意图=" << intentText
+                           << " 第" << attempt << "/" << kMaxPoeRetries << "次重试"
+                           << " enable=" << enableState
+                           << " onOff=" << powerOnOff
+                           << " status=" << powerStatus
+                           << " " << delayMs << "ms后重试"
+                           << (intent == PoeIntent::Open ? "poe enable" : "undo poe enable");
+        ctx.retryCount = attempt;
+        schedulePoeRetry(port, intent, delayMs);
+        return;
+    }
+
+    qInfo().nospace() << targetLabel << intentText
+                      << "失败：PoE状态未收敛(enable=" << enableState
+                      << ", ON/OFF=" << powerOnOff
+                      << ", status=" << powerStatus << ")，已重试" << kMaxPoeRetries << "次";
+
+    if (detIndex > 0) {
+        const bool reportOn = (intent == PoeIntent::Open);
+        mMapPoeState[port] = reportOn;
+        QMetaObject::invokeMethod(this, "reportPoePowerStatus", Qt::QueuedConnection,
+                                  Q_ARG(quint8, detIndex), Q_ARG(bool, reportOn));
+    }
+    mVerifyByPort.remove(port);
+}
+
+bool QHuaWeiSwitcherHelper::hasWaitingPoeRetry() const
+{
+    for (auto it = mVerifyByPort.constBegin(); it != mVerifyByPort.constEnd(); ++it) {
+        if (it.value().waitingRetry)
+            return true;
+    }
+    return false;
+}
+
 void QHuaWeiSwitcherHelper::executeNextAction(bool keepFirst)
 {
     mSwitcherIsBusy.store(false);
@@ -791,13 +945,18 @@ void QHuaWeiSwitcherHelper::executeNextAction(bool keepFirst)
     bool notifyIdle = false;
     {
         QMutexLocker locket(&mActionLocker);
-        if (mActionsWait.isEmpty())
-            return ;
+        if (mActionsWait.isEmpty()) {
+            if (hasWaitingPoeRetry())
+                return;
+            return;
+        }
 
         if (!keepFirst)
             mActionsWait.removeFirst();
 
         if (mActionsWait.isEmpty()) {
+            if (hasWaitingPoeRetry())
+                return;
             notifyIdle = true;
         } else {
             nextPoeIndex = mActionsWait[0].poeIndex;
@@ -875,5 +1034,5 @@ void QHuaWeiSwitcherHelper::executeNextAction(bool keepFirst)
 bool QHuaWeiSwitcherHelper::hasPendingActions()
 {
     QMutexLocker locker(&mActionLocker);
-    return !mActionsWait.isEmpty() || mSwitcherIsBusy.load();
+    return !mActionsWait.isEmpty() || mSwitcherIsBusy.load() || hasWaitingPoeRetry();
 }

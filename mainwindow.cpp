@@ -60,11 +60,10 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     mConnectButtonDisableTimer->setSingleShot(true);
     mConnectButtonDisableTimer->setInterval(10000); // 10秒
     connect(mConnectButtonDisableTimer, &QTimer::timeout, this, [=](){
-        // 定时器超时后，根据连接状态决定是否启用按钮
-        if (!mSwitcherConnected) {
+        if (!mSwitcherLogged) {
             qInfo().noquote().nospace() << tr("交换机连接失败");
-            ui->action_connectSwitch->setEnabled(true);
         }
+        updateConnectButtonState(mSwitcherLogged);
     });
 
     initUi();
@@ -106,6 +105,7 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     // 交换机断开连接
     connect(commHelper, &CommHelper::switcherDisconnected, this, [=](QString ip){
         mSwitcherConnected = false;
+        mSwitcherLogged = false;
         updateConnectButtonState(false);
         ui->action_powerOn->setEnabled(false);
         ui->action_powerOff->setEnabled(false);
@@ -2147,7 +2147,7 @@ void MainWindow::onMeasureCountdownTimeout()
             // 关闭时间同步模块电源
             commHelper->closeSwitcherExtendPOEPower();
 
-            qInfo() << "所有测量已停止，所有通道电源已关闭";
+            // qInfo() << "所有测量已停止，所有通道电源已关闭";
         }
         else
         {
@@ -2674,18 +2674,14 @@ QString MainWindow::formatTimeString(int totalSeconds)
 
 void MainWindow::on_action_connectSwitch_triggered()
 {
-     if (mSwitcherConnected) {
+    if (mSwitcherLogged) {
         UserActionLogger::logMessage(QStringLiteral("点击断开交换机"));
-        // 当前已连接，执行断开操作
         commHelper->disconnectSwitcher();
-        // 禁用按钮10秒
         ui->action_connectSwitch->setEnabled(false);
         mConnectButtonDisableTimer->start();
     } else {
         UserActionLogger::logMessage(QStringLiteral("点击连接交换机"));
-        // 当前未连接，执行连接操作
         commHelper->connectSwitcher(true);
-        // 禁用按钮10秒
         ui->action_connectSwitch->setEnabled(false);
         mConnectButtonDisableTimer->start();
     }
@@ -2693,23 +2689,17 @@ void MainWindow::on_action_connectSwitch_triggered()
 
 void MainWindow::updateConnectButtonState(bool connected)
 {
-    if (connected) {
-        // 已连接状态：显示"断开交换机"，使用在线图标
-        ui->action_connectSwitch->setText(tr("断开交换机"));
-        ui->action_connectSwitch->setToolTip(tr("断开交换机"));
-        ui->action_connectSwitch->setIcon(QIcon(":/switchOnline.png"));  // 使用在线图标
-        // 连接成功后立即启用按钮（解除禁用）
-        ui->action_connectSwitch->setEnabled(true);
-        mConnectButtonDisableTimer->stop();
-    } else {
-        // 未连接状态：显示"连接交换机"，使用离线图标
-        ui->action_connectSwitch->setText(tr("连接交换机"));
-        ui->action_connectSwitch->setToolTip(tr("连接交换机"));
-        ui->action_connectSwitch->setIcon(QIcon(":/switchOffline.png"));  // 使用离线图标
-        // 断开后立即启用按钮（解除禁用）
-        ui->action_connectSwitch->setEnabled(commHelper->hasSwitchers());
-        mConnectButtonDisableTimer->stop();
-    }
+    const QString label = connected ? tr("断开交换机") : tr("连接交换机");
+    const QIcon icon(connected ? QStringLiteral(":/switchOnline.png")
+                               : QStringLiteral(":/switchOffline.png"));
+
+    ui->action_connectSwitch->setText(label);
+    ui->action_connectSwitch->setIconText(label);
+    ui->action_connectSwitch->setToolTip(label);
+    ui->action_connectSwitch->setIcon(icon);
+
+    ui->action_connectSwitch->setEnabled(connected ? true : commHelper->hasSwitchers());
+    mConnectButtonDisableTimer->stop();
 }
 
 // 清除日志

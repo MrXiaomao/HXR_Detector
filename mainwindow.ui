@@ -1998,13 +1998,16 @@
   <action name="action_connectSwitch">
    <property name="icon">
     <iconset resource="../3rdParty/resource/resource.qrc">
-     <normaloff>:/switchOnline.png</normaloff>:/switchOnline.png</iconset>
+     <normaloff>:/switchOffline.png</normaloff>:/switchOffline.png</iconset>
    </property>
    <property name="text">
     <string>连接交换机</string>
    </property>
-   <property name="toolTip">
+   <property name="iconText">
     <string>连接交换机</string>
+   </property>
+   <property name="toolTip">
+    <string>连接PoE交换机</string>
    </property>
    <property name="menuRole">
     <enum>QAction::NoRole</enum>
@@ -2019,7 +2022,7 @@
     <string>断开交换机</string>
    </property>
    <property name="toolTip">
-    <string>断开交换机</string>
+    <string>断开PoE交换机</string>
    </property>
    <property name="menuRole">
     <enum>QAction::NoRole</enum>
@@ -2034,7 +2037,7 @@
     <string>开始实验</string>
    </property>
    <property name="toolTip">
-    <string>全通道开始实验</string>
+    <string>全通道开始实验（仅限网络已上线谱仪）</string>
    </property>
    <property name="menuRole">
     <enum>QAction::NoRole</enum>
@@ -2064,7 +2067,7 @@
     <string>打开电源</string>
    </property>
    <property name="toolTip">
-    <string>打开电源</string>
+    <string>打开全部谱仪电源（仅限已配置端口）</string>
    </property>
    <property name="menuRole">
     <enum>QAction::NoRole</enum>
@@ -2079,7 +2082,7 @@
     <string>关闭电源</string>
    </property>
    <property name="toolTip">
-    <string>关闭电源</string>
+    <string>关闭全部谱仪电源（仅限已配置端口）</string>
    </property>
    <property name="menuRole">
     <enum>QAction::NoRole</enum>
@@ -2094,7 +2097,7 @@
     <string>开启服务</string>
    </property>
    <property name="toolTip">
-    <string>开启服务</string>
+    <string>开启后，谱仪与时间同步触发模块可上线</string>
    </property>
    <property name="menuRole">
     <enum>QAction::NoRole</enum>
@@ -2109,7 +2112,7 @@
     <string>停止服务</string>
    </property>
    <property name="toolTip">
-    <string>停止服务</string>
+    <string>停止后，断开本机与谱仪、时间同步触发模块的网络连接</string>
    </property>
    <property name="menuRole">
     <enum>QAction::NoRole</enum>

@@ -123,6 +123,30 @@ signals:
 
 
 private:
+    enum class PoeIntent {
+        None,
+        Open,
+        Close
+    };
+
+    struct PoeVerifyContext {
+        PoeIntent intent = PoeIntent::None;
+        int retryCount = 0;
+        bool waitingRetry = false;
+    };
+
+    static constexpr int kMaxPoeRetries = 3;
+    static constexpr int kRetryDelaysMs[kMaxPoeRetries] = { 2000, 10000, 20000 };
+
+    void enqueuePoeOpenActions(quint8 port);
+    void enqueuePoeCloseActions(quint8 port);
+    bool verifyPoeState(const QMap<QString, QString> &mapValues, PoeIntent intent) const;
+    void applyVerifiedPoeState(quint8 port, qint8 detIndex, const QMap<QString, QString> &mapValues, PoeIntent intent);
+    void handlePoeQueryResult(quint8 port, qint8 detIndex, const QMap<QString, QString> &mapValues);
+    void schedulePoeRetry(quint8 port, PoeIntent intent, int delayMs);
+    bool hasWaitingPoeRetry() const;
+
+private:
 #ifndef USE_QTELNET
     QTcpSocket *mTelnet = nullptr;//华为交换机控制POE电源
 #else
@@ -162,6 +186,7 @@ private:
     quint8 mLogoutStep = 0; // 0=未退出, 1=已发第一条 quit, 2=已发第二条 quit
 
     QMap<quint8, bool> mMapPoeState;
+    QMap<quint8, PoeVerifyContext> mVerifyByPort;
     QMutex mActionLocker;
     QVector<ACTION_WAIT> mActionsWait;// 等待执行的动作
     quint8 mCurrentPoeIndex = 0;// 当前操作的POE索引
