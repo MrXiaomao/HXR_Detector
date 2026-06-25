@@ -186,12 +186,12 @@ void DataProcessor::updateSetting(DetParameter* detParameter, bool isRead/* = fa
         this->sendSprectnumRefreshTimelength(isRead, detParameter->spectrumRefreshTime);
 
         //暂时不再使用梯形成型相关配置，FPGA内部有默认参数
-        if (detParameter->trapShapeEnable || isRead){
+        // if (detParameter->trapShapeEnable || isRead){
             //#07 梯形成型常数=1|0|13|1234000FFE1000000000ABCD
             // this->sendTrapTimeConst(isRead, detParameter->trapShapeTimeConstD1, detParameter->trapShapeTimeConstD2);
             //#08 上升沿参数=1|0|15|1234000FFE1100000000ABCD
-            this->sendRisePeakFallPoints(isRead, detParameter->trapShapeRisePoint, detParameter->trapShapePeakPoint, detParameter->trapShapeFallPoint);
-        }
+            // this->sendRisePeakFallPoints(isRead, detParameter->trapShapeRisePoint, detParameter->trapShapePeakPoint, detParameter->trapShapeFallPoint);
+        // }
 
         //#09 梯形成型使能=1|0|17|1234000FFE1200000000ABCD
         this->sendTrapShapeEnable(isRead, (TrapShapeEnable)detParameter->trapShapeEnable);
