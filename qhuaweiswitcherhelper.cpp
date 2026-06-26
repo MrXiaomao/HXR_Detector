@@ -1,6 +1,8 @@
 ﻿#include "qhuaweiswitcherhelper.h"
 #include "globalsettings.h"
 
+#include <QDir>
+
 #ifndef USE_QTELNET
 #include <QTcpSocket>
 using QTelnet = QTcpSocket;
@@ -13,8 +15,9 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
     , mState(State::Disconnected)
     , mIp(ip)
 {
+    QDir().mkpath(QStringLiteral("./logs"));
     mFileCommand = new QFile(QString("./logs/Switcher-%1.log").arg(QDateTime::currentDateTime().toString("yyyy-MM-dd-HHmmss")));
-    mFileCommand->open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Append);
+    mFileCommand->open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Append | QIODevice::Unbuffered);
     mTextStream = new QTextStream(mFileCommand);
 
     mTelnet = new QTelnet(this);
@@ -49,13 +52,14 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
             mRespondString.append(dest);
 
             *mTextStream << rx_current;
-            mTextStream->flush();
+            flushCommandLog();
         }
 
 #else
     connect(mTelnet, &QTelnet::readyRead,this,[=](const QByteArray& dest){
         mRespondString.append(dest);
         *mTextStream << dest;
+        flushCommandLog();
 #endif
         //qDebug() << "STR2:" << mRespondString;
 
@@ -298,6 +302,7 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
         mSwitcherIsLoginOk = false;
         mSwitcherInSystemView = false;
         QMutexLocker locker(&mActionLocker);
+        ++mActionGeneration;
         mActionsWait.clear();// 交换机都下线了，就把之前的动作都清空吧
         mVerifyByPort.clear();
         stopHeartbeatCheck();  // 停止心跳检测
@@ -315,6 +320,7 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
             mIsReconnecting = false;
             mSwitcherIsBusy.store(false);
             QMutexLocker locker(&mActionLocker);
+            ++mActionGeneration;
             mActionsWait.clear();// 交换机都下线了，就把之前的动作都清空吧
             mVerifyByPort.clear();
         } else if (socketState == QAbstractSocket::ConnectedState && mSwitcherInSystemView) {
@@ -327,6 +333,7 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
 
 QHuaWeiSwitcherHelper::~QHuaWeiSwitcherHelper()
 {
+    flushCommandLog();
     delete mTextStream;
     mTextStream = nullptr;
     delete mFileCommand;
@@ -425,8 +432,6 @@ void QHuaWeiSwitcherHelper::forceOpenPower()
     if (mTelnet->state() == QAbstractSocket::ConnectedState)
     {
         restartHeartbeatCheck();
-
-        emit switcherLogged(mIp);
     }
     else
     {
@@ -446,6 +451,49 @@ void QHuaWeiSwitcherHelper::forceOpenPower()
 /*********************************************************
      交换机指令
     ***********************************************************/
+void QHuaWeiSwitcherHelper::flushCommandLog()
+{
+    if (mTextStream)
+        mTextStream->flush();
+    if (mFileCommand && mFileCommand->isOpen())
+        mFileCommand->flush();
+}
+
+bool QHuaWeiSwitcherHelper::isPoeSequenceInProgress() const
+{
+    if (!mSwitcherIsBusy.load())
+        return false;
+    if (mCurrentAction == acNone || mCurrentAction == acKeepLive)
+        return false;
+    return mBusyStartTimer.isValid() && mBusyStartTimer.elapsed() < 30000;
+}
+
+bool QHuaWeiSwitcherHelper::hasPendingPoeActionsForPort(quint8 port) const
+{
+    if (isPoeSequenceInProgress() && mCurrentPoeIndex == port)
+        return true;
+
+    for (const ACTION_WAIT &item : mActionsWait) {
+        if (item.poeIndex == port && item.action != acKeepLive)
+            return true;
+    }
+
+    if (mVerifyByPort.contains(port) && mVerifyByPort[port].intent != PoeIntent::None)
+        return true;
+
+    return false;
+}
+
+void QHuaWeiSwitcherHelper::removePendingPoeActionsForPort(quint8 port)
+{
+    mActionsWait.erase(
+        std::remove_if(mActionsWait.begin(), mActionsWait.end(),
+                       [port](const ACTION_WAIT &item) {
+                           return item.poeIndex == port && item.action != acKeepLive;
+                       }),
+        mActionsWait.end());
+}
+
 /*
  打开交换机POE口输出电源
 */
@@ -462,24 +510,27 @@ bool QHuaWeiSwitcherHelper::openSwitcherPOEPower(quint8 port/* = 0*/)
         if (mBusyStartTimer.isValid() && mBusyStartTimer.elapsed() >= 30000 && mActionsWait.size() > 0)
             mActionsWait.clear();// 为了防止指令堵塞，清空闲置指令
 
-        if (port == 0){            
-            for (auto iter = mMapAssociatedDetector.begin(); iter!=mMapAssociatedDetector.end(); ++iter){
-                // 按照优先级，删除之前未执行的指令，达到快速响应效果
-                mActionsWait.erase(
-                    std::remove_if(mActionsWait.begin(), mActionsWait.end(),
-                                   [=](const ACTION_WAIT& item){
-                                       return item.poeIndex == *iter;
-                                   }
-                                   ), mActionsWait.end()
-                    );
+        const bool poeBusy = isPoeSequenceInProgress();
 
-                if (!mMapPoeState.contains(*iter) || !mMapPoeState[*iter]){
-                    enqueuePoeOpenActions(*iter);
-                }
+        if (port == 0){
+            if (!poeBusy) {
+                for (auto iter = mMapAssociatedDetector.begin(); iter != mMapAssociatedDetector.end(); ++iter)
+                    removePendingPoeActionsForPort(*iter);
+            }
+
+            for (auto iter = mMapAssociatedDetector.begin(); iter != mMapAssociatedDetector.end(); ++iter){
+                if (poeBusy && hasPendingPoeActionsForPort(*iter))
+                    continue;
+
+                enqueuePoeOpenActions(*iter);
             }
         }
         else{
-            if (!mMapPoeState.contains(port) || !mMapPoeState[port]){
+            if (!poeBusy)
+                removePendingPoeActionsForPort(port);
+
+            if (!hasPendingPoeActionsForPort(port)
+                && (!mMapPoeState.contains(port) || !mMapPoeState[port])) {
                 enqueuePoeOpenActions(port);
             }
         }
@@ -506,19 +557,21 @@ bool QHuaWeiSwitcherHelper::closeSwitcherPOEPower(quint8 port/* = 0*/, bool disc
             mActionsWait.clear();// 为了防止指令堵塞，清空闲置指令
 
         if (port == 0){
+            const bool poeBusy = isPoeSequenceInProgress();
+            if (!poeBusy) {
+                for (auto iter = mMapAssociatedDetector.begin(); iter != mMapAssociatedDetector.end(); ++iter)
+                    removePendingPoeActionsForPort(*iter);
+            }
+
             for (auto iter = mMapAssociatedDetector.begin(); iter!=mMapAssociatedDetector.end(); ++iter){
-                // 按照优先级，删除之前未执行的指令，达到快速响应效果
-                mActionsWait.erase(
-                    std::remove_if(mActionsWait.begin(), mActionsWait.end(),
-                       [=](const ACTION_WAIT& item){
-                           return item.poeIndex == *iter;
-                        }
-                    ), mActionsWait.end()
-                );
+                if (poeBusy && hasPendingPoeActionsForPort(*iter))
+                    continue;
                 enqueuePoeCloseActions(*iter);
             }
         }
         else{
+            if (!isPoeSequenceInProgress())
+                removePendingPoeActionsForPort(port);
             enqueuePoeCloseActions(port);
         }
     }
@@ -938,7 +991,6 @@ bool QHuaWeiSwitcherHelper::hasWaitingPoeRetry() const
 
 void QHuaWeiSwitcherHelper::executeNextAction(bool keepFirst)
 {
-    mSwitcherIsBusy.store(false);
     restartHeartbeatCheck();
 
     _action nextAct = acNone;
@@ -949,6 +1001,7 @@ void QHuaWeiSwitcherHelper::executeNextAction(bool keepFirst)
         if (mActionsWait.isEmpty()) {
             if (hasWaitingPoeRetry())
                 return;
+            mSwitcherIsBusy.store(false);
             return;
         }
 
@@ -966,6 +1019,7 @@ void QHuaWeiSwitcherHelper::executeNextAction(bool keepFirst)
     }
 
     if (notifyIdle) {
+        mSwitcherIsBusy.store(false);
         QMetaObject::invokeMethod(this, [this]() {
             emit poeActionQueueIdle();
         }, Qt::QueuedConnection);
@@ -1018,8 +1072,15 @@ void QHuaWeiSwitcherHelper::executeNextAction(bool keepFirst)
 
     mBusyStartTimer.start();
     mSwitcherIsBusy.store(true);
+    ++mActionGeneration;
+    const quint64 actionGeneration = mActionGeneration;
+    const QString commandToSend = mCurrentCommand;
+    const _action actionToSend = mCurrentAction;
     QTimer::singleShot(100, this, [=](){
-        if (mCurrentAction == acKeepLive){
+        if (actionGeneration != mActionGeneration)
+            return;
+
+        if (actionToSend == acKeepLive){
             mWaitingHeartbeatResponse = true;
             mLastHeartbeatTime.start();
         } else {
@@ -1027,8 +1088,9 @@ void QHuaWeiSwitcherHelper::executeNextAction(bool keepFirst)
         }
 
         *mTextStream << "\n==================================================\n";
-        *mTextStream << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz :") << mCurrentCommand;
-        mTelnet->write(mCurrentCommand.toLatin1());
+        *mTextStream << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz :") << commandToSend;
+        flushCommandLog();
+        mTelnet->write(commandToSend.toLatin1());
     });
 }
 

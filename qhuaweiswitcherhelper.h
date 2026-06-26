@@ -145,6 +145,10 @@ private:
     void handlePoeQueryResult(quint8 port, qint8 detIndex, const QMap<QString, QString> &mapValues);
     void schedulePoeRetry(quint8 port, PoeIntent intent, int delayMs);
     bool hasWaitingPoeRetry() const;
+    bool hasPendingPoeActionsForPort(quint8 port) const;
+    void removePendingPoeActionsForPort(quint8 port);
+    bool isPoeSequenceInProgress() const;
+    void flushCommandLog();
 
 private:
 #ifndef USE_QTELNET
@@ -193,6 +197,7 @@ private:
     _action mCurrentAction = acNone;// 当前需要执行的动作
     QElapsedTimer mBusyStartTimer;//指令开始直接时间
     QString mCurrentCommand;
+    quint64 mActionGeneration = 0; // 动作生成序号
 
     QVector<quint8/*index-谱仪编号*/> mMapAssociatedDetector;// 当前交换机所关联的POE端口号
     // uint8_t mQueryPosition = 0;
@@ -203,7 +208,7 @@ private:
     // quint8 mCurrentQueryPort = 0;
 
     QFile* mFileCommand;//记录指令
-    QTextStream*mTextStream;
+    QTextStream* mTextStream; // 指令输出流
 };
 
 #endif // QHUAWEISWITCHERHELPER_H

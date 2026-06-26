@@ -1251,7 +1251,7 @@ void MainWindow::onReportDetectorTemperature(quint8 index, float temperature, co
 
     const QString ymd = now.toString("yyyy-MM-dd");
     const QString dtStr = now.toString("yyyy-MM-dd HH:mm:ss"); // 精确到秒
-    const QString dtStr2 = now.toString("yyyy-MM-dd HH:mm:ss"); // 精确到秒
+    const QString dtStr2 = trTime.toString("yyyy-MM-dd HH:mm:ss"); // 精确到秒
     TempPoint p{dtStr, dtStr2, temperature};
 
     // QMutexLocker flushLocker(&mMutexTemperature);

@@ -568,8 +568,8 @@ void CommHelper::onTemperatureTimeout_Thread(quint8 detID)
 {
     emit reportTemperatureTimeout(detID);//上报温度超时报警
 
-    return;
-    handleDetectorDisconnection(detID);
+    // return;
+    // handleDetectorDisconnection(detID);
 
     //如果该探测器在手动关闭POE供电列表中，则不处理
     if (mManualClosedPOEIDs.contains(detID)){
@@ -581,20 +581,19 @@ void CommHelper::onTemperatureTimeout_Thread(quint8 detID)
         return;
     }
 
-    //断电30min后重新打开供电
     stopMeasure(detID);
-    //先停止测量
-    int stopDelay = 30; //min
+    int stopDelay = 3; //min
     qInfo().nospace().noquote() << "谱仪[#" << detID
-            << QString("]温度心跳超时报警！停止测量并断电%1min后重新打开供电!").arg(stopDelay);
-    //断电
-    closeSwitcherPOEPower(detID);
-    //定时30min后重新打开供电
+            << QString("]温度心跳超时报警！停止测量，发送断电指令，%1min后重新发送开电指令").arg(stopDelay);
+    if (closeSwitcherPOEPower(detID))
+        qInfo().nospace() << "谱仪[#" << detID << "]断电指令已发送";
+    else
+        qInfo().nospace() << "谱仪[#" << detID << "]断电指令发送失败（交换机未连接或未就绪）";
     QTimer::singleShot(stopDelay*60*1000, this, [=](){
         if (openSwitcherPOEPower(detID))
-            qInfo().nospace() << "谱仪[#" << detID << "]重启供电";
+            qInfo().nospace() << "谱仪[#" << detID << "]开电指令已发送";
         else
-            qInfo().nospace() << "谱仪[#" << detID << "]重启供电失败";
+            qInfo().nospace() << "谱仪[#" << detID << "]开电指令发送失败（交换机未连接或未就绪）";
     });
 }
 
