@@ -232,8 +232,8 @@ void CommHelper::initSocket()
             // 3. 配置自定义保活参数（Windows参数单位为毫秒）
             TCP_KEEPLIVE keepCfg = {0};
             keepCfg.onoff = true;//开启keepalive属性
-            keepCfg.keepalivetime = 500;  //如果该连接在500ms内没有任何数据往来，则执行TCP层的探测，缺省值:7200(s)
-            keepCfg.keepaliveinterval = 500;//探测发包间隔是500ms,缺省值:75(s)
+            keepCfg.keepalivetime = 30*1000;  //如果该连接在30秒内没有任何数据往来，则执行TCP层的探测，缺省值:7200(s)
+            keepCfg.keepaliveinterval = 5*1000;//探测发包间隔是10秒,缺省值:75(s)
 
             DWORD retBytes = 0;
             WSAIoctl(
@@ -246,7 +246,7 @@ void CommHelper::initSocket()
                 &retBytes,
                 nullptr,
                 nullptr
-                );
+            );
 
             QString peerAddress = QString::fromStdString(channel->peerip());
             quint16 peerPort = channel->peerport();
@@ -1038,7 +1038,7 @@ void CommHelper::initSwitchers()
                 && index == mExtendTimeSynModule.poeIndex)
                 emit reportPoePowerStatus(0, on);
             else
-                emit reportPoePowerStatus(index, on);
+            emit reportPoePowerStatus(index, on);
         });
         connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::poeActionQueueIdle,
                 this, &CommHelper::tryClearPoeCloseInProgress,

@@ -75,12 +75,6 @@ void WaveformWindow::on_pushButton_start_clicked()
     timerStart = QDateTime::currentDateTime();
     timer->start(1000);
     ui->label_2->setText(timerStart.toString("yyyy-MM-dd HH:mm:ss"));
-    /*QTimer::singleShot(3000, this, [=](){
-        //指定时间未收到开始测量指令，则按钮恢复初始状态
-        if (!measuring){
-            ui->pushButton_start->setEnabled(true);
-        }
-    });*/
 }
 
 

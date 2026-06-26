@@ -49,6 +49,7 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
             mRespondString.append(dest);
 
             *mTextStream << rx_current;
+            mTextStream->flush();
         }
 
 #else
@@ -240,7 +241,7 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
 
                     qDebug() << "返回交换机POE口电源查询状态：" << mCurrentPoeIndex;
                     qint8 index = this->indexOfPort(mCurrentPoeIndex);
-                    handlePoeQueryResult(mCurrentPoeIndex, index, mapValues);
+                        handlePoeQueryResult(mCurrentPoeIndex, index, mapValues);
 
                     mRespondString.clear();
                     executeNextAction();
@@ -338,7 +339,7 @@ bool QHuaWeiSwitcherHelper::contains(quint8 index)
     if (index == 0x00)
         return true;
     else
-        return mMapAssociatedDetector.contains(index);
+    return mMapAssociatedDetector.contains(index);
 }
 
 //根据谱仪编号找POE端口号
@@ -347,7 +348,7 @@ qint8 QHuaWeiSwitcherHelper::portOfIndex(quint8 index)
     if (mMapAssociatedDetector.contains(index))
         return index;
     else
-        return -1;
+    return -1;
 }
 
 //根据POE端口号找谱仪编号
@@ -357,9 +358,9 @@ qint8 QHuaWeiSwitcherHelper::indexOfPort(quint8 port)
         return 0x00;
     else
     {
-        if (mMapAssociatedDetector.contains(port))
+    if (mMapAssociatedDetector.contains(port))
             return port;
-    }
+}
 
     return -1;
 }
