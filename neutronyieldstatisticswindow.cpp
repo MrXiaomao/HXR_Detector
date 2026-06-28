@@ -130,6 +130,37 @@ void applyDetectorTableItemFlags(QTableWidgetItem *item, int column)
         flags &= ~Qt::ItemIsEditable;
     item->setFlags(flags);
 }
+
+double compute909FitR2(const QVector<specStripData> &data)
+{
+    if (data.size() < 2)
+        return 0.0;
+
+    double meanY = 0.0;
+    for (const specStripData &d : data)
+        meanY += d.y;
+    meanY /= data.size();
+
+    double ssRes = 0.0;
+    double ssTot = 0.0;
+    for (const specStripData &d : data) {
+        const double diff = d.y - d.fit_y;
+        ssRes += diff * diff;
+        const double dev = d.y - meanY;
+        ssTot += dev * dev;
+    }
+    if (ssTot <= 0.0)
+        return 0.0;
+    return qBound(0.0, 1.0 - ssRes / ssTot, 1.0);
+}
+
+double mapFitQualityToUncertainty(double quality)
+{
+    constexpr double kUncMin = 0.1;
+    constexpr double kUncMax = 3.0;
+    quality = qBound(0.0, quality, 1.0);
+    return kUncMin + (1.0 - quality) * (kUncMax - kUncMin);
+}
 } // namespace
 
 NeutronYieldStatisticsWindow::NeutronYieldStatisticsWindow(bool isDarkTheme, QWidget *parent)
@@ -2102,6 +2133,15 @@ void NeutronYieldStatisticsWindow::slotSuccess(int detID)
         auto *yieldItem = new QTableWidgetItem(QString::number(yield));
         applyDetectorTableItemFlags(yieldItem, 1);
         ui->tableWidget->setItem(detID-1, 1, yieldItem);
+
+        const QVector<specStripData> fit909 = dealFile[detID - 1]->GetCount909Data();
+        auto *uncItem = new QTableWidgetItem;
+        applyDetectorTableItemFlags(uncItem, 2);
+        if (fit909.size() >= 2) {
+            const double r2 = compute909FitR2(fit909);
+            uncItem->setText(QString::number(mapFitQualityToUncertainty(r2), 'f', 2));
+        }
+        ui->tableWidget->setItem(detID - 1, 2, uncItem);
 
         //从界面左侧表格读取探测器经纬度(这意味着用户可以离线分析中手动修改各个探测器的坐标位置）
         updateYieldSpatialDistributionForRow(detID - 1);

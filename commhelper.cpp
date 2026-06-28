@@ -213,7 +213,10 @@ void CommHelper::initSocket()
 
             // 禁用Nagle算法，降低数据包的传输延迟
             tcp_nodelay(channel->fd());
-
+            // 设置接收缓冲区大小
+            int rcvbuf = 4 * 1024 * 1024;  // 4MB
+            setsockopt(channel->fd(), SOL_SOCKET, SO_RCVBUF, (char*)&rcvbuf, sizeof(rcvbuf));
+            
             // 1. 开启基础保活开关,缺省值:0(关闭)
             //tcp_keepalive(channel->fd());
             BOOL keepAliveEnable = TRUE;
@@ -339,7 +342,9 @@ void CommHelper::initSocket()
         QTcpSocket* connection = new QTcpSocket(this);
         connection->setSocketDescriptor(socketDescriptor);
         connection->setSocketOption(QAbstractSocket::KeepAliveOption, QVariant(true)); // 启用保活
-
+        // 设置接收缓冲区大小
+        int rcvbuf = 4 * 1024 * 1024;  // 4MB
+        setsockopt(connection->socketDescriptor(), SOL_SOCKET, SO_RCVBUF, (char*)&rcvbuf, sizeof(rcvbuf));
         QString peerAddress = connection->peerAddress().toString();
         quint16 peerPort = connection->peerPort();
         qDebug().nospace() << "新客户端连接，地址：" << peerAddress << ", 端口：" << peerPort;
