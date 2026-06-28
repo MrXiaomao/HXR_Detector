@@ -161,7 +161,7 @@ DEFINES += GIT_BRANCH=\"\\\"$$GIT_BRANCH\\\"\"
 DEFINES += GIT_DATE=\"\\\"$$GIT_DATE\\\"\"
 DEFINES += GIT_HASH=\"\\\"$$GIT_HASH\\\"\"
 DEFINES += GIT_VERSION=\"\\\"$$GIT_VERSION\\\"\"
-DEFINES += APP_VERSION="\\\"V3.1.6\\\""
+DEFINES += APP_VERSION="\\\"V3.2.0\\\""
 
 windows {
     # MinGW

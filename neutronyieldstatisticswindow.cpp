@@ -154,11 +154,19 @@ double compute909FitR2(const QVector<specStripData> &data)
     return qBound(0.0, 1.0 - ssRes / ssTot, 1.0);
 }
 
-double mapFitQualityToUncertainty(double quality)
+double mapFitQualityToUncertainty(double r2)
 {
-    constexpr double kUncMin = 0.1;
+    constexpr double kUncMin = 1.0;
     constexpr double kUncMax = 3.0;
-    quality = qBound(0.0, quality, 1.0);
+    constexpr double kR2TypicalMin = 0.9;
+    constexpr double kR2Perfect = 1.0;
+
+    r2 = qBound(0.0, r2, 1.0);
+
+    double quality = 0.0;
+    if (r2 >= kR2TypicalMin)
+        quality = (r2 - kR2TypicalMin) / (kR2Perfect - kR2TypicalMin);
+
     return kUncMin + (1.0 - quality) * (kUncMax - kUncMin);
 }
 } // namespace

@@ -77,6 +77,9 @@ public:
     void setAssociatedDetector(quint8 index);
     void setAssociatedDetector(QString);
 
+    /** 全部开/关时保留该 POE 端口的队列（时间同步触发模块），0 表示无保护端口 */
+    void setProtectedPoePort(quint8 port);
+
     /*
      连接并查询电源状态
     */
@@ -147,6 +150,10 @@ private:
     bool hasWaitingPoeRetry() const;
     bool hasPendingPoeActionsForPort(quint8 port) const;
     void removePendingPoeActionsForPort(quint8 port);
+    void removePendingQueryActionsForPort(quint8 port);
+    void removeAllPendingQueryActions();
+    void clearAllPendingActionsExceptProtected();
+    void finishCurrentActionAndAdvance();
     bool isPoeSequenceInProgress() const;
     void flushCommandLog();
 
@@ -198,6 +205,8 @@ private:
     QElapsedTimer mBusyStartTimer;//指令开始直接时间
     QString mCurrentCommand;
     quint64 mActionGeneration = 0; // 动作生成序号
+    quint8 mProtectedPoePort = 0;  // 全部开/关时不清理、不操作的 POE 端口
+    bool mQueueReset = false;      // 队列被重置后，忽略当前在途指令的 removeFirst
 
     QVector<quint8/*index-谱仪编号*/> mMapAssociatedDetector;// 当前交换机所关联的POE端口号
     // uint8_t mQueryPosition = 0;

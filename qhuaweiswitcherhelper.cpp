@@ -248,7 +248,7 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
                         handlePoeQueryResult(mCurrentPoeIndex, index, mapValues);
 
                     mRespondString.clear();
-                    executeNextAction();
+                    finishCurrentActionAndAdvance();
                 }
             }
             else if (mCurrentAction == acSwitchInterface){//if (mCurrentCommand == enterInterfaceCmd){
@@ -256,21 +256,21 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
                     mRespondString.clear();
 
                     // 执行下一条指令
-                    executeNextAction();
+                    finishCurrentActionAndAdvance();
                 }
             }
             else if (mCurrentAction == acOpenPoe){//if (mCurrentCommand == "poe enable\r\n"){
                 if (mRespondString.endsWith(switchCmd.toLatin1())){
                     qDebug() << "返回交换机POE口电源控制状态[开]：" << mCurrentPoeIndex;
                     mRespondString.clear();
-                    executeNextAction();
+                    finishCurrentActionAndAdvance();
                 }
             }
             else if (mCurrentAction == acClosePoe){//if (mCurrentCommand == "undo poe enable\r\n"){
                 if (mRespondString.endsWith(switchCmd.toLatin1())){
                     qDebug() << "返回交换机POE口电源控制状态[关]：" << mCurrentPoeIndex;
                     mRespondString.clear();
-                    executeNextAction();
+                    finishCurrentActionAndAdvance();
                 }
             }
 
@@ -391,6 +391,11 @@ void QHuaWeiSwitcherHelper::setAssociatedDetector(QString text)
             mMapAssociatedDetector.push_back(detectorId);
     }
 }
+
+void QHuaWeiSwitcherHelper::setProtectedPoePort(quint8 port)
+{
+    mProtectedPoePort = port;
+}
 /*
  连接并查询电源状态
 */
@@ -470,11 +475,13 @@ bool QHuaWeiSwitcherHelper::isPoeSequenceInProgress() const
 
 bool QHuaWeiSwitcherHelper::hasPendingPoeActionsForPort(quint8 port) const
 {
-    if (isPoeSequenceInProgress() && mCurrentPoeIndex == port)
+    if (isPoeSequenceInProgress() && mCurrentPoeIndex == port
+        && mCurrentAction != acQueryState && mCurrentAction != acKeepLive)
         return true;
 
     for (const ACTION_WAIT &item : mActionsWait) {
-        if (item.poeIndex == port && item.action != acKeepLive)
+        if (item.poeIndex == port && item.action != acKeepLive
+            && item.action != acQueryState)
             return true;
     }
 
@@ -494,6 +501,64 @@ void QHuaWeiSwitcherHelper::removePendingPoeActionsForPort(quint8 port)
         mActionsWait.end());
 }
 
+void QHuaWeiSwitcherHelper::removePendingQueryActionsForPort(quint8 port)
+{
+    mActionsWait.erase(
+        std::remove_if(mActionsWait.begin(), mActionsWait.end(),
+                       [port](const ACTION_WAIT &item) {
+                           return item.poeIndex == port && item.action == acQueryState;
+                       }),
+        mActionsWait.end());
+}
+
+void QHuaWeiSwitcherHelper::removeAllPendingQueryActions()
+{
+    mActionsWait.erase(
+        std::remove_if(mActionsWait.begin(), mActionsWait.end(),
+                       [](const ACTION_WAIT &item) {
+                           return item.action == acQueryState;
+                       }),
+        mActionsWait.end());
+}
+
+void QHuaWeiSwitcherHelper::clearAllPendingActionsExceptProtected()
+{
+    mActionsWait.erase(
+        std::remove_if(mActionsWait.begin(), mActionsWait.end(),
+                       [this](const ACTION_WAIT &item) {
+                           if (item.action == acKeepLive)
+                               return false;
+                           if (mProtectedPoePort != 0 && item.poeIndex == mProtectedPoePort)
+                               return false;
+                           return true;
+                       }),
+        mActionsWait.end());
+
+    for (auto it = mVerifyByPort.begin(); it != mVerifyByPort.end(); ) {
+        if (mProtectedPoePort != 0 && it.key() == mProtectedPoePort)
+            ++it;
+        else
+            it = mVerifyByPort.erase(it);
+    }
+
+    ++mActionGeneration;
+
+    if (isPoeSequenceInProgress()
+        && (mProtectedPoePort == 0 || mCurrentPoeIndex != mProtectedPoePort)) {
+        mQueueReset = true;
+    }
+}
+
+void QHuaWeiSwitcherHelper::finishCurrentActionAndAdvance()
+{
+    if (mQueueReset) {
+        mQueueReset = false;
+        executeNextAction(true);
+    } else {
+        executeNextAction();
+    }
+}
+
 /*
  打开交换机POE口输出电源
 */
@@ -510,23 +575,23 @@ bool QHuaWeiSwitcherHelper::openSwitcherPOEPower(quint8 port/* = 0*/)
         if (mBusyStartTimer.isValid() && mBusyStartTimer.elapsed() >= 30000 && mActionsWait.size() > 0)
             mActionsWait.clear();// 为了防止指令堵塞，清空闲置指令
 
-        const bool poeBusy = isPoeSequenceInProgress();
-
         if (port == 0){
-            if (!poeBusy) {
-                for (auto iter = mMapAssociatedDetector.begin(); iter != mMapAssociatedDetector.end(); ++iter)
-                    removePendingPoeActionsForPort(*iter);
-            }
+            clearAllPendingActionsExceptProtected();
 
             for (auto iter = mMapAssociatedDetector.begin(); iter != mMapAssociatedDetector.end(); ++iter){
-                if (poeBusy && hasPendingPoeActionsForPort(*iter))
+                if (mProtectedPoePort != 0 && *iter == mProtectedPoePort)
+                    continue;
+
+                if (mMapPoeState.contains(*iter) && mMapPoeState[*iter])
                     continue;
 
                 enqueuePoeOpenActions(*iter);
             }
         }
         else{
-            if (!poeBusy)
+            removePendingQueryActionsForPort(port);
+
+            if (!isPoeSequenceInProgress())
                 removePendingPoeActionsForPort(port);
 
             if (!hasPendingPoeActionsForPort(port)
@@ -536,7 +601,9 @@ bool QHuaWeiSwitcherHelper::openSwitcherPOEPower(quint8 port/* = 0*/)
         }
     }
 
-    if (!mSwitcherIsBusy.load() || (mBusyStartTimer.isValid() && mBusyStartTimer.elapsed() >= 30000)/*距离上次指令执行已经超过30s*/){
+    if (!mQueueReset
+        && (!mSwitcherIsBusy.load()
+            || (mBusyStartTimer.isValid() && mBusyStartTimer.elapsed() >= 30000))) {
         executeNextAction(true);
     }
 
@@ -557,15 +624,12 @@ bool QHuaWeiSwitcherHelper::closeSwitcherPOEPower(quint8 port/* = 0*/, bool disc
             mActionsWait.clear();// 为了防止指令堵塞，清空闲置指令
 
         if (port == 0){
-            const bool poeBusy = isPoeSequenceInProgress();
-            if (!poeBusy) {
-                for (auto iter = mMapAssociatedDetector.begin(); iter != mMapAssociatedDetector.end(); ++iter)
-                    removePendingPoeActionsForPort(*iter);
-            }
+            clearAllPendingActionsExceptProtected();
 
-            for (auto iter = mMapAssociatedDetector.begin(); iter!=mMapAssociatedDetector.end(); ++iter){
-                if (poeBusy && hasPendingPoeActionsForPort(*iter))
+            for (auto iter = mMapAssociatedDetector.begin(); iter != mMapAssociatedDetector.end(); ++iter){
+                if (mProtectedPoePort != 0 && *iter == mProtectedPoePort)
                     continue;
+
                 enqueuePoeCloseActions(*iter);
             }
         }
@@ -576,7 +640,9 @@ bool QHuaWeiSwitcherHelper::closeSwitcherPOEPower(quint8 port/* = 0*/, bool disc
         }
     }
 
-    if (!mSwitcherIsBusy.load() || (mBusyStartTimer.isValid() && mBusyStartTimer.elapsed() >= 30000)/*距离上次指令执行已经超过5s*/){
+    if (!mQueueReset
+        && (!mSwitcherIsBusy.load()
+            || (mBusyStartTimer.isValid() && mBusyStartTimer.elapsed() >= 30000))) {
         executeNextAction(true);
     }
 

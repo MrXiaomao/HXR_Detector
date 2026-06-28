@@ -1151,11 +1151,14 @@ bool CommHelper::isOpen()
 
 void CommHelper::connectSwitcher(bool query)
 {
-    for (auto switcherHelper : mHuaWeiSwitcherHelper)
-    {
-        mExtendTimeSynModule.reload();
-        if (switcherHelper == mHuaWeiSwitcherHelper[mExtendTimeSynModule.switcherIndex-1])
+    mExtendTimeSynModule.reload();
+    for (int i = 0; i < mHuaWeiSwitcherHelper.size(); ++i) {
+        auto switcherHelper = mHuaWeiSwitcherHelper[i];
+        if (switcherHelper == mHuaWeiSwitcherHelper[mExtendTimeSynModule.switcherIndex - 1])
             switcherHelper->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
+
+        switcherHelper->setProtectedPoePort(
+            (i + 1 == mExtendTimeSynModule.switcherIndex) ? mExtendTimeSynModule.poeIndex : 0);
 
         if (query)
             switcherHelper->queryPowerStatus();
@@ -1179,6 +1182,7 @@ void CommHelper::openPower()
     mPoePowerClosing = false;
     mClosingExtendTimeSynModule = false;
 
+    mExtendTimeSynModule.reload();
     GlobalSettings settings(DEVICE_CONFIG_FILE);
     mHuaWeiSwitcherCount =  settings.value("Switcher/Count", 0).toUInt();
     for (int i=0; i<mHuaWeiSwitcherCount; ++i){
@@ -1187,10 +1191,9 @@ void CommHelper::openPower()
         for (auto switcherHelper : mHuaWeiSwitcherHelper)
         {
             if (switcherHelper->ip() == ip){
-                switcherHelper->setAssociatedDetector(ass); // 这里只关联了谱仪，如果需要关联时间同步模块，需要开发下面的几行代码
-                // mExtendTimeSynModule.reload();
-                // if (mExtendTimeSynModule.switcherIndex == (i+1))
-                //     switcherHelper->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
+                switcherHelper->setProtectedPoePort(
+                    (i + 1 == mExtendTimeSynModule.switcherIndex) ? mExtendTimeSynModule.poeIndex : 0);
+                switcherHelper->setAssociatedDetector(ass);
                 switcherHelper->openSwitcherPOEPower(0x00);
             }
         }
@@ -1203,6 +1206,7 @@ void CommHelper::closePower(bool disconnect)
 {
     markPoeCloseInProgress();
 
+    mExtendTimeSynModule.reload();
     GlobalSettings settings(DEVICE_CONFIG_FILE);
     mHuaWeiSwitcherCount =  settings.value("Switcher/Count", 0).toUInt();
     for (int i=0; i<mHuaWeiSwitcherCount; ++i){
@@ -1211,10 +1215,9 @@ void CommHelper::closePower(bool disconnect)
         for (auto switcherHelper : mHuaWeiSwitcherHelper)
         {
             if (switcherHelper->ip() == ip){
-                switcherHelper->setAssociatedDetector(ass);// 这里只关联了谱仪，如果需要关联时间同步模块，需要开发下面的几行代码
-                // mExtendTimeSynModule.reload();
-                // if (mExtendTimeSynModule.switcherIndex == (i+1))
-                //     switcherHelper->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
+                switcherHelper->setProtectedPoePort(
+                    (i + 1 == mExtendTimeSynModule.switcherIndex) ? mExtendTimeSynModule.poeIndex : 0);
+                switcherHelper->setAssociatedDetector(ass);
                 for (quint8 detIndex = 1; detIndex <= DET_NUM; ++detIndex) {
                     if (switcherHelper->contains(detIndex) && !mIntentionalPOECloseIDs.contains(detIndex))
                         mIntentionalPOECloseIDs.append(detIndex);
