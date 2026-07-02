@@ -903,7 +903,7 @@
                 </size>
                </property>
                <property name="maximum">
-                <number>999999</number>
+                <number>200000000</number>
                </property>
                <property name="value">
                 <number>100</number>
@@ -940,6 +940,9 @@
                  <width>50</width>
                  <height>0</height>
                 </size>
+               </property>
+               <property name="maximum">
+                <number>200000000</number>
                </property>
               </widget>
              </item>
@@ -982,7 +985,7 @@
                 <number>1</number>
                </property>
                <property name="maximum">
-                <number>9999</number>
+                <number>10000000</number>
                </property>
               </widget>
              </item>
@@ -1167,7 +1170,7 @@
      <x>0</x>
      <y>0</y>
      <width>1431</width>
-     <height>21</height>
+     <height>25</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">
