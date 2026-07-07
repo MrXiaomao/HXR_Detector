@@ -1,8 +1,9 @@
 #ifndef GLOBALSETTINGS_H
 #define GLOBALSETTINGS_H
 
+#include "spectypes.h"
+
 #include <QObject>
-#include <string.h>
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -11,146 +12,8 @@
 #include <QReadWriteLock>
 #include <QFileInfo>
 #include <QFileSystemWatcher>
-#include <QElapsedTimer>
-
-#include <cstring>      // 用于内存初始化（如memset）
-#include <QtEndian> //qFromBigEndian需要
-// 子能谱数据包信息
-#pragma pack(push, 1)  // 确保字节对齐
-struct SubSpectrumPacket {
-    quint32 header;        // FFFF AAB1
-    quint16 dataType;      // 00D2
-    quint32 spectrumSeq;   // 能谱序号
-    quint32 measureTime;   // 测量时间
-    quint32 deathTime;     // 死时间
-    quint16 spectrumSubNo; // 能谱编号
-    quint32 spectrum[256]; // 能谱数据 256*32bit
-    quint32 timeUTCs;      // utc整数秒
-    quint32 timeUTCms;     // utc小数秒
-    quint32 reserved;      // 保留位 0000 0000
-    quint32 tail;          // FFFF CCD1
-
-    // 构造函数初始化
-    SubSpectrumPacket()
-        : spectrumSeq(0),
-        measureTime(0),
-        deathTime(0),
-        spectrumSubNo(0) {
-        // 初始化能谱数组
-        std::memset(spectrum, 0, sizeof(spectrum));
-    }
-
-    // 添加字节序转换成员函数
-    // 字节序问题：x86 是小端序，网络数据通常是大端序
-    void convertNetworkToHost() {        // 添加字节序转换成员函数
-        // 处理字节序（Windows是小端序，网络数据通常是大端序）
-        header = qFromBigEndian<quint32>(header);
-        dataType = qFromBigEndian<quint16>(dataType);
-        spectrumSeq = qFromBigEndian<quint32>(spectrumSeq);
-        measureTime = qFromBigEndian<quint32>(measureTime);
-        deathTime = qFromBigEndian<quint32>(deathTime);
-        spectrumSubNo = qFromBigEndian<quint16>(spectrumSubNo);
-        timeUTCs = qFromBigEndian<quint32>(timeUTCs);
-        timeUTCms = qFromBigEndian<quint32>(timeUTCms);
-        tail = qFromBigEndian<quint32>(tail);
-
-        // 转换能谱数据数组
-        for (int i = 0; i < 256; ++i) {
-            spectrum[i] = qFromBigEndian<quint32>(spectrum[i]);
-        }
-    }
-};
-#pragma pack(pop)
-
-// 用于描述探测器空间位置，及其测得的中子产额数值
-struct Sensor {
-    double lonDeg;  // 经度[-180,180]
-    double latDeg;  // 纬度[-90, 90]
-    double value;   // 中子产额
-};
-
-// 用于写入到HDF5文件的能谱数据
-struct H5Spectrum{
-    quint32 sequence;      // 能谱序号
-    quint32 timeUTCs;      // utc整数秒
-    quint32 timeUTCms;     // utc小数秒
-    quint32 measureTime;   // 能量测量时间间隔,单位ms
-    quint32 deathTime;      // 死时间,单位*10ns
-    quint32 spectrum[8192]; // 8192道完整数据
-};
-
-// 用于解包时的完整能谱数据
-#pragma pack(push, 1)  // 确保字节对齐
-struct FullSpectrum {
-    quint32 sequence;      // 能谱序号
-    quint32 timeUTCs;      // utc整数秒
-    quint32 timeUTCms;     // utc小数秒
-    quint32 measureTime;   // 能量测量时间间隔,单位ms
-    quint32 deathTime;      // 死时间,单位*10ns
-    quint32 spectrum[8192]; // 8192道完整数据
-    quint32 receivedMask = 0;   // 32个子包位图
-    QDateTime completeTime; // 完成时间,记录一个完整能谱数据接收完的北京时间
-    bool isComplete;       // 是否完整
-    // QSet<quint16> receivedPackets; // 已收到的包编号
-    
-    // 默认构造函数
-    FullSpectrum() : sequence(0), measureTime(0), deathTime(0), receivedMask(0), isComplete(false) {
-        memset(spectrum, 0, sizeof(spectrum));
-    }
-    
-    // 拷贝构造函数
-    FullSpectrum(const FullSpectrum& other) 
-        : sequence(other.sequence), measureTime(other.measureTime), deathTime(other.deathTime),
-          receivedMask(other.receivedMask), completeTime(other.completeTime), isComplete(other.isComplete),
-          timeUTCs(other.timeUTCs), timeUTCms(other.timeUTCms) {
-        memcpy(spectrum, other.spectrum, sizeof(spectrum));
-    }
-    
-    // 赋值运算符
-    FullSpectrum& operator=(const FullSpectrum& other) {
-        if (this != &other) {
-            sequence = other.sequence;
-            timeUTCs = other.timeUTCs;
-            timeUTCms = other.timeUTCms;
-            measureTime = other.measureTime;
-            deathTime = other.deathTime;
-            receivedMask = other.receivedMask;
-            completeTime = other.completeTime;
-            isComplete = other.isComplete;
-            memcpy(spectrum, other.spectrum, sizeof(spectrum));
-        }
-        return *this;
-    }
-
-    // 添加字节序转换成员函数
-    // 字节序问题：x86 是小端序，网络数据通常是大端序
-    void convertNetworkToHost() {
-        sequence = qFromBigEndian<quint32>(sequence);
-        timeUTCs = qFromBigEndian<quint32>(timeUTCs );
-        timeUTCms = qFromBigEndian<quint32>(timeUTCms);
-        measureTime = qFromBigEndian<quint32>(measureTime);
-        deathTime = qFromBigEndian<quint32>(deathTime);
-
-        // 转换能谱数据数组
-        for (int i = 0; i < 8192; ++i) {
-            spectrum[i] = qFromBigEndian<quint32>(spectrum[i]);
-        }
-    }
-};
-#pragma pack(pop)
-
-// 存放粒子信息的数据
-struct ParticleData{
-    QDateTime time;//粒子事件发生的时间
-    quint16 energy; //粒子幅度
-    quint16 typeFlag; //粒子类型标志（0：γ；1：α）
-};
-
-// 将FullSpectrum结构中的部分数据转化为H5Spectrum类型，用于存储。
-H5Spectrum FullSpectoH5Spec(const FullSpectrum& src);
-
-// 注册 H5Spectrum 为 Qt 元类型
-Q_DECLARE_METATYPE(H5Spectrum)
+#include <QColor>
+#include <QSettings>
 
 #define SYSTEM_CONFIG_FILE "./Config/system_config.ini" //系统配置文件,保存UI界面等全局配置信息,用户不建议编辑
 #define DEVICE_CONFIG_FILE "./Config/device_config.ini" //设备配置文件,保存设备相关的配置信息，如探测器参数等，用户可以编辑
@@ -646,9 +509,6 @@ protected:
     QFileSystemWatcher *mConfigurationFileWatch;
 };
 
-#include <QColor>
-#include <QSettings>
-#include <QApplication>
 class GlobalSettings: public QSettings
 {
     Q_OBJECT
@@ -682,154 +542,6 @@ private:
     bool mThemeColorEnable = true;
     QColor mThemeColor = QColor(255,255,255);
 };
-
-#define DET_NUM 32
-#define IP_LENGTH 17
-#define MAC_LENGTH 18
-#define DEFAULT_HDF5_FILENAME "./Config/Settings.H5"
-//参数结构定义
-#pragma pack(push, 1)  // 确保字节对齐
-typedef struct _DetParameter{
-    //探测器ID
-    quint8 id;
-
-    //经度：0-360
-    double longitude;
-
-    //纬度：0-180
-    double latitude;
-
-    //基本设置
-    //增益
-    /*
-     0001：对应增益为0.08；
-     0002：对应增益为0.16；
-     0003：对应增益为0.32；
-     0004：对应增益为1.26；
-     0005：对应增益为2.52；
-     0006：对应增益为5.01；
-     0007：对应增益为10.0；
-    */
-    double gain;
-
-    //死时间
-    quint8 deathTime;
-    
-    //触发阈值
-    quint16 triggerThold;
-
-    // 探测器网络设置，用于界面匹配对应通道，并不下发指令
-    //IP,端口地址 192.168.0:5000
-    char det_Ip_port[IP_LENGTH];
- 
-    //能谱设置
-    //能谱刷新时间（毫秒）
-    quint32 spectrumRefreshTime;
-    //能谱长度
-    quint32 spectrumLength;
-
-    //能谱能量范围(主界面勾选能量刻度后才起作用)
-    //能谱最小能量
-    double spectrumPlotEnMin;
-    //能谱最大能量
-    double spectrumPlotEnMax;
-
-    //波形设置
-    //触发模式
-    quint8 waveformTriggerMode;
-    //波形长度
-    quint32 waveformLength;
-
-    //梯形成型
-    //是否启用
-    bool trapShapeEnable;
-    //时间常数D1
-    quint16 trapShapeTimeConstD1;
-    //时间常数D2
-    quint16 trapShapeTimeConstD2;
-    //上升沿
-    quint8 trapShapeRisePoint;
-    //平顶
-    quint8 trapShapePeakPoint;
-    //下降沿
-    quint8 trapShapeFallPoint;
-
-    //高压电源
-    //是否启用
-    bool highVoltageEnable;
-    //DAC高压输出电平
-    quint16 highVoltageOutLevel;
-
-    //α/γ甄别阈值（粒子模式）
-    quint16 alphaGammaUpperThold;
-    quint16 alphaGammaLowerThold;
-
-    _DetParameter(){
-        id = 1;
-
-        longitude = 0.0;
-
-        latitude = 0.0;
-
-        //基本设置
-        //增益
-        gain = 1.26;
-
-        //死时间,单位*10ns
-        deathTime = 30;
-
-        //触发阈值
-        triggerThold = 100;
-
-        //网络设置
-        //IP地址
-        memset(det_Ip_port, 0, sizeof(det_Ip_port));
-        qstrcpy(det_Ip_port, "0.0.0.0");
-
-        //能谱设置
-        //能谱刷新时间,单位ms
-        spectrumRefreshTime = 1000;
-        //能谱长度
-        spectrumLength = 8192;
-
-        //能谱能量范围(刻度后才起作用)
-        //能谱最小能量/keV
-        spectrumPlotEnMin = 0.0;
-        //能谱最大能量/keV
-        spectrumPlotEnMax = 3000.0;
-
-        //波形设置
-        //触发模式 0-定时触发 1-普通触发
-        waveformTriggerMode = 0;
-        //波形长度
-        waveformLength = 512;
-
-        //梯形成型
-        //是否启用
-        trapShapeEnable = true;
-        //时间常数D1
-        trapShapeTimeConstD1 = 24111;
-        //时间常数D2
-        trapShapeTimeConstD2 = 59310;
-        //上升沿
-        trapShapeRisePoint = 10;
-        //平顶
-        trapShapePeakPoint = 15;
-        //下降沿
-        trapShapeFallPoint = 10;
-
-        //高压电源
-        //是否启用
-        highVoltageEnable = true;
-        //DAC高压输出电平
-        highVoltageOutLevel = 800;
-
-        //α/γ甄别阈值
-        alphaGammaUpperThold = 8192;
-        alphaGammaLowerThold = 6500;
-    }
-}DetParameter;
-#pragma pack(pop)
 
 #include "H5Cpp.h"
 class HDF5Settings: public QObject

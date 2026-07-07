@@ -14,7 +14,7 @@
 #include <atomic>
 #include <functional>
 
-#include "globalsettings.h"
+#include "spectypes.h"
 #include "curveFit.h"
 
 enum class ParseProgressPhase {

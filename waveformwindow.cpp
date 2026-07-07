@@ -1,5 +1,6 @@
 ﻿#include "waveformwindow.h"
 #include "ui_waveformwindow.h"
+#include "commhelper.h"
 #include "useractionlogger.h"
 #include <QToolButton>
 #include <QFileDialog>

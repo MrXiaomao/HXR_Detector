@@ -3,7 +3,8 @@
 
 #include <QWidget>
 #include <QtConcurrent>
-#include "commhelper.h"
+
+class CommHelper;
 
 namespace Ui {
 class OTAUpgradeWindow;

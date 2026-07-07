@@ -18,6 +18,7 @@
 #include <QStyleOptionButton>
 #include <QPainter>
 #include <QButtonGroup>
+#include <QTimer>
 
 class CheckBoxDelegate : public QStyledItemDelegate {
 protected:

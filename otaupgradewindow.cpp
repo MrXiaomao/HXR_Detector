@@ -1,5 +1,6 @@
 ﻿#include "otaupgradewindow.h"
 #include "ui_otaupgradewindow.h"
+#include "commhelper.h"
 #include <QToolButton>
 #include <QFileDialog>
 #include <QAction>

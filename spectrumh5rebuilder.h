@@ -6,7 +6,7 @@
 #include <QVector>
 #include <atomic>
 
-#include "globalsettings.h"
+#include "spectypes.h"
 
 struct SpectrumDatEntry {
     QString filePath;

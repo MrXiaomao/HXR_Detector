@@ -70,6 +70,7 @@ HEADERS += \
     qlitethread.h \
     spectrumh5rebuilder.h \
     spectrumh5rebuildwindow.h \
+    spectypes.h \
     commhelper.h \
     crashhandler.h \
     detparamlogger.h \

@@ -1,5 +1,6 @@
 ﻿#include "parsedata.h"
 #include "offlinespectrumparser.h"
+#include "globalsettings.h"
 #include <QFile>
 #include <QFileInfo>
 #include <QDataStream>

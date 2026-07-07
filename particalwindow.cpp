@@ -1,5 +1,6 @@
 ﻿#include "particalwindow.h"
 #include "ui_particalwindow.h"
+#include "commhelper.h"
 #include "useractionlogger.h"
 #include <QToolButton>
 #include <QFileDialog>

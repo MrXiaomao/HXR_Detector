@@ -1,7 +1,19 @@
 ﻿#include "commhelper.h"
+#include "globalsettings.h"
+#include "dataprocessor.h"
+#include "qhuaweiswitcherhelper.h"
 #include <QDataStream>
 #include <QNetworkSession>
 #include <QNetworkConfigurationManager>
+#include <QThread>
+
+void CommHelper::extendTimeSynModule::reload()
+{
+    GlobalSettings settings(DEVICE_CONFIG_FILE);
+    ip = settings.value("TimeSynModule/ip").toString();
+    poeIndex = settings.value("TimeSynModule/poeIndex", 24).toInt();
+    switcherIndex = settings.value("TimeSynModule/switcherIndex", 1).toInt();
+}
 
 // 全局类名与 commhelper.h 中 friend 声明一致
 class SpectrumH5FlushThread : public QThread {

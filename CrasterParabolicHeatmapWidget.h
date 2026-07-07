@@ -6,7 +6,7 @@
 #include <QPainterPath>
 #include <vector>
 #include <cmath>
-#include "globalsettings.h"
+#include "spectypes.h"
 
 class CrasterParabolicHeatmapWidget : public QWidget {
     Q_OBJECT

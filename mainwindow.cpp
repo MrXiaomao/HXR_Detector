@@ -1,5 +1,11 @@
 ﻿#include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include "commhelper.h"
+#include "globalsettings.h"
+#include "clientpeerswindow.h"
+#include "detsettingwindow.h"
+#include "otaupgradewindow.h"
+#include "QGoodWindowHelper"
 #include "switchbutton.h"
 #include "useractionlogger.h"
 #include <QTimer>
@@ -2902,7 +2908,11 @@ void MainWindow::on_action_yieldCalibration_triggered()
     // NeutronYieldCalibration *w = new NeutronYieldCalibration(this);
     NeutronYieldCalibration *w = new NeutronYieldCalibration(nullptr);
     w->setAttribute(Qt::WA_DeleteOnClose, true); // 关闭时自动删除
-    w->setWindowFlags(Qt::WindowCloseButtonHint|Qt::Dialog); // 只显示关闭按钮
+    // 最小化/最大化/关闭按钮
+    w->setWindowFlags(Qt::Window |
+        Qt::WindowMinimizeButtonHint |
+        Qt::WindowMaximizeButtonHint |
+        Qt::WindowCloseButtonHint);
     w->setWindowModality(Qt::ApplicationModal);//模态属性，NonModal=非模态，ApplicationModal=应用程序模态（阻塞本程序所有窗口），WindowModal=窗口模态（阻塞父窗口）
     w->show();
 }

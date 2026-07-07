@@ -2,7 +2,8 @@
 #define LOCALSETTINGWINDOW_H
 
 #include <QWidget>
-#include "commhelper.h"
+
+class CommHelper;
 
 namespace Ui {
 class LocalSettingWindow;

@@ -2,12 +2,18 @@
 #define MAINWINDOW_H
 
 #include <QMainWindow>
+#include <QColor>
+#include <QElapsedTimer>
+#include <QHash>
+#include <QList>
+#include <QMap>
+#include <QMutex>
+#include <QPixmap>
+#include <QTextEdit>
+#include <QVector>
+#include <atomic>
 #include <vector>
-#include "commhelper.h"
-#include "clientpeerswindow.h"
-#include "detsettingwindow.h"
-#include "QGoodWindowHelper"
-#include "otaupgradewindow.h"
+#include "spectypes.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -15,6 +21,14 @@ class MainWindow;
 }
 QT_END_NAMESPACE
 
+class QCloseEvent;
+class QEvent;
+
+class CommHelper;
+class ClientPeersWindow;
+class DetSettingWindow;
+class OTAUpgradeWindow;
+class QGoodWindowHelper;
 class QCustomPlot;
 class QCPGraph;
 class QTimer;

@@ -1,4 +1,5 @@
 ﻿#include "commandadapter.h"
+#include "qlitethread.h"
 #include <QDebug>
 #include <QtEndian>
 #include <QTimer>

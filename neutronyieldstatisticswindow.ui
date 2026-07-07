@@ -884,7 +884,7 @@
                 <item row="2" column="1">
                  <widget class="QDateTimeEdit" name="messureDateTime">
                   <property name="enabled">
-                   <bool>false</bool>
+                   <bool>true</bool>
                   </property>
                   <property name="displayFormat">
                    <string>yyyy/M/d H:mm:ss</string>

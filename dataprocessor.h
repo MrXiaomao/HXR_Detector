@@ -19,7 +19,7 @@
 
 #include "qlitethread.h"
 #include "commandadapter.h"
-#include "globalsettings.h"
+#include "spectypes.h"
 
 #if ENABLE_LIBHV
 #include <hv/TcpServer.h>

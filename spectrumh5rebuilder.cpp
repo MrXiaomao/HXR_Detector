@@ -1,6 +1,7 @@
 #include "spectrumh5rebuilder.h"
 
 #include "offlinespectrumparser.h"
+#include "globalsettings.h"
 
 #include <QDateTime>
 #include <QDir>

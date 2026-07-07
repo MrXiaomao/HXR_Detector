@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-04-20 09:21:28
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-06-15 16:57:18
+ * @LastEditTime: 2026-02-01 22:39:47
  * @Description: 离线数据分析 中子产额分析
  */
 #include "neutronyieldstatisticswindow.h"
@@ -538,7 +538,11 @@ void NeutronYieldStatisticsWindow::initFileListTable()
     table->setColumnWidth(ColSpecTimeInterval, 90);
     table->horizontalHeader()->setSectionResizeMode(ColValidChannels, QHeaderView::Fixed);
     table->setColumnWidth(ColValidChannels, 100);
-
+    ui->tableWidget_fileList->setEditTriggers(
+        QAbstractItemView::DoubleClicked |
+        QAbstractItemView::SelectedClicked |
+        QAbstractItemView::EditKeyPressed
+    );
     connect(table->model(), &QAbstractItemModel::rowsMoved, this, [this]() {
         refreshFileListBasicColumns();
         updateMeasurementInfoFromFirstFile();
@@ -1394,6 +1398,7 @@ void NeutronYieldStatisticsWindow::initSpectrumCustomPlot()
     ui->widget_flowLayoutContainer->setLayout(flowLayout);
 
     QCustomPlotHelper* customPlotHelper = new QCustomPlotHelper(customPlot, this);
+    customPlotHelper->setRangeSelectActionVisible(false); // 禁用右键的选择范围
     customPlot->setProperty("enable-dataTracer", true);
     customPlot->setAntialiasedElements(QCP::aeAll);
     customPlot->legend->setVisible(false);

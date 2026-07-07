@@ -9,7 +9,8 @@
 #define DETSETTINGWINDOW_H
 
 #include <QWidget>
-#include "commhelper.h"
+
+class CommHelper;
 
 #include <QStyledItemDelegate>
 #include <QLineEdit>

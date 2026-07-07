@@ -1,7 +1,7 @@
 #ifndef DETPARAMLOGGER_H
 #define DETPARAMLOGGER_H
 
-#include "globalsettings.h"
+#include "spectypes.h"
 
 namespace DetParamLogger {
 

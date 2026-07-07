@@ -6,7 +6,7 @@
 #include <QString>
 #include <QVector>
 
-#include "globalsettings.h"
+#include "spectypes.h"
 
 /** @brief 从原始字节流中拆出 dtSpectrum 数据包（逻辑同 CommandAdapter::analyzeCommands） */
 class SpectrumStreamParser

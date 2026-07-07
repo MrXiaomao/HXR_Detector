@@ -1,5 +1,6 @@
 ﻿#include "detsettingwindow.h"
 #include "ui_detsettingwindow.h"
+#include "commhelper.h"
 #include "qcomboboxdelegate.h"
 #include "globalsettings.h"
 #include "detparamlogger.h"
@@ -11,6 +12,7 @@
 #include <QDoubleSpinBox>
 #include <QGroupBox>
 #include <QHeaderView>
+#include <QTimer>
 
 namespace {
 constexpr int kSpectrumRefreshTimeSpinMax = 60 * 60 * 1000; // 1 hour，单位 ms（协议字段为 4 字节 quint32）

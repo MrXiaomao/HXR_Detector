@@ -14,7 +14,7 @@
 #include <QMutex>
 #include <QWaitCondition>
 #include <QQueue>
-#include <qlitethread.h>
+class QLiteThread;
 // #include <QTimer>
 // #include <QElapsedTimer>
 

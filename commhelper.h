@@ -6,13 +6,13 @@
 #include <QMutex>
 #include <QFile>
 #include <QElapsedTimer>
-#include <QWaitCondition>
-#include <QThread>
-#include <QEventLoop>
 #include <array>
-#include "qhuaweiswitcherhelper.h"
-#include "dataprocessor.h"
 
+#include "commandadapter.h"
+#include "spectypes.h"
+
+class QHuaWeiSwitcherHelper;
+class DataProcessor;
 class SpectrumH5FlushThread;
 class SpectrumRawFlushThread;
 class QTimer;
@@ -42,13 +42,7 @@ public:
         QString ip;
         int poeIndex;
         int switcherIndex;
-        void reload()
-        {
-            GlobalSettings settings(DEVICE_CONFIG_FILE);
-            this->ip = settings.value("TimeSynModule/ip").toString();
-            this->poeIndex = settings.value("TimeSynModule/poeIndex", 24).toInt();
-            this->switcherIndex = settings.value("TimeSynModule/switcherIndex", 1).toInt();
-        }
+        void reload();
     } mExtendTimeSynModule;
 
     /*

@@ -1,4 +1,5 @@
 ﻿#include "dataprocessor.h"
+#include "globalsettings.h"
 #include <QTimer>
 #include <QThread>
 

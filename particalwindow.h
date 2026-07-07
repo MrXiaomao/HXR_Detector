@@ -4,7 +4,8 @@
 #include <QWidget>
 #include <QTimer>
 #include <QDateTime>
-#include "commhelper.h"
+
+class CommHelper;
 
 namespace Ui {
 class ParticalWindow;

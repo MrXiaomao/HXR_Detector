@@ -10,7 +10,7 @@
 #include <QWidget>
 #include <QImage>
 #include <vector>
-#include "globalsettings.h"
+#include "spectypes.h"
 
 // struct Sensor {
 //     double lonDeg;  // 经度[-180,180]
