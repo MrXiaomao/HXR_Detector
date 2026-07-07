@@ -365,6 +365,17 @@ void CountRateStatisticsWindow::initUi()
         ui->rightGraphicsView->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
         ui->rightGraphicsView->setFixedSize(30, 250);
         ui->rightSidewidget->setFixedWidth(30);
+
+        if (QVBoxLayout *paramLayout = qobject_cast<QVBoxLayout*>(ui->labParametersWidget->layout())) {
+            paramLayout->setStretch(0, 0);
+            paramLayout->setStretch(1, 0);
+            paramLayout->setStretch(2, 0);
+            paramLayout->setStretch(3, 1);
+        }
+        if (QVBoxLayout *logLayout = qobject_cast<QVBoxLayout*>(ui->logGroupBox->layout())) {
+            logLayout->setStretch(0, 1);
+            logLayout->setStretch(1, 0);
+        }
     }
 
     ui->tableWidget->setEditTriggers(QAbstractItemView::NoEditTriggers);
