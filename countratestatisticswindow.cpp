@@ -953,7 +953,7 @@ void CountRateStatisticsWindow::initCustomPlot(QCustomPlot* customPlot, QString 
                                                const QString &plotTitle, double xAxisMax)
 {
     QCustomPlotHelper* customPlotHelper = new QCustomPlotHelper(customPlot, this);
-    customPlotHelper->setRangeSelectActionVisible(false);
+    customPlotHelper->setRangeSelectActionVisible(false); // 禁用右键的选择范围
     customPlot->setAntialiasedElements(QCP::aeAll);
     customPlot->legend->setVisible(false);
     customPlot->xAxis->setTickLabelRotation(-45);
@@ -1148,7 +1148,6 @@ void CountRateStatisticsWindow::on_action_open_triggered()
         const FullSpectrum *data = reinterpret_cast<const FullSpectrum *>(row_data.data());
 
         mMeasureDurationSecond = rows * data->measureTime / 1000.0;
-        ui->line_measure_endT->setText(QString::number(mMeasureDurationSecond));
         QDateTime measureStartTime = HDF5Settings::measureStartTimeFromFileName(filePath);
         QDateTime shotTime;
         if (H5Lexists(file.getId(), "Config", H5P_DEFAULT) > 0) {
@@ -1170,15 +1169,33 @@ void CountRateStatisticsWindow::on_action_open_triggered()
         if (shotTime.isValid()) {
             ui->fusionDateTime->setDateTime(shotTime);
         }
-
         if (updateMeasureStartTimeFromShotTime(shotTime)) {
             // 已按 H5 中的 ShotTime 刷新测量起始时间
         } else {
             updateMeasureStartSecond(0);
+            ui->fusionDateTime->setDateTime(mMeasureStartTime);
             emit reporWriteLog(tr("未读取到有效打靶时刻或开测时刻，测量起始时间按 0 显示，否则请手动输入打靶时刻"), QtWarningMsg);
         }
 
         emit reporWriteLog(tr("参考通道#%1，测量时长/s：%2").arg(probeIndex).arg(ui->line_measure_endT->text()));
+        
+        // 设置时间步长下限
+        if (data->measureTime == 0) {
+            emit reporWriteLog(tr("参考通道#%1，测量时长/s：%2").arg(probeIndex).arg(mMeasureDurationSecond), QtWarningMsg);
+            emit reporWriteLog(tr("首行 measureTime 为 0，无法设置时间步长下限"), QtWarningMsg);
+        } else {
+            const int minStepSec = minTimeStepSecFromMeasureTimeMs(data->measureTime);
+            int currentValue = ui->spinBox->value();
+            if (ui->spinBox->value() < minStepSec)
+                ui->spinBox->setValue(minStepSec);
+            ui->spinBox->setMinimum(minStepSec);
+            emit reporWriteLog(tr("参考通道#%1，测量时长/s：%2，单帧 measureTime=%3 ms，时间步长下限=%4 s")
+                                   .arg(probeIndex)
+                                   .arg(mMeasureDurationSecond)
+                                   .arg(data->measureTime)
+                                   .arg(minStepSec));
+        }
+
         dataset.close();
         group.close();
         file.close();
@@ -1255,8 +1272,8 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
     clearAllPlots();
     clearAllDetectorStatisticsRows(ui->tableWidget);
     qApp->setOverrideCursor(QCursor(Qt::WaitCursor));
-    const qint64 tmStart = ui->spinBox_timeStart->value();
-    const qint64 tmEnd = ui->spinBox_timeEnd->value();
+    const qint32 tmStart = ui->spinBox_timeStart->value();
+    const qint32 tmEnd = ui->spinBox_timeEnd->value();
     const int stepSec = ui->spinBox->value();
     if (tmStart > tmEnd) {
         qApp->restoreOverrideCursor();
