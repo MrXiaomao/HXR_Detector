@@ -8,6 +8,7 @@
 #ifndef COUNTRATESTATISTICSWINDOW_H
 #define COUNTRATESTATISTICSWINDOW_H
 
+#include <QDateTime>
 #include <QWidget>
 #include "QGoodWindowHelper"
 #include "qcustomplothelper.h"
@@ -45,6 +46,8 @@ private slots:
 
     void on_action_stopParse_triggered();
 
+    void on_ConfirmTime_clicked();
+
     void on_tableWidget_cellClicked(int row, int column);
 
     void replyWriteLog(const QString &msg, QtMsgType msgType = QtDebugMsg);
@@ -67,12 +70,17 @@ private:
     /** 原始/修正 全局复选框：全选或全不选对应列通道 */
     void applyOriginalGlobalState(bool enableAll);
     void applyCorrectGlobalState(bool enableAll);
+    bool updateMeasureStartTimeFromShotTime(const QDateTime &shotTime);
+    void updateMeasureStartSecond(double startSecond);
 
     Ui::CountRateStatisticsWindow *ui;
     bool mIsDarkTheme = true;
     bool mThemeColorEnable = true;
     QColor mThemeColor = QColor(255,255,255);
     class QGoodWindowHelper *mainWindow = nullptr;
+    QDateTime mMeasureStartTime;
+    double mMeasureStartSecond = 0.0;
+    double mMeasureDurationSecond = 0.0;
 
     // 中断解析
     std::atomic<bool> mInterrupted = false;

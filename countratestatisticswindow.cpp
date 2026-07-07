@@ -26,6 +26,7 @@
 #include <QProgressDialog>
 #include <QTextCodec>
 #include <QTableWidget>
+#include <cmath>
 #include <vector>
 #include <limits>
 
@@ -936,6 +937,14 @@ void CountRateStatisticsWindow::plotAllDetectors()
     ui->plot_down->rescaleAxes(true);
     ui->spec_plot_up->rescaleAxes(true);
     ui->spec_plot_down->rescaleAxes(true);
+
+    const double countRangeStart = ui->spinBox_timeStart->value();
+    const double countRangeEnd = ui->spinBox_timeEnd->value();
+    if (countRangeStart <= countRangeEnd) {
+        ui->plot_up->xAxis->setRange(countRangeStart, countRangeEnd);
+        ui->plot_down->xAxis->setRange(countRangeStart, countRangeEnd);
+    }
+
     updateAllPlotVisibility();
 }
 
@@ -944,7 +953,7 @@ void CountRateStatisticsWindow::initCustomPlot(QCustomPlot* customPlot, QString 
                                                const QString &plotTitle, double xAxisMax)
 {
     QCustomPlotHelper* customPlotHelper = new QCustomPlotHelper(customPlot, this);
-    customPlotHelper->setRangeSelectActionVisible(false); // 禁用右键的选择范围
+    customPlotHelper->setRangeSelectActionVisible(false);
     customPlot->setAntialiasedElements(QCP::aeAll);
     customPlot->legend->setVisible(false);
     customPlot->xAxis->setTickLabelRotation(-45);
@@ -1084,6 +1093,9 @@ void CountRateStatisticsWindow::on_action_open_triggered()
 
     settings.setValue("mainWindow/LastFilePath", filePath);
     ui->textBrowser_filepath->setText(filePath);
+    mMeasureStartTime = QDateTime();
+    mMeasureStartSecond = 0.0;
+    mMeasureDurationSecond = 0.0;
 
     // 解析文件，获取能谱范围时长（从首个有数据的通道读取）
     try {
@@ -1093,6 +1105,7 @@ void CountRateStatisticsWindow::on_action_open_triggered()
         const int probeIndex = firstDetectorWithSpectrumRows(file);
         if (probeIndex <= 0) {
             ui->line_measure_endT->clear();
+            ui->line_measure_startT->clear();
             emit reporWriteLog(tr("文件中未找到任何有效探测器通道数据"), QtWarningMsg);
             file.close();
             return;
@@ -1134,27 +1147,38 @@ void CountRateStatisticsWindow::on_action_open_triggered()
         dataset.read(row_data.data(), H5::PredType::NATIVE_UINT, mem_space, file_space);
         const FullSpectrum *data = reinterpret_cast<const FullSpectrum *>(row_data.data());
 
-        const quint32 durationSec = static_cast<quint32>(rows * data->measureTime / 1000);
-        ui->line_measure_endT->setText(QString::number(durationSec));
-        ui->spinBox_timeStart->setMaximum(durationSec);
-        ui->spinBox_timeEnd->setMaximum(durationSec);
-        ui->spinBox_timeStart->setValue(0);
-        ui->spinBox_timeEnd->setValue(durationSec);
-        if (data->measureTime == 0) {
-            emit reporWriteLog(tr("参考通道#%1，测量时长/s：%2").arg(probeIndex).arg(durationSec), QtWarningMsg);
-            emit reporWriteLog(tr("首行 measureTime 为 0，无法设置时间步长下限"), QtWarningMsg);
-        } else {
-            const int minStepSec = minTimeStepSecFromMeasureTimeMs(data->measureTime);
-            ui->spinBox->setMinimum(minStepSec);
-            if (ui->spinBox->value() < minStepSec)
-                ui->spinBox->setValue(minStepSec);
-            emit reporWriteLog(tr("参考通道#%1，测量时长/s：%2，单帧 measureTime=%3 ms，时间步长下限=%4 s")
-                                   .arg(probeIndex)
-                                   .arg(durationSec)
-                                   .arg(data->measureTime)
-                                   .arg(minStepSec));
+        mMeasureDurationSecond = rows * data->measureTime / 1000.0;
+        ui->line_measure_endT->setText(QString::number(mMeasureDurationSecond));
+        QDateTime measureStartTime = HDF5Settings::measureStartTimeFromFileName(filePath);
+        QDateTime shotTime;
+        if (H5Lexists(file.getId(), "Config", H5P_DEFAULT) > 0) {
+            H5::Group cfgGroup = file.openGroup("Config");
+            const QDateTime configStartTime = HDF5Settings::parseConfigTimeString(
+                HDF5Settings::readConfigStringFromGroup(cfgGroup, "StartTime"));
+            if (configStartTime.isValid())
+                measureStartTime = configStartTime;
+
+            if (H5Lexists(cfgGroup.getId(), "ShotTime", H5P_DEFAULT) > 0) {
+                shotTime = HDF5Settings::parseConfigTimeString(
+                    HDF5Settings::readConfigStringFromGroup(cfgGroup, "ShotTime"));
+            } else {
+                emit reporWriteLog(tr("当前 H5 文件 Config 中未找到 ShotTime，测量起始时间按 0 显示，否则请手动输入打靶时刻"), QtWarningMsg);
+            }
+            cfgGroup.close();
+        }
+        mMeasureStartTime = measureStartTime;
+        if (shotTime.isValid()) {
+            ui->fusionDateTime->setDateTime(shotTime);
         }
 
+        if (updateMeasureStartTimeFromShotTime(shotTime)) {
+            // 已按 H5 中的 ShotTime 刷新测量起始时间
+        } else {
+            updateMeasureStartSecond(0);
+            emit reporWriteLog(tr("未读取到有效打靶时刻或开测时刻，测量起始时间按 0 显示，否则请手动输入打靶时刻"), QtWarningMsg);
+        }
+
+        emit reporWriteLog(tr("参考通道#%1，测量时长/s：%2").arg(probeIndex).arg(ui->line_measure_endT->text()));
         dataset.close();
         group.close();
         file.close();
@@ -1171,6 +1195,54 @@ void CountRateStatisticsWindow::on_action_exit_triggered()
     mainWindow->close();
 }
 
+bool CountRateStatisticsWindow::updateMeasureStartTimeFromShotTime(const QDateTime &shotTime)
+{
+    if (!mMeasureStartTime.isValid() || !shotTime.isValid())
+        return false;
+
+    QDateTime measureStartTime = mMeasureStartTime;
+    QDateTime fusionShotTime = shotTime;
+    measureStartTime.setTimeSpec(Qt::UTC);
+    fusionShotTime.setTimeSpec(Qt::UTC);
+
+    updateMeasureStartSecond(fusionShotTime.msecsTo(measureStartTime) / 1000.0);
+    return true;
+}
+
+void CountRateStatisticsWindow::updateMeasureStartSecond(double startSecond)
+{
+    mMeasureStartSecond = startSecond;
+    ui->line_measure_startT->setText(QString::number(startSecond));
+    ui->line_measure_endT->setText(QString::number(mMeasureDurationSecond + startSecond));
+    const double boundedStartSecond = qBound(static_cast<double>(std::numeric_limits<int>::min()),
+                                             startSecond,
+                                             static_cast<double>(std::numeric_limits<int>::max()));
+    const int minimumStartSecond = static_cast<int>(std::ceil(boundedStartSecond));
+    const int maximumEndSecond = static_cast<int>(std::floor(mMeasureDurationSecond));
+    ui->spinBox_timeStart->setMinimum(minimumStartSecond);
+    if (ui->spinBox_timeStart->value() < minimumStartSecond)
+        ui->spinBox_timeStart->setValue(minimumStartSecond);
+        ui->spinBox_timeEnd->setValue(mMeasureDurationSecond + startSecond);
+}
+
+void CountRateStatisticsWindow::on_ConfirmTime_clicked()
+{
+    const QDateTime shotTime = ui->fusionDateTime->dateTime();
+    if (!mMeasureStartTime.isValid()) {
+        emit reporWriteLog(tr("未读取到有效开测时刻，请先打开测量文件"), QtWarningMsg);
+        return;
+    }
+
+    if (!shotTime.isValid()) {
+        emit reporWriteLog(tr("导入打靶时刻失败：打靶时刻无效"), QtWarningMsg);
+        return;
+    }
+
+    if (updateMeasureStartTimeFromShotTime(shotTime)) {
+        emit reporWriteLog(tr("导入打靶时刻成功，可以开始解析。"));
+    }
+}
+
 
 void CountRateStatisticsWindow::on_action_startParse_triggered()
 {
@@ -1183,8 +1255,8 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
     clearAllPlots();
     clearAllDetectorStatisticsRows(ui->tableWidget);
     qApp->setOverrideCursor(QCursor(Qt::WaitCursor));
-    const quint32 tmStart = ui->spinBox_timeStart->value();
-    const quint32 tmEnd = ui->spinBox_timeEnd->value();
+    const qint64 tmStart = ui->spinBox_timeStart->value();
+    const qint64 tmEnd = ui->spinBox_timeEnd->value();
     const int stepSec = ui->spinBox->value();
     if (tmStart > tmEnd) {
         qApp->restoreOverrideCursor();
