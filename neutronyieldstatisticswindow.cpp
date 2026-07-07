@@ -24,6 +24,9 @@
 #include <QJsonDocument>
 #include <QMessageBox>
 #include <QSettings>
+#include <QCheckBox>
+#include <QComboBox>
+#include <QLabel>
 #include <math.h>
 #include <algorithm>
 #include <cstring>
@@ -33,6 +36,28 @@
 #include "MollweideHeatmapWidget.h"
 
 namespace {
+constexpr int kSpectrumPlotSlotCount = 10;
+
+const QList<QColor> &spectrumSlotColors()
+{
+    static const QList<QColor> colors = {
+        Qt::red, Qt::green, Qt::blue, Qt::cyan, Qt::darkCyan
+    };
+    return colors;
+}
+
+int defaultSpecNoForSlot(int slot, int specCount)
+{
+    if (specCount <= 0)
+        return 1;
+    if (specCount > 20) {
+        return qBound(1,
+                      qRound(1.0 + (slot - 1) * (specCount - 1) / 9.0),
+                      specCount);
+    }
+    return qMin(slot, specCount);
+}
+
 enum FileListColumn {
     ColIndex = 0,
     ColFileName,
@@ -2169,116 +2194,164 @@ void NeutronYieldStatisticsWindow::slotSuccess(int detID)
 }
 
 //更新多段能谱数据
+void NeutronYieldStatisticsWindow::refreshSpectrumPlotSlot(int slotIndex)
+{
+    if (slotIndex < 1 || slotIndex > kSpectrumPlotSlotCount)
+        return;
+
+    QCustomPlot *customPlot = ui->spectorMeter_Spectrum;
+    QWidget *flowLayoutContainer = ui->widget_flowLayoutContainer;
+    QCheckBox *checkBox = flowLayoutContainer->findChild<QCheckBox *>(
+        QStringLiteral("spectrumSlotCheck#%1").arg(slotIndex));
+    QComboBox *comboBox = flowLayoutContainer->findChild<QComboBox *>(
+        QStringLiteral("spectrumSlotCombo#%1").arg(slotIndex));
+    QCPGraph *graph = customPlot->graph(QStringLiteral("energyGraph#%1").arg(slotIndex));
+    if (!checkBox || !comboBox || !graph)
+        return;
+
+    const bool shouldShow = checkBox->isChecked() && !m_currentMergeSpectrum.empty();
+    if (!shouldShow || comboBox->count() == 0) {
+        graph->setVisible(false);
+        return;
+    }
+
+    const int specIndex = comboBox->currentData().toInt() - 1;
+    if (specIndex < 0 || specIndex >= static_cast<int>(m_currentMergeSpectrum.size())) {
+        graph->setVisible(false);
+        return;
+    }
+
+    const QColor slotColor = spectrumSlotColors()[(slotIndex - 1) % spectrumSlotColors().size()];
+    QVector<double> keys;
+    QVector<double> values;
+    QVector<QColor> colors;
+    keys.reserve(2048);
+    values.reserve(2048);
+    colors.reserve(2048);
+    for (int j = 0; j < 2048; ++j) {
+        keys << j + 1;
+        values << m_currentMergeSpectrum[static_cast<size_t>(specIndex)].spectrum[j] * 1.0;
+        colors << slotColor;
+    }
+    graph->setData(keys, values, colors);
+    graph->setVisible(true);
+}
+
+void NeutronYieldStatisticsWindow::refreshAllSpectrumPlotSlots()
+{
+    for (int slot = 1; slot <= kSpectrumPlotSlotCount; ++slot)
+        refreshSpectrumPlotSlot(slot);
+
+    QCustomPlot *customPlot = ui->spectorMeter_Spectrum;
+    customPlot->rescaleAxes(true);
+    customPlot->replot();
+}
+
 void NeutronYieldStatisticsWindow::slotUpdateMultiSegmentPlotDatas(std::vector<ParseData::mergeSpecData> allSpectrum)
 {
     QCustomPlot *customPlot = ui->spectorMeter_Spectrum;
     customPlot->clearGraphs();
+    m_currentMergeSpectrum = std::move(allSpectrum);
 
-    //清空布局内所有的控件
-    QFlowLayout *flowLayout = this->findChild<QFlowLayout*>("flowLayout");
-    QWidget* flowLayoutContainer = ui->widget_flowLayoutContainer;
-    while (QLayoutItem* item = flowLayout->takeAt(0)) {
-        if (QWidget* widget = item->widget()) {
+    QFlowLayout *flowLayout = this->findChild<QFlowLayout *>("flowLayout");
+    QWidget *flowLayoutContainer = ui->widget_flowLayoutContainer;
+    while (QLayoutItem *item = flowLayout->takeAt(0)) {
+        if (QWidget *widget = item->widget())
             widget->deleteLater();
-        }
-        if (QLayout* childLayout = item->layout()) {
+        if (QLayout *childLayout = item->layout())
             delete childLayout;
-        }
         delete item;
     }
 
-    QList<QColor> color ={ Qt::red, Qt::green, Qt::blue, Qt::cyan, Qt::darkCyan};
-    //根据能谱个数重新生成控件
+    const int specCount = static_cast<int>(m_currentMergeSpectrum.size());
+    const QList<QColor> &colors = spectrumSlotColors();
+
     QCheckBox *checkBoxAll = new QCheckBox(flowLayoutContainer);
-    checkBoxAll->setObjectName("checkBoxAll");
-    checkBoxAll->setVisible(true);
-    checkBoxAll->setProperty("checkedCount", allSpectrum.size());
-    checkBoxAll->setText("显示所有曲线");
-    checkBoxAll->setFixedWidth(80);
+    checkBoxAll->setObjectName(QStringLiteral("checkBoxAll"));
+    checkBoxAll->setText(tr("显示所有曲线"));
+    checkBoxAll->setFixedWidth(100);
     checkBoxAll->setChecked(true);
     flowLayout->addWidget(checkBoxAll);
-    for (size_t i=0; i<allSpectrum.size(); ++i){
-        //用横向布局包裹起来
-        QWidget* w = new QWidget(flowLayoutContainer);
-        w->setContentsMargins(0,0,0,0);
-        QHBoxLayout * hBoxLayout = new QHBoxLayout(w);
-        //hBoxLayout->setSpacing(9);
-        hBoxLayout->setMargin(0);
-        w->setLayout(hBoxLayout);
-        w->setFixedWidth(80);
 
-        QCheckBox *checkBox = new QCheckBox(w);
-        checkBox->setProperty("index", i+1);
-        checkBox->setVisible(true);
+    for (int slot = 1; slot <= kSpectrumPlotSlotCount; ++slot) {
+        QWidget *rowWidget = new QWidget(flowLayoutContainer);
+        rowWidget->setObjectName(QStringLiteral("spectrumSlotWidget#%1").arg(slot));
+        rowWidget->setContentsMargins(0, 0, 0, 0);
+        rowWidget->setFixedWidth(130);
+
+        QHBoxLayout *rowLayout = new QHBoxLayout(rowWidget);
+        rowLayout->setMargin(0);
+        rowLayout->setSpacing(4);
+
+        QCheckBox *checkBox = new QCheckBox(rowWidget);
+        checkBox->setObjectName(QStringLiteral("spectrumSlotCheck#%1").arg(slot));
         checkBox->setChecked(true);
-        QLabel *labelColor = new QLabel(w);
-        labelColor->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
-        labelColor->setFixedWidth(20);
-        labelColor->setFixedHeight(20);
-        labelColor->setVisible(true);
-        labelColor->setStyleSheet(QString("background-color:rgb(%1,%2,%3)").arg(color[i%5].red()).arg(color[i%5].green()).arg(color[i%5].blue()));
-        QLabel *label = new QLabel(w);
-        label->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
-        label->setText(QString("#%1").arg(i+1));
-        label->setVisible(true);
-        //label->setFixedWidth(50);
-        hBoxLayout->addWidget(checkBox);
-        hBoxLayout->addWidget(labelColor);
-        hBoxLayout->addWidget(label);
-        hBoxLayout->addStretch();
-        flowLayout->addWidget(w);
-        connect(checkBox, &QCheckBox::stateChanged, this, [=](int state){
-            int index = checkBox->property("index").toInt();
-            QCPGraph *graph = customPlot->graph(QString("energyGraph#%1").arg(index));
-            if (graph){
-                if (state == Qt::CheckState::Checked && !graph->visible()){
-                    graph->setVisible(state == Qt::CheckState::Checked ? true : false);
-                    customPlot->replot(QCustomPlot::rpQueuedReplot);
-                } else if (state == Qt::CheckState::Unchecked && graph->visible()) {
-                    graph->setVisible(state == Qt::CheckState::Checked ? true : false);
-                    customPlot->replot(QCustomPlot::rpQueuedReplot);
-                }
-            }
-        });
 
-        ui->widget_flowLayoutContainer->show();
-    }
-    connect(checkBoxAll, &QCheckBox::stateChanged, this, [=](int state){
-        // QWidget* flowLayoutContainer = ui->widget_flowLayoutContainer;
-        QList<QCheckBox *>checkBoxs = flowLayoutContainer->findChildren<QCheckBox*>();
-        for (auto checkBox : checkBoxs){
-            checkBox->setChecked(state == Qt::CheckState::Checked ? true : false);
+        QLabel *labelColor = new QLabel(rowWidget);
+        labelColor->setFixedSize(20, 20);
+        const QColor slotColor = colors[(slot - 1) % colors.size()];
+        labelColor->setStyleSheet(
+            QStringLiteral("background-color:rgb(%1,%2,%3)")
+                .arg(slotColor.red())
+                .arg(slotColor.green())
+                .arg(slotColor.blue()));
+
+        QComboBox *comboBox = new QComboBox(rowWidget);
+        comboBox->setObjectName(QStringLiteral("spectrumSlotCombo#%1").arg(slot));
+        comboBox->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        for (int specNo = 1; specNo <= specCount; ++specNo)
+            comboBox->addItem(QStringLiteral("#%1").arg(specNo), specNo);
+
+        if (specCount > 0) {
+            const int defaultSpecNo = defaultSpecNoForSlot(slot, specCount);
+            comboBox->setCurrentIndex(comboBox->findData(defaultSpecNo));
+        } else {
+            comboBox->setEnabled(false);
+            checkBox->setEnabled(false);
         }
-        // checkBoxAll->blockSignals(false);
+
+        rowLayout->addWidget(checkBox);
+        rowLayout->addWidget(labelColor);
+        rowLayout->addWidget(comboBox);
+        flowLayout->addWidget(rowWidget);
+
+        connect(checkBox, &QCheckBox::stateChanged, this, [this, slot](int) {
+            refreshSpectrumPlotSlot(slot);
+            ui->spectorMeter_Spectrum->replot(QCustomPlot::rpQueuedReplot);
+        });
+        connect(comboBox, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this, slot](int) {
+            refreshSpectrumPlotSlot(slot);
+            ui->spectorMeter_Spectrum->rescaleAxes(true);
+            ui->spectorMeter_Spectrum->replot(QCustomPlot::rpQueuedReplot);
+        });
+    }
+
+    connect(checkBoxAll, &QCheckBox::stateChanged, this, [this, flowLayoutContainer](int state) {
+        const bool checked = (state == Qt::Checked);
+        for (int slot = 1; slot <= kSpectrumPlotSlotCount; ++slot) {
+            QCheckBox *slotCheckBox = flowLayoutContainer->findChild<QCheckBox *>(
+                QStringLiteral("spectrumSlotCheck#%1").arg(slot));
+            if (!slotCheckBox)
+                continue;
+            slotCheckBox->blockSignals(true);
+            slotCheckBox->setChecked(checked);
+            slotCheckBox->blockSignals(false);
+        }
+        refreshAllSpectrumPlotSlots();
     });
 
-    //能谱
-    {
-        for (size_t i=0; i<allSpectrum.size(); ++i){
-            //QCPGraph *graph = customPlot->addGraph(customPlot->xAxis, customPlot->yAxis);
-            QCPGraph *graph = customPlot->addGraph();
-
-            graph->setName(QString("energyGraph#%1").arg(i+1));
-            graph->setAntialiased(true);
-            graph->setPen(QPen(QBrush(color[i%5]), 2, Qt::SolidLine));
-            //graph->setSelectable(QCP::SelectionType::stNone);
-            graph->setLineStyle(QCPGraph::lsNone);
-            graph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssCross, 5));//显示散点图
-            graph->setVisible(true);
-
-            QVector<double> keys, values;
-            QVector<QColor> colors;
-            for (int j=0; j<2048; ++j){
-                keys << j + 1;
-                values << allSpectrum[i].spectrum[j] * 1.0;
-                colors << color[i%5];
-            }
-            graph->setData(keys, values, colors);
-        }
+    for (int slot = 1; slot <= kSpectrumPlotSlotCount; ++slot) {
+        QCPGraph *graph = customPlot->addGraph();
+        graph->setName(QStringLiteral("energyGraph#%1").arg(slot));
+        graph->setAntialiased(true);
+        graph->setPen(QPen(QBrush(colors[(slot - 1) % colors.size()]), 2, Qt::SolidLine));
+        graph->setLineStyle(QCPGraph::lsNone);
+        graph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssCross, 5));
+        graph->setVisible(false);
     }
 
-    customPlot->rescaleAxes(true);
-    customPlot->replot();
+    flowLayoutContainer->show();
+    refreshAllSpectrumPlotSlots();
 }
 
 void NeutronYieldStatisticsWindow::slotUpdate_Count909_time(std::vector<double> time/*时刻*/, std::vector<double> count/*散点*/,

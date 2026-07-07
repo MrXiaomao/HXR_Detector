@@ -10,6 +10,7 @@
 
 #include <QWidget>
 #include <QDateTime>
+#include <vector>
 #include "QGoodWindowHelper"
 #include "qcustomplothelper.h"
 #include "parsedata.h"
@@ -178,6 +179,8 @@ private:
     int currentPictureDetId() const;
     void updatePictureForDetector(int detID);
     void updateYieldSpatialDistributionForRow(int row);
+    void refreshSpectrumPlotSlot(int slotIndex);
+    void refreshAllSpectrumPlotSlots();
 
     Ui::NeutronYieldStatisticsWindow *ui;
     bool mIsDarkTheme = true;
@@ -190,6 +193,7 @@ private:
     std::atomic<bool> mInterrupted = false;
 
     QMap<quint8, QVector<double>> mMapSpectrum;
+    std::vector<ParseData::mergeSpecData> m_currentMergeSpectrum;
 
     quint32 stepT = 1;
     unsigned int startTime_FPGA; //记录保存数据的FPGA起始时刻。单位s，FPGA内部时钟
