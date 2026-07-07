@@ -337,6 +337,11 @@
             <string>谱仪#24</string>
            </property>
           </row>
+          <row>
+           <property name="text">
+            <string>全选</string>
+           </property>
+          </row>
           <column>
            <property name="text">
             <string>电源</string>
@@ -355,6 +360,11 @@
           <column>
            <property name="text">
             <string>温度</string>
+           </property>
+          </column>
+          <column>
+           <property name="text">
+            <string>曲线显示</string>
            </property>
           </column>
           <item row="1" column="0">

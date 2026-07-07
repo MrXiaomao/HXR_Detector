@@ -33,6 +33,7 @@ class QCustomPlot;
 class QCPGraph;
 class QTimer;
 class QComboBox;
+class QCheckBox;
 
 // 探测器数据结构
 struct DetectorData {
@@ -345,8 +346,12 @@ private:
     std::atomic<bool> mCountRatePlotReady = false; // 计数率曲线待刷新
     std::atomic<bool> mSpectrumPlotReady = false;  // 能谱曲线待刷新
     void replotSpectrumBottom(QCustomPlot *plot, bool allowYRescale);
+    void setCurveVisible(int detectorId, bool visible);
+    void updateCurveSelectAllState();
 
     QMutex mPlotLocker;
+    bool mUpdatingCurveSelectAll = false;
+    QCheckBox* mCheckBoxCurveSelectAll = nullptr;
 };
 
 #endif // MAINWINDOW_H

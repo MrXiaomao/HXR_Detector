@@ -1050,11 +1050,19 @@ void CommHelper::initSwitchers()
         connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::switcherDisconnected, this, &CommHelper::switcherDisconnected);
         connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::reportPoePowerStatus, this, [=](quint8 index, bool on) {
             mExtendTimeSynModule.reload();
+            quint8 reportIndex = index;
             if (huaWeiSwitcherHelper == mHuaWeiSwitcherHelper[mExtendTimeSynModule.switcherIndex - 1]
                 && index == mExtendTimeSynModule.poeIndex)
-                emit reportPoePowerStatus(0, on);
-            else
-            emit reportPoePowerStatus(index, on);
+                reportIndex = 0;
+
+            // 查询到通道电源已关闭时，停用温度超时报警定时器
+            if (!on) {
+                DataProcessor* processor = mDetectorDataProcessor.value(reportIndex);
+                if (processor)
+                    processor->stopTempTimeout();
+            }
+
+            emit reportPoePowerStatus(reportIndex, on);
         });
         connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::poeActionQueueIdle,
                 this, &CommHelper::tryClearPoeCloseInProgress,

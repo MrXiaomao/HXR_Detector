@@ -212,26 +212,6 @@ void MainWindow::initUi()
         QWidget* spectroMeterWidget = this->findChild<QWidget*>(QString("spectroMeterWidget%1").arg(index));
         if (spectroMeterWidget->property("isZoomIn").toBool())
         {
-            // 2行显示
-            QGridLayout* layoutLeft = (QGridLayout*)ui->widget_left->layout();
-            QGridLayout* layoutRight = (QGridLayout*)ui->widget_right->layout();
-
-            for (int index=1; index<=DET_NUM; ++index)
-            {
-                QCheckBox* checkBox = findChild<QCheckBox*>(QLatin1String("CH ")+QString::number(index));
-                if (index<=(DET_NUM/2))
-                {
-                    layoutLeft->addWidget(checkBox, index<=(DET_NUM/4) ? 0 : 1, (index-1) % (DET_NUM/4));
-                }
-                else
-                {
-                    layoutRight->addWidget(checkBox, index<=(DET_NUM*3/4) ? 0 : 1, (index-1) % (DET_NUM/4));
-                }
-            }
-
-            layoutLeft->addWidget(ui->toolButton_title_1, 0, DET_NUM/2);
-            layoutRight->addWidget(ui->toolButton_title_2, 0, DET_NUM/2);
-
             this->setProperty("isZoomIn", false);
             spectroMeterWidget->setProperty("isZoomIn", false);
             btn->setIcon(QIcon(":/zoom_in.png"));
@@ -240,32 +220,9 @@ void MainWindow::initUi()
                 spectroMeterWidget = this->findChild<QWidget*>(QString("spectroMeterWidget%1").arg(i));
                 spectroMeterWidget->show();
             }
-
-            ui->widget_left->setFixedHeight(50);
-            ui->widget_right->setFixedHeight(50);
         }
         else
         {
-            // 单行显示
-            QGridLayout* layoutLeft = (QGridLayout*)ui->widget_left->layout();
-            QGridLayout* layoutRight = (QGridLayout*)ui->widget_right->layout();
-
-            for (int index=1; index<=DET_NUM; ++index)
-            {
-                QCheckBox* checkBox = findChild<QCheckBox*>(QLatin1String("CH ")+QString::number(index));
-                if (index<=DET_NUM/2)
-                {
-                    layoutLeft->addWidget(checkBox, 0, (index-1) % (DET_NUM/2));
-                }
-                else
-                {
-                    layoutRight->addWidget(checkBox, 0, (index-1) % (DET_NUM/2));
-                }
-            }
-
-            layoutLeft->addWidget(ui->toolButton_title_1, 0, DET_NUM/2);
-            layoutRight->addWidget(ui->toolButton_title_2, 0, DET_NUM/2);
-
             this->setProperty("isZoomIn", true);
             this->setProperty("currentMeterIndex", index);
             spectroMeterWidget->setProperty("isZoomIn", true);
@@ -278,9 +235,6 @@ void MainWindow::initUi()
                 else
                     spectroMeterWidget->hide();
             }
-
-            ui->widget_left->setFixedHeight(27);
-            ui->widget_right->setFixedHeight(27);
         }
     });
     connect(ui->toolButton_title_1, &QToolButton::clicked, this, titleClicked);
@@ -528,18 +482,31 @@ void MainWindow::initUi()
     ui->tableWidget_detector->verticalHeader()->setSectionResizeMode(QHeaderView::Fixed); // 固定高度
     ui->tableWidget_detector->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     ui->tableWidget_detector->horizontalHeader()->setFixedHeight(24);
-    ui->tableWidget_detector->setRowCount(DET_NUM+1);
-    for (int row = 0; row <= DET_NUM; ++row){
-        QTableWidgetItem *__qtablewidgetitem = new QTableWidgetItem(QStringLiteral("谱仪#%1").arg(row));
+    constexpr int kColCurveDisplay = 4;
+    constexpr int kRowSelectAll = DET_NUM + 1;
+    ui->tableWidget_detector->setRowCount(DET_NUM + 2);
+    for (int row = 0; row <= DET_NUM + 1; ++row){
+        QString headerText;
+        if (row == kRowSelectAll)
+            headerText = QStringLiteral("全选");
+        else
+            headerText = QStringLiteral("谱仪#%1").arg(row);
+        QTableWidgetItem *__qtablewidgetitem = new QTableWidgetItem(headerText);
         ui->tableWidget_detector->setVerticalHeaderItem(row, __qtablewidgetitem);
         ui->tableWidget_detector->setRowHeight(row, 24);
     }
     ui->tableWidget_detector->setRowHeight(0, 50);
     ui->tableWidget_detector->verticalHeaderItem(0)->setText("时间同步\n触发模块");
-    ui->tableWidget_detector->setMinimumHeight((DET_NUM+1)*24+52);
+    ui->tableWidget_detector->setMinimumHeight((DET_NUM + 2) * 24 + 52);
 
     for (int row=0; row<ui->tableWidget_detector->rowCount(); ++row){
         for (int column=0; column<=3; ++column){
+            if (row == kRowSelectAll) {
+                QLabel* cell = new QLabel();
+                cell->setAlignment(Qt::AlignCenter);
+                ui->tableWidget_detector->setCellWidget(row, column, cell);
+                continue;
+            }
             if (column == 0){
                 SwitchButton* cell = new SwitchButton();
                 cell->setObjectName(QStringLiteral("poeSwitcher%1").arg(row));
@@ -721,55 +688,65 @@ void MainWindow::initUi()
     QCustomPlot *spectroMeter_right = this->findChild<QCustomPlot*>(QString("spectroMeter_right"));
     initCustomPlot(101, spectroMeter_right, tr(""), tr("道址 计数"), tr("累积能谱"), 1);
 
-    {
-        // 添加可选项
-        QGridLayout* layoutLeft = new QGridLayout(ui->widget_left);
-        layoutLeft->setSpacing(5);
-        layoutLeft->setContentsMargins(9,3,9,3);
-        QGridLayout* layoutRight = new QGridLayout(ui->widget_right);
-        layoutRight->setSpacing(5);
-        layoutRight->setContentsMargins(9,3,9,3);
-        ui->widget_left->setLayout(layoutLeft);
-        ui->widget_right->setLayout(layoutRight);
-
-        for (int index=1; index<=DET_NUM; ++index)
-        {
-            QCheckBox* checkBox = new QCheckBox(index==1 ? ui->widget_left : ui->widget_right);
-            checkBox->setText(QLatin1String("")+QString::number(index));
-            checkBox->setObjectName(QLatin1String("CH ")+QString::number(index));
-            checkBox->setIcon(QIcon(roundPixmap(QSize(16, 16), mGraphisColor.at((index-1) % (DET_NUM/2)))));
-            checkBox->setProperty("index", index);
-            checkBox->setChecked(true);
-            connect(checkBox, &QCheckBox::stateChanged, this, [=](int state){
-                int index = checkBox->property("index").toInt();
-
-                // 能谱
-                QCPGraph *graph = getGraph(index);
-                if (graph){
-                    graph->setVisible(Qt::CheckState::Checked == state ? true : false);
-                    getCustomPlot(index)->replot();
-                }
-
-                // 计数率
-                graph = getGraph(index, false);
-                if (graph){
-                    graph->setVisible(Qt::CheckState::Checked == state ? true : false);
-                    getCustomPlot(index, false)->replot();
-                }
-            });
-
-            if (index<=(DET_NUM/2))
-            {
-                layoutLeft->addWidget(checkBox, index<=(DET_NUM/4) ? 0 : 1, (index-1) % (DET_NUM/4));
-            }
-            else
-            {
-                layoutRight->addWidget(checkBox, index<=(DET_NUM*3/4) ? 0 : 1, (index-1) % (DET_NUM/4));
+    for (int row = 1; row <= DET_NUM; ++row) {
+        QCheckBox* checkBox = new QCheckBox();
+        checkBox->setText(QString::number(row));
+        checkBox->setObjectName(QLatin1String("CH ")+QString::number(row));
+        checkBox->setIcon(QIcon(roundPixmap(QSize(16, 16), mGraphisColor.at((row - 1) % (DET_NUM / 2)))));
+        checkBox->setProperty("index", row);
+        checkBox->setChecked(true);
+        QWidget* cellWidget = new QWidget(ui->tableWidget_detector);
+        QHBoxLayout* cellLayout = new QHBoxLayout(cellWidget);
+        cellLayout->setContentsMargins(4, 0, 0, 0);
+        cellLayout->setSpacing(0);
+        cellLayout->addWidget(checkBox, 0, Qt::AlignLeft | Qt::AlignVCenter);
+        cellLayout->addStretch();
+        ui->tableWidget_detector->setCellWidget(row, kColCurveDisplay, cellWidget);
+        connect(checkBox, &QCheckBox::stateChanged, this, [=](int state){
+            setCurveVisible(checkBox->property("index").toInt(), state == Qt::Checked);
+            if (!mUpdatingCurveSelectAll)
+                updateCurveSelectAllState();
+        });
+    }
+    mCheckBoxCurveSelectAll = new QCheckBox();
+    mCheckBoxCurveSelectAll->setText(tr("全选"));
+    mCheckBoxCurveSelectAll->setTristate(true);
+    mCheckBoxCurveSelectAll->setChecked(true);
+    QWidget* selectAllCell = new QWidget(ui->tableWidget_detector);
+    QHBoxLayout* selectAllLayout = new QHBoxLayout(selectAllCell);
+    selectAllLayout->setContentsMargins(4, 0, 0, 0);
+    selectAllLayout->setSpacing(0);
+    selectAllLayout->addWidget(mCheckBoxCurveSelectAll, 0, Qt::AlignLeft | Qt::AlignVCenter);
+    selectAllLayout->addStretch();
+    ui->tableWidget_detector->setCellWidget(kRowSelectAll, kColCurveDisplay, selectAllCell);
+    connect(mCheckBoxCurveSelectAll, &QCheckBox::stateChanged, this, [=](int state){
+        if (mUpdatingCurveSelectAll || state == Qt::PartiallyChecked)
+            return;
+        const bool checked = (state == Qt::Checked);
+        mUpdatingCurveSelectAll = true;
+        for (int detRow = 1; detRow <= DET_NUM; ++detRow) {
+            QWidget* cell = ui->tableWidget_detector->cellWidget(detRow, kColCurveDisplay);
+            if (auto *cb = cell ? cell->findChild<QCheckBox*>() : nullptr) {
+                cb->setChecked(checked);
             }
         }
+        mUpdatingCurveSelectAll = false;
+        updateCurveSelectAllState();
+    });
 
-        layoutLeft->addWidget(ui->toolButton_title_1, 0, (DET_NUM/2)+1);
-        layoutRight->addWidget(ui->toolButton_title_2, 0, (DET_NUM/2)+1);
+    {
+        QHBoxLayout* layoutLeft = new QHBoxLayout(ui->widget_left);
+        layoutLeft->setContentsMargins(9, 3, 9, 3);
+        layoutLeft->addStretch();
+        layoutLeft->addWidget(ui->toolButton_title_1);
+        QHBoxLayout* layoutRight = new QHBoxLayout(ui->widget_right);
+        layoutRight->setContentsMargins(9, 3, 9, 3);
+        layoutRight->addStretch();
+        layoutRight->addWidget(ui->toolButton_title_2);
+        ui->widget_left->setLayout(layoutLeft);
+        ui->widget_right->setLayout(layoutRight);
+        ui->widget_left->setFixedHeight(27);
+        ui->widget_right->setFixedHeight(27);
     }
 
     //更新温度状态（解析线程）
@@ -1849,7 +1826,7 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
     QModelIndexList validIndexes;
     for (const auto &mi : rows) {
         int row = mi.row();
-        if (0 == row)
+        if (0 == row || row > DET_NUM)
             continue;
 
         quint8 index = row;
@@ -1990,7 +1967,7 @@ void MainWindow::on_btn_stopSelectedMeasure_clicked()
     QModelIndexList validIndexes;
     for (const auto &mi : rows) {
         int row = mi.row();
-        if (0 == row)
+        if (0 == row || row > DET_NUM)
             continue;
 
         quint8 index = row;
@@ -3081,6 +3058,53 @@ void MainWindow::replotSpectrumBottom(QCustomPlot *plot, bool allowYRescale)
         plot->yAxis->setRange(0, yMax * 1.1);
 
     plot->replot(QCustomPlot::rpQueuedReplot);
+}
+
+void MainWindow::setCurveVisible(int detectorId, bool visible)
+{
+    if (detectorId < 1 || detectorId > DET_NUM)
+        return;
+
+    QCPGraph *graph = getGraph(detectorId);
+    if (graph) {
+        graph->setVisible(visible);
+        getCustomPlot(detectorId)->replot();
+    }
+
+    graph = getGraph(detectorId, false);
+    if (graph) {
+        graph->setVisible(visible);
+        getCustomPlot(detectorId, false)->replot();
+    }
+}
+
+void MainWindow::updateCurveSelectAllState()
+{
+    if (!mCheckBoxCurveSelectAll)
+        return;
+
+    int checkedCount = 0;
+    constexpr int kColCurveDisplay = 4;
+    for (int row = 1; row <= DET_NUM; ++row) {
+        QWidget* cell = ui->tableWidget_detector->cellWidget(row, kColCurveDisplay);
+        if (auto *cb = cell ? cell->findChild<QCheckBox*>() : nullptr) {
+            if (cb->isChecked())
+                ++checkedCount;
+        }
+    }
+
+    mUpdatingCurveSelectAll = true;
+    if (checkedCount == 0) {
+        mCheckBoxCurveSelectAll->setTristate(false);
+        mCheckBoxCurveSelectAll->setCheckState(Qt::Unchecked);
+    } else if (checkedCount == DET_NUM) {
+        mCheckBoxCurveSelectAll->setTristate(false);
+        mCheckBoxCurveSelectAll->setCheckState(Qt::Checked);
+    } else {
+        mCheckBoxCurveSelectAll->setTristate(true);
+        mCheckBoxCurveSelectAll->setCheckState(Qt::PartiallyChecked);
+    }
+    mUpdatingCurveSelectAll = false;
 }
 
 void MainWindow::on_checkBox_continueMeasure_toggled(bool toggled)
