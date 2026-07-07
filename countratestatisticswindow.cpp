@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2026-01-14 09:21:28
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-06-08 21:58:41
+ * @LastEditTime: 2026-07-07 15:52:02
  * @Description: 计数率统计
  */
 #include "countratestatisticswindow.h"
@@ -116,6 +116,56 @@ int firstDetectorWithSpectrumRows(H5::H5File &file)
         }
     }
     return 0;
+}
+
+/** spinBox 时间步长下限（s）：measureTime<=1s 时为 1，否则按 ms 向上取整到秒 */
+int minTimeStepSecFromMeasureTimeMs(quint32 measureTimeMs)
+{
+    if (measureTimeMs <= 1000)
+        return 1;
+    return static_cast<int>((measureTimeMs + 999) / 1000);
+}
+
+/** @return 首条能谱的 measureTime（ms），0 表示读取失败 */
+quint32 firstSpectrumMeasureTimeMs(H5::H5File &file)
+{
+    const int probeIndex = firstDetectorWithSpectrumRows(file);
+    if (probeIndex <= 0)
+        return 0;
+    try {
+        const std::string groupName = detectorGroupName(probeIndex).toStdString();
+        H5::Group group = file.openGroup(groupName);
+        H5::DataSet dataset = group.openDataSet("Spectrum");
+        H5::CompType fileType = dataset.getCompType();
+        if (fileType != H5::PredType::NATIVE_UINT) {
+            dataset.close();
+            group.close();
+            return 0;
+        }
+        H5::DataSpace fileSpace = dataset.getSpace();
+        hsize_t dims[2] = {0, 0};
+        fileSpace.getSimpleExtentDims(dims, nullptr);
+        if (dims[0] <= 0 || dims[1] != kH5SpectrumColumnCount) {
+            dataset.close();
+            group.close();
+            return 0;
+        }
+        const hsize_t cols = dims[1];
+        hsize_t memDims[2] = {1, cols};
+        H5::DataSpace memSpace(2, memDims);
+        std::vector<uint32_t> rowData(cols);
+        hsize_t start[2] = {0, 0};
+        hsize_t count[2] = {1, cols};
+        fileSpace.selectHyperslab(H5S_SELECT_SET, count, start);
+        dataset.read(rowData.data(), H5::PredType::NATIVE_UINT, memSpace, fileSpace);
+        const H5Spectrum *spec = reinterpret_cast<const H5Spectrum *>(rowData.data());
+        const quint32 measureTimeMs = spec->measureTime;
+        dataset.close();
+        group.close();
+        return measureTimeMs;
+    } catch (H5::Exception &) {
+        return 0;
+    }
 }
 }
 
@@ -893,7 +943,8 @@ void CountRateStatisticsWindow::plotAllDetectors()
 void CountRateStatisticsWindow::initCustomPlot(QCustomPlot* customPlot, QString axisXLabel, QString axisYLabel, int startDetector, int endDetector,
                                                const QString &plotTitle, double xAxisMax)
 {
-    // QCustomPlotHelper* customPlotHelper = new QCustomPlotHelper(customPlot, this);
+    QCustomPlotHelper* customPlotHelper = new QCustomPlotHelper(customPlot, this);
+    customPlotHelper->setRangeSelectActionVisible(false); // 禁用右键的选择范围
     customPlot->setAntialiasedElements(QCP::aeAll);
     customPlot->legend->setVisible(false);
     customPlot->xAxis->setTickLabelRotation(-45);
@@ -1083,8 +1134,26 @@ void CountRateStatisticsWindow::on_action_open_triggered()
         dataset.read(row_data.data(), H5::PredType::NATIVE_UINT, mem_space, file_space);
         const FullSpectrum *data = reinterpret_cast<const FullSpectrum *>(row_data.data());
 
-        ui->line_measure_endT->setText(QString::number(rows * data->measureTime / 1000));
-        emit reporWriteLog(tr("参考通道#%1，测量时长/s：%2").arg(probeIndex).arg(ui->line_measure_endT->text()));
+        const quint32 durationSec = static_cast<quint32>(rows * data->measureTime / 1000);
+        ui->line_measure_endT->setText(QString::number(durationSec));
+        ui->spinBox_timeStart->setMaximum(durationSec);
+        ui->spinBox_timeEnd->setMaximum(durationSec);
+        ui->spinBox_timeStart->setValue(0);
+        ui->spinBox_timeEnd->setValue(durationSec);
+        if (data->measureTime == 0) {
+            emit reporWriteLog(tr("参考通道#%1，测量时长/s：%2").arg(probeIndex).arg(durationSec), QtWarningMsg);
+            emit reporWriteLog(tr("首行 measureTime 为 0，无法设置时间步长下限"), QtWarningMsg);
+        } else {
+            const int minStepSec = minTimeStepSecFromMeasureTimeMs(data->measureTime);
+            ui->spinBox->setMinimum(minStepSec);
+            if (ui->spinBox->value() < minStepSec)
+                ui->spinBox->setValue(minStepSec);
+            emit reporWriteLog(tr("参考通道#%1，测量时长/s：%2，单帧 measureTime=%3 ms，时间步长下限=%4 s")
+                                   .arg(probeIndex)
+                                   .arg(durationSec)
+                                   .arg(data->measureTime)
+                                   .arg(minStepSec));
+        }
 
         dataset.close();
         group.close();
@@ -1116,12 +1185,18 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
     qApp->setOverrideCursor(QCursor(Qt::WaitCursor));
     const quint32 tmStart = ui->spinBox_timeStart->value();
     const quint32 tmEnd = ui->spinBox_timeEnd->value();
+    const int stepSec = ui->spinBox->value();
     if (tmStart > tmEnd) {
         qApp->restoreOverrideCursor();
         emit reporWriteLog(tr("解析时间起点不能大于终点"), QtWarningMsg);
         return;
     }
-    emit reporWriteLog(tr("解析时间区间：[%1, %2]").arg(tmStart).arg(tmEnd));
+    if (stepSec <= 0) {
+        qApp->restoreOverrideCursor();
+        emit reporWriteLog(tr("时间步长须大于 0"), QtWarningMsg);
+        return;
+    }
+    emit reporWriteLog(tr("解析时间区间：[%1, %2] s，时间步长：%3 s").arg(tmStart).arg(tmEnd).arg(stepSec));
     const QString filePath = ui->textBrowser_filepath->toPlainText();
     if (filePath.isEmpty()) {
         qApp->restoreOverrideCursor();
@@ -1132,6 +1207,25 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
     try {
         H5ErrorStackSilencer silence;
         H5::H5File file(h5FilePathStd(filePath), H5F_ACC_RDONLY);
+
+        const quint32 fileMeasureTimeMs = firstSpectrumMeasureTimeMs(file);
+        if (fileMeasureTimeMs == 0) {
+            qApp->restoreOverrideCursor();
+            emit reporWriteLog(tr("无法读取首条能谱 measureTime，请检查文件"), QtWarningMsg);
+            file.close();
+            return;
+        }
+        const int minStepSec = minTimeStepSecFromMeasureTimeMs(fileMeasureTimeMs);
+        ui->spinBox->setMinimum(minStepSec);
+        if (stepSec < minStepSec) {
+            qApp->restoreOverrideCursor();
+            emit reporWriteLog(tr("时间步长不能小于 %1 s（单帧 measureTime=%2 ms）")
+                                   .arg(minStepSec)
+                                   .arg(fileMeasureTimeMs),
+                               QtWarningMsg);
+            file.close();
+            return;
+        }
 
         // 预扫描各通道行数，用于进度条总量
         hsize_t totalRowsAll = 0;
@@ -1286,69 +1380,107 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                     hsize_t rowAdvance = 1;
                     if (data->measureTime == 0) {
                         emit reporWriteLog(tr("通道#%1 第 %2 行 measureTime 为 0，跳过").arg(index).arg(i + 1), QtWarningMsg);
-                    } else if (data->sequence >= tmStart && data->sequence <= tmEnd)
-                    {
-                        double totalTemp = 0.0;
-                        double totalTempDeathT = 0;
-                        const quint8 step = qMax<quint8>(1, static_cast<quint8>(1000 / data->measureTime));
-                        QVector<quint32> spectrum(kSpectrumPointCount, 0);
-                        quint32 deathTime = 0;
-                        for (int t = 0; t < step; ++t)
-                        {
-                            for (int j = 0; j < kSpectrumPointCount; ++j)
-                            {
-                                spectrum[j] += data->spectrum[j];
-                            }
-                            deathTime += data->deathTime;
-                        }
-                        spectrum[kSpectrumPointCount - 1] = 0;
-                        rowAdvance = step;
-
-                        for (int j = 0; j < kSpectrumPointCount; ++j)
-                            totalTemp += spectrum[j];
-
-                        const double countRate = totalTemp * 1.0 / data->measureTime * 1000;
-                        totalTempDeathT = deathTime * 10.0 / (data->measureTime * 10e6) * 100;
-
-                        const double countRateCorrect =
-                            totalTemp * data->measureTime * 10e6 / (data->measureTime * 10e6 - data->deathTime * 10);
-
-                        const double deathTimeCorrectFactor =
-                            (data->measureTime * 10e6 > data->deathTime * 10)
-                                ? data->measureTime * 10e6 / (data->measureTime * 10e6 - data->deathTime * 10)
-                                : 1.0;
-                        for (int j = 0; j < kSpectrumPointCount; ++j)
-                        {
-                            mMapSpectrum[index][j] += spectrum[j];
-                            mMapSpectrumCorrect[index][j] += static_cast<quint64>(spectrum[j] * deathTimeCorrectFactor);
-                        }
-
-                        if (ref == 0) {
-                            minV = countRate;
-                            maxV = countRate;
-                            minVDeathTime = totalTempDeathT;
-                            maxVDeathTime = totalTempDeathT;
-                        } else {
-                            minV = qMin(minV, countRate);
-                            maxV = qMax(maxV, countRate);
-                            minVDeathTime = qMin(minVDeathTime, totalTempDeathT);
-                            maxVDeathTime = qMax(maxVDeathTime, totalTempDeathT);
-                        }
-                        totalCountRate += countRate;
-                        totalDeathTime += totalTempDeathT;
-                        ++ref;
-
-                        if (mMapCount[index].size() >= kMaxCountPointsPerDetector) {
-                            emit reporWriteLog(tr("通道#%1 解析点数超过上限 %2，已截断")
-                                                   .arg(index).arg(kMaxCountPointsPerDetector), QtWarningMsg);
-                            i += rowAdvance;
-                            processedRows += rowAdvance;
+                    } else {
+                        const double rowTimeSec = data->sequence * data->measureTime / 1000.0;
+                        if (rowTimeSec > tmEnd) {
                             break;
                         }
+                        if (rowTimeSec >= tmStart)
+                        {
+                            const quint32 measureTimeMs = data->measureTime;
+                            const int stepTarget = qMax(1, static_cast<int>(
+                                static_cast<quint64>(stepSec) * 1000 / measureTimeMs));
 
-                        const double timeSec = data->sequence * data->measureTime / 1000.0;
-                        mMapCount[index].push_back(qMakePair(timeSec, countRate));
-                        mMapCountCorrect[index].push_back(qMakePair(timeSec, countRateCorrect));
+                            QVector<quint32> spectrum(kSpectrumPointCount, 0);
+                            quint64 deathTimeSum = 0;
+                            quint32 mergedRows = 0;
+                            quint32 lastSequence = data->sequence;
+
+                            for (int t = 0; t < stepTarget; ++t) {
+                                const hsize_t rowIdx = i + static_cast<hsize_t>(t);
+                                if (rowIdx >= rows)
+                                    break;
+
+                                if (t > 0) {
+                                    hsize_t binStart[2] = {rowIdx, 0};
+                                    hsize_t binCount[2] = {1, cols};
+                                    file_space.selectHyperslab(H5S_SELECT_SET, binCount, binStart);
+                                    dataset.read(row_data.data(), H5::PredType::NATIVE_UINT, mem_space, file_space);
+                                    file_space.selectNone();
+                                }
+                                const H5Spectrum *row = reinterpret_cast<const H5Spectrum *>(row_data.data());
+                                if (row->measureTime == 0 || row->measureTime != measureTimeMs)
+                                    break;
+
+                                const double binTimeSec = row->sequence * row->measureTime / 1000.0;
+                                if (binTimeSec > tmEnd)
+                                    break;
+                                if (binTimeSec < tmStart)
+                                    continue;
+
+                                for (int j = 0; j < kSpectrumPointCount; ++j)
+                                    spectrum[j] += row->spectrum[j];
+                                deathTimeSum += row->deathTime;
+                                lastSequence = row->sequence;
+                                ++mergedRows;
+                            }
+
+                            if (mergedRows > 0) {
+                                spectrum[kSpectrumPointCount - 1] = 0;
+                                rowAdvance = mergedRows;
+
+                                double totalTemp = 0.0;
+                                for (int j = 0; j < kSpectrumPointCount; ++j)
+                                    totalTemp += spectrum[j];
+
+                                const double sumMeasureMs = mergedRows * measureTimeMs;
+                                const double countRate = totalTemp / sumMeasureMs * 1000.0;
+                                const double totalTempDeathT =
+                                    deathTimeSum * 10.0 / (sumMeasureMs * 10e6) * 100;
+
+                                const double countRateCorrect =
+                                    countRate * sumMeasureMs * 10e6
+                                    / (sumMeasureMs * 10e6 - deathTimeSum * 10);
+
+                                const double deathTimeCorrectFactor =
+                                    (sumMeasureMs * 10e6 > deathTimeSum * 10)
+                                        ? sumMeasureMs * 10e6 / (sumMeasureMs * 10e6 - deathTimeSum * 10)
+                                        : 1.0;
+                                for (int j = 0; j < kSpectrumPointCount; ++j)
+                                {
+                                    mMapSpectrum[index][j] += spectrum[j];
+                                    mMapSpectrumCorrect[index][j] +=
+                                        static_cast<quint64>(spectrum[j] * deathTimeCorrectFactor);
+                                }
+
+                                if (ref == 0) {
+                                    minV = countRate;
+                                    maxV = countRate;
+                                    minVDeathTime = totalTempDeathT;
+                                    maxVDeathTime = totalTempDeathT;
+                                } else {
+                                    minV = qMin(minV, countRate);
+                                    maxV = qMax(maxV, countRate);
+                                    minVDeathTime = qMin(minVDeathTime, totalTempDeathT);
+                                    maxVDeathTime = qMax(maxVDeathTime, totalTempDeathT);
+                                }
+                                totalCountRate += countRate;
+                                totalDeathTime += totalTempDeathT;
+                                ++ref;
+
+                                if (mMapCount[index].size() >= kMaxCountPointsPerDetector) {
+                                    emit reporWriteLog(tr("通道#%1 解析点数超过上限 %2，已截断")
+                                                           .arg(index).arg(kMaxCountPointsPerDetector), QtWarningMsg);
+                                    i += rowAdvance;
+                                    processedRows += rowAdvance;
+                                    break;
+                                }
+
+                                const double timeSec = lastSequence * measureTimeMs / 1000.0;
+                                mMapCount[index].push_back(qMakePair(timeSec, countRate));
+                                mMapCountCorrect[index].push_back(qMakePair(timeSec, countRateCorrect));
+                            }
+                        }
                     }
 
                     i += rowAdvance;
