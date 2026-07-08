@@ -90,6 +90,8 @@ public:
 
     QVector<specStripData> GetCount909Data();
 
+    const QVector<double> &count909PeakPos() const { return count909_peakpos; }
+
     double GetInitialCount(){return mInitialCount;}
 
     /**
@@ -121,7 +123,7 @@ public:
 
     // 剥谱
     bool SpecStripping(double* spectrum, double energy_scale[], QVector<double>& init_c, bool* exitflag,
-                       double deadTimeRate, double *peakCountOut);
+                       double deadTimeRate, double *peakCountOut, double *peakPositionOut = nullptr);
 
     // 拟合909全能峰计数随时间的变化
     bool fit909data();
@@ -247,6 +249,7 @@ private:
     // 所有的拟合数据依次压入specStripData数据中
     QVector<double> count909_time; //各分时能谱对应测量结束时间（也就是右端点），单位min
     QVector<double> count909_count; //909keV计数，采用峰面积求得
+    QVector<double> count909_peakpos; //909keV峰位道址
     QVector<double> count909_fitcount; //909keV计数随时间变化的拟合曲线
     QVector<double> count909_residual; //残差
 

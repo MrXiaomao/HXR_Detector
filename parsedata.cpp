@@ -226,7 +226,9 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
         return 0;
 
     QVector<fit_result> peakParAll;
-    bool fitflag[3] = {false, false, false};
+    
+    // 511/846/909 keV寻峰成功与否的标志位，0:没找到峰；1：找到了峰；初值为2
+    bool fitflag[3] = {false, false, false}; 
     {
         double *singleSpectrum = new double[mCHANNEL2048];
         for (int i = 0; i < mCHANNEL2048; ++i)
@@ -264,6 +266,7 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
     QVector<fit_result> peakPar0;
     peakPar0 << peakParAll[0] << peakParAll[2];
 
+    // 846/909 keV高斯峰拟合成功与否的标志位，0:没找到峰；1：找到了峰；初值为2
     bool stripFlag[2] = {fitflag[1], fitflag[2]};
 
     int spec_id = 0;
@@ -319,7 +322,8 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
 
         const double deathRatio = deadTimeRateFromSegment(spec);
         double peakCount = 0.0;
-        if (!SpecStripping(singleSpectrum, newEnergyScal, fit_c, stripFlag, deathRatio, &peakCount)) {
+        double peakPos = 0.0;
+        if (!SpecStripping(singleSpectrum, newEnergyScal, fit_c, stripFlag, deathRatio, &peakCount, &peakPos)) {
             m_fitFailureMessages.append(
                 QStringLiteral("谱仪%1第%2段能谱拟合失败，解析失败").arg(mDetId).arg(segmentIndex));
             delete[] singleSpectrum;
@@ -331,6 +335,7 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
         initialValue = fit_c;
         count909_time.push_back(spec.currentTime * 1.0 / 60000.0);
         count909_count.push_back(peakCount);
+        count909_peakpos.push_back(peakPos);
 
         qDebug() << "SpecStripping End, specID:" << spec_id << "peakCount:" << peakCount;
         ++spec_id;
@@ -689,12 +694,23 @@ bool ParseData::PeakFind(double* spectrum, QVector<fit_result>& init_c, bool* ex
  * @brief 剥谱
  * @param spectrum 能谱数组，起始道址设定为1，数组长固定G_CHANNEL-3
  * @param energy_scale，能量刻度系数, E = ax+b, energy_scale =[a,b]
- * @param fit_c 拟合系数,8个参数 {p0,p1,p2,p3,p4,p5,p6,p7} fit_type = p(0).*exp(-1/2*((x-p(1))./p(2)).^2) + p(3).*x.^4 + p(4).*x.^3 + p(5).*x.^2 + p(6).*x + p(7);
- * 拟合成功后，fit_c更新为拟合结果
+ * @param init_c 拟合系数初始值,11个参数，匹配拟合类型1 {p0,p1,p2,p3,p4,p5,p6,p7,p8,p9,p10,p11}，若不存在846keV则前三个参数为0
+ * 拟合类型1：fit_type1 = p(1).*exp(-1/2*((x-p(2))./p(3)).^2) + p(4).*exp(-1/2*((x-p(5))./p(6)).^2) + p(7).*x.^4 + p(8).*x.^3 + p(9).*x.^2 + p(10).*x + p(11);
+ * 拟合类型2：fit_type2 = p(1).*exp(-1/2*((x-p(2))./p(3)).^2) + p(4).*x.^4 + p(5).*x.^3 + p(6).*x.^2 + p(7).*x + p(8);
+ * @param exitflag [846,909]两个能峰的寻峰标志位，false:没找到峰，true:找到了峰
+ * @param deadTimeRate 死时间率
+ * @param peakCountOut 909keV峰面积净计数
+ * @param peakPositionOut 909keV峰位道址，可为空
+ * @return 是否成功
+ * 拟合成功后，init_c更新为拟合结果
  */
 bool ParseData::SpecStripping(double *spectrum, double energy_scale[], QVector<double> &init_c,
-                              bool *exitflag, double deadTimeRate, double *peakCountOut)
+                              bool *exitflag, double deadTimeRate, double *peakCountOut,
+                              double *peakPositionOut)
 {
+    // 909keV峰位
+    double position909peak = 0.0; 
+    
     std::vector<double> data;
     data.reserve(mCHANNEL2048);
     for (int i = 0; i < mCHANNEL2048; ++i)
@@ -731,6 +747,7 @@ bool ParseData::SpecStripping(double *spectrum, double energy_scale[], QVector<d
     alglib::real_1d_array c;
     QVector<double> residual_rate;
 
+    // 846keV能峰存在则采用双高斯拟合，不存在则采用单高斯拟合
     if (exitflag[0]) {
         double p[11];
         for (int i = 0; i < 11; ++i)
@@ -752,8 +769,11 @@ bool ParseData::SpecStripping(double *spectrum, double energy_scale[], QVector<d
             CurveFit::function_2gauss_poly4(c, xData, y, nullptr);
             fity_curve.push_back(y);
         }
+        // 记录909keV峰位
+        position909peak = p[4];
     } else {
         double p[8];
+        // 跳过前三个参数，从第四个参数开始赋值
         for (int i = 0; i < 8; ++i)
             p[i] = init_c[i + 3];
 
@@ -776,6 +796,8 @@ bool ParseData::SpecStripping(double *spectrum, double energy_scale[], QVector<d
             CurveFit::function_gauss_poly4(c, xData, y, nullptr);
             fity_curve.push_back(y);
         }
+        // 记录909keV峰位
+        position909peak = p[1];
     }
 
     if (exitflag[0]) {
@@ -814,6 +836,8 @@ bool ParseData::SpecStripping(double *spectrum, double energy_scale[], QVector<d
     const double denom = (1.0 - deadTimeRate) > 1e-12 ? (1.0 - deadTimeRate) : 1.0;
     if (peakCountOut)
         *peakCountOut = init_c[3] * init_c[5] * std::sqrt(pi) / denom;
+    if (peakPositionOut)
+        *peakPositionOut = position909peak;
 
     specStripData_x.append(fitx);
     specStripData_y.append(fity);
@@ -927,6 +951,7 @@ void ParseData::clearFitResult()
     m_fitFailureMessages.clear();
     count909_time.clear();
     count909_count.clear(); //909keV计数，采用峰面积求得
+    count909_peakpos.clear(); //909keV峰位道址
     count909_fitcount.clear(); //909keV计数随时间变化的拟合曲线
     count909_residual.clear(); //残差
 
