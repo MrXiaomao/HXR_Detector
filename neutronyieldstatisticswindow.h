@@ -150,6 +150,8 @@ private slots:
     void setParseBusy(bool busy);
     void startParseWorker(const NeutronYieldParseJob &job);
 
+    void on_pushButton_insertEC_clicked();
+
 private:
     struct H5FileChannelMeta {
         QMap<int, QDateTime> firstDateTime;

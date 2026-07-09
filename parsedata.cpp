@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstring> // 需要包含memcpy
 #include <algorithm>
+#include <array>
 #include "sysutils.h"
 
 #include "curveFit.h"
@@ -60,17 +61,19 @@ struct DetectorCalChannel {
     double ch909;
 };
 
-/** 与 MATLAB Data_Analysis_Main.m V1.1 各探测器 CH 表一致（1~29） */
-const DetectorCalChannel kDetectorChTable[] = {
+/** 与 MATLAB Data_Analysis_Main.m V1.1 各探测器 CH 表一致（1~29）；30~32 等待 CSV 导入 */
+constexpr std::array<DetectorCalChannel, DET_NUM> kDefaultDetectorChTable = {{
     {373, 659}, {325, 573}, {296, 525}, {374, 662}, {301, 533},
     {343, 614}, {383, 677}, {298, 533}, {434, 762}, {328, 584},
     {407, 724}, {389, 698}, {428, 763}, {344, 613}, {327, 584},
     {415, 738}, {307, 545}, {326, 578}, {315, 558}, {323, 573},
     {278, 490}, {327, 580}, {329, 585}, {392, 698}, {324, 595},
     {377, 666}, {312, 551}, {327, 582}, {312, 564},
-};
+    {0, 0}, {0, 0}, {0, 0},
+}};
 
-constexpr int kDetectorChTableSize = sizeof(kDetectorChTable) / sizeof(kDetectorChTable[0]);
+std::array<DetectorCalChannel, kDefaultDetectorChTable.size()> kDetectorChTable = kDefaultDetectorChTable;
+constexpr int kDetectorChTableSize = static_cast<int>(kDefaultDetectorChTable.size());
 constexpr int kRefreshTimeSec = 60;
 constexpr double kPeakHeightMin = 100.0;
 
@@ -80,6 +83,9 @@ bool initialEnergyScaleForDetector(int detId, double outScale[2])
         return false;
 
     const DetectorCalChannel &entry = kDetectorChTable[detId - 1];
+    if (qFuzzyIsNull(entry.ch511) || qFuzzyIsNull(entry.ch909) || qFuzzyCompare(entry.ch511, entry.ch909))
+        return false;
+
     double r2 = 0.0;
     QVector<QPointF> pts;
     pts << QPointF(entry.ch511, 511.0) << QPointF(entry.ch909, 909.0);
@@ -106,6 +112,35 @@ ParseData::ParseData() {
 }
 
 ParseData::~ParseData() {}
+
+void ParseData::resetInitialCalibrationChannels()
+{
+    kDetectorChTable = kDefaultDetectorChTable;
+}
+
+bool ParseData::setInitialCalibrationChannels(int detectorId, double ch511, double ch909)
+{
+    if (detectorId < 1 || detectorId > kDetectorChTableSize)
+        return false;
+    if (!std::isfinite(ch511) || !std::isfinite(ch909) || qFuzzyCompare(ch511, ch909))
+        return false;
+
+    kDetectorChTable[detectorId - 1].ch511 = ch511;
+    kDetectorChTable[detectorId - 1].ch909 = ch909;
+    return true;
+}
+
+bool ParseData::latestEnergyCalibration(double *k, double *b) const
+{
+    if (!mHasLatestEnergyCalibration)
+        return false;
+
+    if (k)
+        *k = mLatestEnergyCalibration[0];
+    if (b)
+        *b = mLatestEnergyCalibration[1];
+    return true;
+}
 
 void ParseData::setParseProgressCallback(ParseProgressCallback callback)
 {
@@ -319,6 +354,15 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
         enFitPoints << QPointF(peakPar0[0].c1, mEnergyCalibration[0])
                     << QPointF(peakPar0[1].c1, mEnergyCalibration[1]);
         CurveFit::fit_linear(enFitPoints, newEnergyScal, &r2);
+        if (!std::isfinite(newEnergyScal[0]) || !std::isfinite(newEnergyScal[1])
+            || qFuzzyIsNull(newEnergyScal[0])) {
+            mFitFailureMessages.append(
+                QStringLiteral("谱仪%1第%2段能量刻度拟合失败，解析失败").arg(mDetId).arg(segmentIndex));
+            delete[] singleSpectrum;
+            ++spec_id;
+            reportParseProgress(ParseProgressPhase::Fit, spec_id, totalSegments);
+            continue;
+        }
 
         const double deathRatio = deadTimeRateFromSegment(spec);
         double peakCount = 0.0;
@@ -336,6 +380,9 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
         mCount909Time.push_back(spec.currentTime * 1.0 / 60000.0);
         mCount909Count.push_back(peakCount);
         mCount909PeakPos.push_back(peakPos);
+        mLatestEnergyCalibration[0] = newEnergyScal[0];
+        mLatestEnergyCalibration[1] = newEnergyScal[1];
+        mHasLatestEnergyCalibration = true;
 
         qDebug() << "SpecStripping End, specID:" << spec_id << "peakCount:" << peakCount;
         ++spec_id;
@@ -954,6 +1001,9 @@ void ParseData::clearFitResult()
     mCount909PeakPos.clear(); //909keV峰位道址
     mCount909FitCount.clear(); //909keV计数随时间变化的拟合曲线
     mCount909Residual.clear(); //残差
+    mHasLatestEnergyCalibration = false;
+    mLatestEnergyCalibration[0] = 1.0;
+    mLatestEnergyCalibration[1] = 0.0;
 
     mSpecStripDataX.clear(); //拟合数据点x坐标
     mSpecStripDataY.clear(); //拟合数据点y坐标

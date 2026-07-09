@@ -85,6 +85,9 @@ public:
     /** @brief 最近一次 getResult 中各分段拟合失败信息 */
     QStringList fitFailureMessages() const { return mFitFailureMessages; }
 
+    /** @brief 最近一次成功剥谱分段得到的能量刻度 E = kx + b */
+    bool latestEnergyCalibration(double *k, double *b) const;
+
     //获取剥谱图像数据,给出第i个能谱的剥谱数据，三条曲线数据
     QVector<specStripData> GetStripData(int specID);
 
@@ -138,6 +141,8 @@ public:
     void setParseCancelFlag(std::atomic<bool> *flag);
     void setSpectrumFitR2Min(double r2Min) { mSpectrumFitR2Min = r2Min; }
     double spectrumFitR2Min() const { return mSpectrumFitR2Min; }
+    static void resetInitialCalibrationChannels();
+    static bool setInitialCalibrationChannels(int detectorId, double ch511, double ch909);
 
     /**
      * @brief 解析H5文件，读取指定探测器的所有能谱数据，目前不支持对正在测量的实验数据的分析（没做文件锁保护）。
@@ -252,6 +257,8 @@ private:
     QVector<double> mCount909PeakPos; //909keV峰位道址
     QVector<double> mCount909FitCount; //909keV计数随时间变化的拟合曲线
     QVector<double> mCount909Residual; //残差
+    bool mHasLatestEnergyCalibration = false;
+    double mLatestEnergyCalibration[2] = {1.0, 0.0};
 
     QVector<double> mSpecStripDataX; //拟合数据点x坐标
     QVector<double> mSpecStripDataY; //拟合数据点y坐标

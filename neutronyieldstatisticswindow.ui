@@ -1069,6 +1069,13 @@
                </property>
               </widget>
              </item>
+             <item row="4" column="0">
+              <widget class="QPushButton" name="pushButton_insertEC">
+               <property name="text">
+                <string>导入能量刻度</string>
+               </property>
+              </widget>
+             </item>
             </layout>
            </widget>
           </item>
@@ -1251,7 +1258,7 @@
      <x>0</x>
      <y>0</y>
      <width>1431</width>
-     <height>21</height>
+     <height>24</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">

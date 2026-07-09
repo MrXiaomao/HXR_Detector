@@ -10,6 +10,7 @@
 #include "globalsettings.h"
 
 #include <QButtonGroup>
+#include <QCoreApplication>
 #include <QFileDialog>
 #include <QAction>
 #include <QToolButton>
@@ -26,10 +27,22 @@
 #include <QSettings>
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QDir>
+#include <QFileInfo>
+#include <QHBoxLayout>
 #include <QLabel>
+#include <QFile>
+#include <QListWidget>
+#include <QPushButton>
+#include <QSet>
+#include <QTextStream>
+#include <QVBoxLayout>
 #include <math.h>
 #include <algorithm>
 #include <cstring>
+#include <cmath>
 
 // #include "H5Cpp.h"
 #include "CrasterParabolicHeatmapWidget.h"
@@ -37,6 +50,147 @@
 
 namespace {
 constexpr int kSpectrumPlotSlotCount = 10;
+
+QSet<int> selectEnergyCalibrationDetectors(QWidget *parent)
+{
+    QDialog dialog(parent);
+    dialog.setWindowTitle(QObject::tr("选择导入能量刻度的谱仪"));
+    dialog.resize(320, 520);
+
+    auto *layout = new QVBoxLayout(&dialog);
+    auto *label = new QLabel(QObject::tr("请选择本次需要从 CSV 导入能量刻度的谱仪编号："), &dialog);
+    layout->addWidget(label);
+
+    auto *listWidget = new QListWidget(&dialog);
+    for (int detId = 1; detId <= DET_NUM; ++detId) {
+        auto *item = new QListWidgetItem(QObject::tr("谱仪 #%1").arg(detId), listWidget);
+        item->setData(Qt::UserRole, detId);
+        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
+        item->setCheckState(Qt::Checked);
+    }
+    layout->addWidget(listWidget);
+
+    auto *selectLayout = new QHBoxLayout;
+    auto *selectAllButton = new QPushButton(QObject::tr("全选"), &dialog);
+    auto *clearButton = new QPushButton(QObject::tr("清空"), &dialog);
+    selectLayout->addWidget(selectAllButton);
+    selectLayout->addWidget(clearButton);
+    selectLayout->addStretch();
+    layout->addLayout(selectLayout);
+
+    auto setAllChecked = [listWidget](Qt::CheckState state) {
+        for (int i = 0; i < listWidget->count(); ++i)
+            listWidget->item(i)->setCheckState(state);
+    };
+    QObject::connect(selectAllButton, &QPushButton::clicked, &dialog, [=]() { setAllChecked(Qt::Checked); });
+    QObject::connect(clearButton, &QPushButton::clicked, &dialog, [=]() { setAllChecked(Qt::Unchecked); });
+
+    auto *buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    QObject::connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    QObject::connect(buttonBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(buttonBox);
+
+    QSet<int> selectedDetectors;
+    if (dialog.exec() != QDialog::Accepted)
+        return selectedDetectors;
+
+    for (int i = 0; i < listWidget->count(); ++i) {
+        const QListWidgetItem *item = listWidget->item(i);
+        if (item->checkState() == Qt::Checked)
+            selectedDetectors.insert(item->data(Qt::UserRole).toInt());
+    }
+    return selectedDetectors;
+}
+
+QString energyCalibrationCsvFilePath()
+{
+    return QDir(QCoreApplication::applicationDirPath()).filePath(ENERGY_CALIBRATION_CSV_FILE);
+}
+
+QString formatCalibrationValue(double value)
+{
+    return QString::number(value, 'g', 17);
+}
+
+bool writeEnergyCalibrationCsvValue(int detectorId, double k, double b, QString *errorText)
+{
+    if (detectorId < 1 || detectorId > DET_NUM || !std::isfinite(k) || !std::isfinite(b) || qFuzzyIsNull(k)) {
+        if (errorText)
+            *errorText = QObject::tr("能量刻度参数无效");
+        return false;
+    }
+
+    QMap<int, QPair<double, double>> calibrationRows;
+    const QString csvPath = energyCalibrationCsvFilePath();
+    QFile inFile(csvPath);
+    if (inFile.exists() && inFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QTextStream in(&inFile);
+        in.setCodec("UTF-8");
+        while (!in.atEnd()) {
+            const QString line = in.readLine().trimmed();
+            if (line.isEmpty())
+                continue;
+
+            const QStringList parts = line.split(',');
+            if (parts.size() < 3)
+                continue;
+
+            bool okDetector = false;
+            const int rowDetectorId = parts.at(0).trimmed().toInt(&okDetector);
+            if (!okDetector || rowDetectorId < 1 || rowDetectorId > DET_NUM)
+                continue;
+
+            bool okK = false;
+            bool okB = false;
+            const double rowK = parts.at(1).trimmed().toDouble(&okK);
+            const double rowB = parts.at(2).trimmed().toDouble(&okB);
+            if (okK && okB && !qFuzzyIsNull(rowK))
+                calibrationRows.insert(rowDetectorId, qMakePair(rowK, rowB));
+        }
+        inFile.close();
+    } else if (inFile.exists()) {
+        if (errorText)
+            *errorText = QObject::tr("打开能量刻度 CSV 文件失败：%1").arg(csvPath);
+        return false;
+    }
+
+    calibrationRows.insert(detectorId, qMakePair(k, b));
+
+    QDir dir(QFileInfo(csvPath).absolutePath());
+    if (!dir.exists() && !dir.mkpath(QStringLiteral("."))) {
+        if (errorText)
+            *errorText = QObject::tr("创建能量刻度目录失败：%1").arg(dir.absolutePath());
+        return false;
+    }
+
+    QFile outFile(csvPath);
+    if (!outFile.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+        if (errorText)
+            *errorText = QObject::tr("写入能量刻度 CSV 文件失败：%1").arg(csvPath);
+        return false;
+    }
+
+    QTextStream out(&outFile);
+    out.setCodec("UTF-8");
+    out << "Detector,K,B\n";
+    for (auto it = calibrationRows.constBegin(); it != calibrationRows.constEnd(); ++it) {
+        out << it.key() << ","
+            << formatCalibrationValue(it.value().first) << ","
+            << formatCalibrationValue(it.value().second) << "\n";
+    }
+    outFile.close();
+    return true;
+}
+
+bool updateInitialCalibrationFromEnergyScale(int detectorId, double k, double b)
+{
+    if (!std::isfinite(k) || !std::isfinite(b) || qFuzzyIsNull(k))
+        return false;
+
+    const double ch511 = (511.0 - b) / k;
+    const double ch909 = (909.0 - b) / k;
+    return ParseData::setInitialCalibrationChannels(detectorId, ch511, ch909);
+}
 
 const QList<QColor> &spectrumSlotColors()
 {
@@ -2002,6 +2156,8 @@ void NeutronYieldStatisticsWindow::setParseBusy(bool busy)
 {
     ui->action_startCalculate->setEnabled(!busy);
     ui->action_stopCalculate->setEnabled(busy);
+    ui->pushButton_start->setEnabled(!busy);
+    ui->pushButton_insertEC->setEnabled(!busy);
     ui->action_open->setEnabled(!busy);
     ui->bt_addFiles->setEnabled(!busy);
     ui->bt_removeFile->setEnabled(!busy);
@@ -2049,8 +2205,33 @@ void NeutronYieldStatisticsWindow::onParseChannelFinished(int detId, bool mergeO
 
     const bool fitOk = dealFile[detId - 1]->successfulFitSegmentCount() > 0;
     mDealSucess[detId] = fitOk;
-    if (fitOk)
+    if (fitOk) {
+        double energyK = 0.0;
+        double energyB = 0.0;
+        if (dealFile[detId - 1]->latestEnergyCalibration(&energyK, &energyB)) {
+            QString csvError;
+            if (writeEnergyCalibrationCsvValue(detId, energyK, energyB, &csvError)) {
+                emit reporWriteLog(tr("谱仪%1解析成功，已更新能量刻度 CSV：K=%2，B=%3")
+                                       .arg(detId)
+                                       .arg(energyK, 0, 'g', 12)
+                                       .arg(energyB, 0, 'g', 12));
+            } else {
+                emit reporWriteLog(tr("谱仪%1解析成功，但更新能量刻度 CSV 失败：%2")
+                                       .arg(detId)
+                                       .arg(csvError),
+                                   QtWarningMsg);
+            }
+
+            if (updateInitialCalibrationFromEnergyScale(detId, energyK, energyB)) {
+                emit reporWriteLog(tr("谱仪%1已同步更新本次程序运行的初始能量刻度。").arg(detId));
+            } else {
+                emit reporWriteLog(tr("谱仪%1解析成功，但同步初始能量刻度失败。").arg(detId), QtWarningMsg);
+            }
+        } else {
+            emit reporWriteLog(tr("谱仪%1解析成功，但未获得可写入的最新能量刻度。").arg(detId), QtWarningMsg);
+        }
         emit sigSuccess(detId);
+    }
 
     emit reporWriteLog(QString("谱仪%1解析完成").arg(detId));
 }
@@ -2686,4 +2867,120 @@ void NeutronYieldStatisticsWindow::on_bt_saveResult_clicked()
         emit reporWriteLog(tr("文件保存失败，路径：%1").arg(wholeFileName));
     }
     file.close();
+}
+
+
+void NeutronYieldStatisticsWindow::on_pushButton_insertEC_clicked()
+{
+    if (mParseWorkerThread) {
+        QMessageBox::information(this, tr("提示"), tr("正在解析中，不能导入能量刻度。"));
+        return;
+    }
+
+    const bool oldStartButtonEnabled = ui->pushButton_start->isEnabled();
+    const bool oldStartActionEnabled = ui->action_startCalculate->isEnabled();
+    ui->pushButton_start->setEnabled(false);
+    ui->action_startCalculate->setEnabled(false);
+
+    auto restoreParseButton = [&]() {
+        ui->pushButton_start->setEnabled(oldStartButtonEnabled);
+        ui->action_startCalculate->setEnabled(oldStartActionEnabled);
+    };
+
+    const QSet<int> selectedDetectors = selectEnergyCalibrationDetectors(this);
+    if (selectedDetectors.isEmpty()) {
+        restoreParseButton();
+        emit reporWriteLog(tr("未选择需要导入能量刻度的谱仪，已取消导入。"), QtInfoMsg);
+        return;
+    }
+
+    const QString csvPath = QDir(QCoreApplication::applicationDirPath()).filePath(ENERGY_CALIBRATION_CSV_FILE);
+    QFile file(csvPath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        restoreParseButton();
+        QMessageBox::warning(this, tr("提示"), tr("打开能量刻度 CSV 文件失败：%1").arg(csvPath));
+        emit reporWriteLog(tr("打开能量刻度 CSV 文件失败：%1").arg(csvPath), QtWarningMsg);
+        return;
+    }
+
+    int importedCount = 0;
+    int skippedCount = 0;
+    QSet<int> importedDetectors;
+    ParseData::resetInitialCalibrationChannels();
+    QTextStream in(&file);
+    in.setCodec("UTF-8");
+    while (!in.atEnd()) {
+        const QString line = in.readLine().trimmed();
+        if (line.isEmpty())
+            continue;
+
+        const QStringList parts = line.split(',');
+        if (parts.size() < 3) {
+            ++skippedCount;
+            continue;
+        }
+
+        bool okDetector = false;
+        const int detectorId = parts.at(0).trimmed().toInt(&okDetector);
+        if (!okDetector) {
+            // 表头 Detector,K,B 会走这里，直接跳过。
+            continue;
+        }
+        if (!selectedDetectors.contains(detectorId))
+            continue;
+
+        bool okK = false;
+        bool okB = false;
+        const double k = parts.at(1).trimmed().toDouble(&okK);
+        const double b = parts.at(2).trimmed().toDouble(&okB);
+        if (!okK || !okB || qFuzzyIsNull(k)) {
+            ++skippedCount;
+            emit reporWriteLog(tr("谱仪%1能量刻度参数无效，继续使用默认初始道址").arg(detectorId), QtWarningMsg);
+            continue;
+        }
+
+        const double ch511 = (511.0 - b) / k;
+        const double ch909 = (909.0 - b) / k;
+        if (!std::isfinite(ch511) || !std::isfinite(ch909)
+            || !ParseData::setInitialCalibrationChannels(detectorId, ch511, ch909)) {
+            ++skippedCount;
+            emit reporWriteLog(tr("谱仪%1能量刻度换算失败，继续使用默认初始道址").arg(detectorId), QtWarningMsg);
+            continue;
+        }
+
+        ++importedCount;
+        importedDetectors.insert(detectorId);
+        emit reporWriteLog(tr("谱仪%1导入初始能量刻度：511keV=%2道，909keV=%3道")
+                               .arg(detectorId)
+                               .arg(ch511, 0, 'f', 3)
+                               .arg(ch909, 0, 'f', 3));
+    }
+    file.close();
+
+    restoreParseButton();
+
+    if (importedCount == 0) {
+        QMessageBox::information(this, tr("提示"), tr("CSV 中没有可导入的有效能量刻度，继续使用程序默认初始道址。"));
+        emit reporWriteLog(tr("CSV 中没有可导入的有效能量刻度，继续使用程序默认初始道址。"), QtWarningMsg);
+        return;
+    }
+
+    int missingSelectedCount = 0;
+    for (int detectorId : selectedDetectors) {
+        if (!importedDetectors.contains(detectorId)) {
+            ++missingSelectedCount;
+            emit reporWriteLog(tr("谱仪%1未在 CSV 中读取到有效能量刻度，继续使用默认初始道址").arg(detectorId),
+                               QtWarningMsg);
+        }
+    }
+
+    QMessageBox::information(this, tr("提示"),
+                             tr("能量刻度导入成功：%1 个谱仪已更新，%2 行跳过，%3 个已选择谱仪使用默认初始道址。")
+                                 .arg(importedCount)
+                                 .arg(skippedCount)
+                                 .arg(missingSelectedCount));
+    emit reporWriteLog(tr("能量刻度导入成功：%1 个谱仪已更新，%2 行跳过，%3 个已选择谱仪使用默认初始道址。")
+                           .arg(importedCount)
+                           .arg(skippedCount)
+                           .arg(missingSelectedCount));
 }
