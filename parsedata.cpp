@@ -72,6 +72,7 @@ constexpr std::array<DetectorCalChannel, DET_NUM> kDefaultDetectorChTable = {{
     {0, 0}, {0, 0}, {0, 0},
 }};
 
+// 当前运行实际使用的初始寻峰道址表，可由 CSV 导入或解析结果更新。
 std::array<DetectorCalChannel, kDefaultDetectorChTable.size()> kDetectorChTable = kDefaultDetectorChTable;
 constexpr int kDetectorChTableSize = static_cast<int>(kDefaultDetectorChTable.size());
 constexpr int kRefreshTimeSec = 60;
@@ -380,6 +381,7 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
         mCount909Time.push_back(spec.currentTime * 1.0 / 60000.0);
         mCount909Count.push_back(peakCount);
         mCount909PeakPos.push_back(peakPos);
+        // 保留最近一次成功剥谱得到的能量刻度，供界面手动导出到 CSV。
         mLatestEnergyCalibration[0] = newEnergyScal[0];
         mLatestEnergyCalibration[1] = newEnergyScal[1];
         mHasLatestEnergyCalibration = true;

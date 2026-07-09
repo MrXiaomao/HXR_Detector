@@ -51,14 +51,26 @@
 namespace {
 constexpr int kSpectrumPlotSlotCount = 10;
 
-QSet<int> selectEnergyCalibrationDetectors(QWidget *parent)
+// 自动导入时使用：返回全部谱仪编号。
+QSet<int> allEnergyCalibrationDetectors()
+{
+    QSet<int> detectors;
+    for (int detId = 1; detId <= DET_NUM; ++detId)
+        detectors.insert(detId);
+    return detectors;
+}
+
+// 弹出谱仪勾选框，供导入/导出能量刻度时选择目标谱仪。
+QSet<int> selectEnergyCalibrationDetectors(QWidget *parent,
+                                           const QString &title,
+                                           const QString &labelText)
 {
     QDialog dialog(parent);
-    dialog.setWindowTitle(QObject::tr("选择导入能量刻度的谱仪"));
+    dialog.setWindowTitle(title);
     dialog.resize(320, 520);
 
     auto *layout = new QVBoxLayout(&dialog);
-    auto *label = new QLabel(QObject::tr("请选择本次需要从 CSV 导入能量刻度的谱仪编号："), &dialog);
+    auto *label = new QLabel(labelText, &dialog);
     layout->addWidget(label);
 
     auto *listWidget = new QListWidget(&dialog);
@@ -102,16 +114,19 @@ QSet<int> selectEnergyCalibrationDetectors(QWidget *parent)
     return selectedDetectors;
 }
 
+// 统一生成能量刻度 CSV 的运行时路径。
 QString energyCalibrationCsvFilePath()
 {
     return QDir(QCoreApplication::applicationDirPath()).filePath(ENERGY_CALIBRATION_CSV_FILE);
 }
 
+// 写 CSV 时保留足够精度，避免 K/B 多次读写后明显漂移。
 QString formatCalibrationValue(double value)
 {
     return QString::number(value, 'g', 17);
 }
 
+// 将指定谱仪的最新 K/B 写回 CSV，保留其它谱仪已有记录。
 bool writeEnergyCalibrationCsvValue(int detectorId, double k, double b, QString *errorText)
 {
     if (detectorId < 1 || detectorId > DET_NUM || !std::isfinite(k) || !std::isfinite(b) || qFuzzyIsNull(k)) {
@@ -182,6 +197,7 @@ bool writeEnergyCalibrationCsvValue(int detectorId, double k, double b, QString 
     return true;
 }
 
+// 将 E = kx + b 反算为 511/909 keV 初始道址并同步到内存表。
 bool updateInitialCalibrationFromEnergyScale(int detectorId, double k, double b)
 {
     if (!std::isfinite(k) || !std::isfinite(b) || qFuzzyIsNull(k))
@@ -190,6 +206,99 @@ bool updateInitialCalibrationFromEnergyScale(int detectorId, double k, double b)
     const double ch511 = (511.0 - b) / k;
     const double ch909 = (909.0 - b) / k;
     return ParseData::setInitialCalibrationChannels(detectorId, ch511, ch909);
+}
+
+// 从 CSV 导入初始能量刻度；导入前先恢复默认表，未命中谱仪继续使用默认道址。
+bool importInitialEnergyCalibrationFromCsv(const QSet<int> &selectedDetectors,
+                                           int *importedCountOut,
+                                           int *skippedCountOut,
+                                           QStringList *messagesOut)
+{
+    if (importedCountOut)
+        *importedCountOut = 0;
+    if (skippedCountOut)
+        *skippedCountOut = 0;
+
+    if (selectedDetectors.isEmpty())
+        return false;
+
+    ParseData::resetInitialCalibrationChannels();
+
+    const QString csvPath = energyCalibrationCsvFilePath();
+    QFile file(csvPath);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        if (messagesOut)
+            messagesOut->append(QObject::tr("打开能量刻度 CSV 文件失败：%1").arg(csvPath));
+        return false;
+    }
+
+    int importedCount = 0;
+    int skippedCount = 0;
+    QSet<int> importedDetectors;
+    QTextStream in(&file);
+    in.setCodec("UTF-8");
+    while (!in.atEnd()) {
+        const QString line = in.readLine().trimmed();
+        if (line.isEmpty())
+            continue;
+
+        const QStringList parts = line.split(',');
+        if (parts.size() < 3) {
+            ++skippedCount;
+            continue;
+        }
+
+        bool okDetector = false;
+        const int detectorId = parts.at(0).trimmed().toInt(&okDetector);
+        if (!okDetector)
+            continue;
+        if (!selectedDetectors.contains(detectorId))
+            continue;
+
+        bool okK = false;
+        bool okB = false;
+        const double k = parts.at(1).trimmed().toDouble(&okK);
+        const double b = parts.at(2).trimmed().toDouble(&okB);
+        if (!okK || !okB || qFuzzyIsNull(k)) {
+            ++skippedCount;
+            if (messagesOut)
+                messagesOut->append(QObject::tr("谱仪%1能量刻度参数无效，继续使用默认初始道址").arg(detectorId));
+            continue;
+        }
+
+        const double ch511 = (511.0 - b) / k;
+        const double ch909 = (909.0 - b) / k;
+        if (!std::isfinite(ch511) || !std::isfinite(ch909)
+            || !ParseData::setInitialCalibrationChannels(detectorId, ch511, ch909)) {
+            ++skippedCount;
+            if (messagesOut)
+                messagesOut->append(QObject::tr("谱仪%1能量刻度换算失败，继续使用默认初始道址").arg(detectorId));
+            continue;
+        }
+
+        ++importedCount;
+        importedDetectors.insert(detectorId);
+        if (messagesOut) {
+            messagesOut->append(QObject::tr("谱仪%1导入初始能量刻度：511keV=%2道，909keV=%3道")
+                                    .arg(detectorId)
+                                    .arg(ch511, 0, 'f', 3)
+                                    .arg(ch909, 0, 'f', 3));
+        }
+    }
+    file.close();
+
+    for (int detectorId : selectedDetectors) {
+        if (!importedDetectors.contains(detectorId) && messagesOut) {
+            messagesOut->append(QObject::tr("谱仪%1未在 CSV 中读取到有效能量刻度，继续使用默认初始道址")
+                                    .arg(detectorId));
+        }
+    }
+
+    if (importedCountOut)
+        *importedCountOut = importedCount;
+    if (skippedCountOut)
+        *skippedCountOut = skippedCount;
+    return importedCount > 0;
 }
 
 const QList<QColor> &spectrumSlotColors()
@@ -373,6 +482,22 @@ NeutronYieldStatisticsWindow::NeutronYieldStatisticsWindow(bool isDarkTheme, QWi
     connect(this, SIGNAL(sigFail()), this, SLOT(slotFail()));//, Qt::QueuedConnection);
     // 使用函数指针语法连接信号和槽，确保连接成功
     connect(this, &NeutronYieldStatisticsWindow::sigSuccess, this, &NeutronYieldStatisticsWindow::slotSuccess, Qt::QueuedConnection);
+
+    // 界面打开后自动导入 CSV 初始刻度，避免用户每次手动导入。
+    QTimer::singleShot(0, this, [this]() {
+        int importedCount = 0;
+        int skippedCount = 0;
+        if (importInitialEnergyCalibrationFromCsv(allEnergyCalibrationDetectors(),
+                                                  &importedCount,
+                                                  &skippedCount,
+                                                  nullptr)) {
+            emit reporWriteLog(tr("已自动导入 CSV 初始能量刻度：%1 个谱仪已更新，%2 行跳过。")
+                                   .arg(importedCount)
+                                   .arg(skippedCount));
+        } else {
+            emit reporWriteLog(tr("未自动导入 CSV 初始能量刻度，继续使用程序默认初始道址。"), QtWarningMsg);
+        }
+    });
 
     QTimer::singleShot(0, this, [&](){
         qGoodStateHolder->setCurrentThemeDark(mIsDarkTheme);
@@ -2208,25 +2333,12 @@ void NeutronYieldStatisticsWindow::onParseChannelFinished(int detId, bool mergeO
     if (fitOk) {
         double energyK = 0.0;
         double energyB = 0.0;
+        // 解析成功后只缓存最新 K/B；是否写入 CSV 由“导出能量刻度”按钮决定。
         if (dealFile[detId - 1]->latestEnergyCalibration(&energyK, &energyB)) {
-            QString csvError;
-            if (writeEnergyCalibrationCsvValue(detId, energyK, energyB, &csvError)) {
-                emit reporWriteLog(tr("谱仪%1解析成功，已更新能量刻度 CSV：K=%2，B=%3")
-                                       .arg(detId)
-                                       .arg(energyK, 0, 'g', 12)
-                                       .arg(energyB, 0, 'g', 12));
-            } else {
-                emit reporWriteLog(tr("谱仪%1解析成功，但更新能量刻度 CSV 失败：%2")
-                                       .arg(detId)
-                                       .arg(csvError),
-                                   QtWarningMsg);
-            }
-
-            if (updateInitialCalibrationFromEnergyScale(detId, energyK, energyB)) {
-                emit reporWriteLog(tr("谱仪%1已同步更新本次程序运行的初始能量刻度。").arg(detId));
-            } else {
-                emit reporWriteLog(tr("谱仪%1解析成功，但同步初始能量刻度失败。").arg(detId), QtWarningMsg);
-            }
+            emit reporWriteLog(tr("谱仪%1解析成功，已生成最新能量刻度：K=%2，B=%3，可点击“导出能量刻度”写入 CSV。")
+                                   .arg(detId)
+                                   .arg(energyK, 0, 'g', 12)
+                                   .arg(energyB, 0, 'g', 12));
         } else {
             emit reporWriteLog(tr("谱仪%1解析成功，但未获得可写入的最新能量刻度。").arg(detId), QtWarningMsg);
         }
@@ -2870,117 +2982,67 @@ void NeutronYieldStatisticsWindow::on_bt_saveResult_clicked()
 }
 
 
+// pushButton_insertEC 当前作为“导出能量刻度”按钮使用，保留旧对象名以匹配 Qt 自动槽连接。
 void NeutronYieldStatisticsWindow::on_pushButton_insertEC_clicked()
 {
     if (mParseWorkerThread) {
-        QMessageBox::information(this, tr("提示"), tr("正在解析中，不能导入能量刻度。"));
+        QMessageBox::information(this, tr("提示"), tr("正在解析中，不能导出能量刻度。"));
         return;
     }
 
-    const bool oldStartButtonEnabled = ui->pushButton_start->isEnabled();
-    const bool oldStartActionEnabled = ui->action_startCalculate->isEnabled();
-    ui->pushButton_start->setEnabled(false);
-    ui->action_startCalculate->setEnabled(false);
-
-    auto restoreParseButton = [&]() {
-        ui->pushButton_start->setEnabled(oldStartButtonEnabled);
-        ui->action_startCalculate->setEnabled(oldStartActionEnabled);
-    };
-
-    const QSet<int> selectedDetectors = selectEnergyCalibrationDetectors(this);
+    const QSet<int> selectedDetectors = selectEnergyCalibrationDetectors(
+        this,
+        tr("选择导出能量刻度的谱仪"),
+        tr("请选择本次需要将最新解析能量刻度写入 CSV 的谱仪编号："));
     if (selectedDetectors.isEmpty()) {
-        restoreParseButton();
-        emit reporWriteLog(tr("未选择需要导入能量刻度的谱仪，已取消导入。"), QtInfoMsg);
+        emit reporWriteLog(tr("未选择需要导出能量刻度的谱仪，已取消导出。"), QtInfoMsg);
         return;
     }
 
-    const QString csvPath = QDir(QCoreApplication::applicationDirPath()).filePath(ENERGY_CALIBRATION_CSV_FILE);
-    QFile file(csvPath);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        restoreParseButton();
-        QMessageBox::warning(this, tr("提示"), tr("打开能量刻度 CSV 文件失败：%1").arg(csvPath));
-        emit reporWriteLog(tr("打开能量刻度 CSV 文件失败：%1").arg(csvPath), QtWarningMsg);
-        return;
-    }
-
-    int importedCount = 0;
+    int exportedCount = 0;
     int skippedCount = 0;
-    QSet<int> importedDetectors;
-    ParseData::resetInitialCalibrationChannels();
-    QTextStream in(&file);
-    in.setCodec("UTF-8");
-    while (!in.atEnd()) {
-        const QString line = in.readLine().trimmed();
-        if (line.isEmpty())
-            continue;
-
-        const QStringList parts = line.split(',');
-        if (parts.size() < 3) {
-            ++skippedCount;
-            continue;
-        }
-
-        bool okDetector = false;
-        const int detectorId = parts.at(0).trimmed().toInt(&okDetector);
-        if (!okDetector) {
-            // 表头 Detector,K,B 会走这里，直接跳过。
-            continue;
-        }
-        if (!selectedDetectors.contains(detectorId))
-            continue;
-
-        bool okK = false;
-        bool okB = false;
-        const double k = parts.at(1).trimmed().toDouble(&okK);
-        const double b = parts.at(2).trimmed().toDouble(&okB);
-        if (!okK || !okB || qFuzzyIsNull(k)) {
-            ++skippedCount;
-            emit reporWriteLog(tr("谱仪%1能量刻度参数无效，继续使用默认初始道址").arg(detectorId), QtWarningMsg);
-            continue;
-        }
-
-        const double ch511 = (511.0 - b) / k;
-        const double ch909 = (909.0 - b) / k;
-        if (!std::isfinite(ch511) || !std::isfinite(ch909)
-            || !ParseData::setInitialCalibrationChannels(detectorId, ch511, ch909)) {
-            ++skippedCount;
-            emit reporWriteLog(tr("谱仪%1能量刻度换算失败，继续使用默认初始道址").arg(detectorId), QtWarningMsg);
-            continue;
-        }
-
-        ++importedCount;
-        importedDetectors.insert(detectorId);
-        emit reporWriteLog(tr("谱仪%1导入初始能量刻度：511keV=%2道，909keV=%3道")
-                               .arg(detectorId)
-                               .arg(ch511, 0, 'f', 3)
-                               .arg(ch909, 0, 'f', 3));
-    }
-    file.close();
-
-    restoreParseButton();
-
-    if (importedCount == 0) {
-        QMessageBox::information(this, tr("提示"), tr("CSV 中没有可导入的有效能量刻度，继续使用程序默认初始道址。"));
-        emit reporWriteLog(tr("CSV 中没有可导入的有效能量刻度，继续使用程序默认初始道址。"), QtWarningMsg);
-        return;
-    }
-
-    int missingSelectedCount = 0;
     for (int detectorId : selectedDetectors) {
-        if (!importedDetectors.contains(detectorId)) {
-            ++missingSelectedCount;
-            emit reporWriteLog(tr("谱仪%1未在 CSV 中读取到有效能量刻度，继续使用默认初始道址").arg(detectorId),
-                               QtWarningMsg);
+        if (detectorId < 1 || detectorId > DET_NUM
+            || !mDealSucess.value(detectorId, false)
+            || !dealFile[detectorId - 1]) {
+            ++skippedCount;
+            emit reporWriteLog(tr("谱仪%1尚未解析成功，已跳过能量刻度导出。").arg(detectorId), QtWarningMsg);
+            continue;
         }
+
+        double energyK = 0.0;
+        double energyB = 0.0;
+        if (!dealFile[detectorId - 1]->latestEnergyCalibration(&energyK, &energyB)) {
+            ++skippedCount;
+            emit reporWriteLog(tr("谱仪%1没有可导出的最新能量刻度，已跳过。").arg(detectorId), QtWarningMsg);
+            continue;
+        }
+
+        QString csvError;
+        if (!writeEnergyCalibrationCsvValue(detectorId, energyK, energyB, &csvError)) {
+            ++skippedCount;
+            emit reporWriteLog(tr("谱仪%1导出能量刻度失败：%2").arg(detectorId).arg(csvError), QtWarningMsg);
+            continue;
+        }
+
+        if (!updateInitialCalibrationFromEnergyScale(detectorId, energyK, energyB)) {
+            ++skippedCount;
+            emit reporWriteLog(tr("谱仪%1已写入 CSV，但同步当前初始能量刻度失败。").arg(detectorId), QtWarningMsg);
+            continue;
+        }
+
+        ++exportedCount;
+        emit reporWriteLog(tr("谱仪%1已导出能量刻度：K=%2，B=%3")
+                               .arg(detectorId)
+                               .arg(energyK, 0, 'g', 12)
+                               .arg(energyB, 0, 'g', 12));
     }
 
     QMessageBox::information(this, tr("提示"),
-                             tr("能量刻度导入成功：%1 个谱仪已更新，%2 行跳过，%3 个已选择谱仪使用默认初始道址。")
-                                 .arg(importedCount)
-                                 .arg(skippedCount)
-                                 .arg(missingSelectedCount));
-    emit reporWriteLog(tr("能量刻度导入成功：%1 个谱仪已更新，%2 行跳过，%3 个已选择谱仪使用默认初始道址。")
-                           .arg(importedCount)
-                           .arg(skippedCount)
-                           .arg(missingSelectedCount));
+                             tr("能量刻度导出完成：%1 个谱仪已写入 CSV，%2 个谱仪跳过。")
+                                 .arg(exportedCount)
+                                 .arg(skippedCount));
+    emit reporWriteLog(tr("能量刻度导出完成：%1 个谱仪已写入 CSV，%2 个谱仪跳过。")
+                           .arg(exportedCount)
+                           .arg(skippedCount));
 }

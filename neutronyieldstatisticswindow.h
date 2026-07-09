@@ -150,6 +150,7 @@ private slots:
     void setParseBusy(bool busy);
     void startParseWorker(const NeutronYieldParseJob &job);
 
+    // “导出能量刻度”按钮槽函数；对象名沿用 pushButton_insertEC 以兼容 Qt 自动连接。
     void on_pushButton_insertEC_clicked();
 
 private:

@@ -1072,7 +1072,7 @@
              <item row="4" column="0">
               <widget class="QPushButton" name="pushButton_insertEC">
                <property name="text">
-                <string>导入能量刻度</string>
+                <string>导出能量刻度</string>
                </property>
               </widget>
              </item>

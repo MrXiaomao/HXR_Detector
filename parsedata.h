@@ -85,7 +85,7 @@ public:
     /** @brief 最近一次 getResult 中各分段拟合失败信息 */
     QStringList fitFailureMessages() const { return mFitFailureMessages; }
 
-    /** @brief 最近一次成功剥谱分段得到的能量刻度 E = kx + b */
+    /** @brief 读取最近一次成功剥谱分段得到的能量刻度 E = kx + b */
     bool latestEnergyCalibration(double *k, double *b) const;
 
     //获取剥谱图像数据,给出第i个能谱的剥谱数据，三条曲线数据
@@ -141,7 +141,10 @@ public:
     void setParseCancelFlag(std::atomic<bool> *flag);
     void setSpectrumFitR2Min(double r2Min) { mSpectrumFitR2Min = r2Min; }
     double spectrumFitR2Min() const { return mSpectrumFitR2Min; }
+    /** @brief 恢复内存中的初始能量刻度道址表为程序默认值 */
     static void resetInitialCalibrationChannels();
+
+    /** @brief 更新指定谱仪的 511/909 keV 初始寻峰道址 */
     static bool setInitialCalibrationChannels(int detectorId, double ch511, double ch909);
 
     /**
