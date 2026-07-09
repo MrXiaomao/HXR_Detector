@@ -109,42 +109,42 @@ ParseData::~ParseData() {}
 
 void ParseData::setParseProgressCallback(ParseProgressCallback callback)
 {
-    m_parseProgressCallback = std::move(callback);
+    mParseProgressCallback = std::move(callback);
 }
 
 void ParseData::clearParseProgressCallback()
 {
-    m_parseProgressCallback = nullptr;
+    mParseProgressCallback = nullptr;
 }
 
 void ParseData::setParseCancelFlag(std::atomic<bool> *flag)
 {
-    m_parseCancelFlag = flag;
+    mParseCancelFlag = flag;
 }
 
 bool ParseData::isParseCancelled() const
 {
-    if (m_parseCancelFlag && m_parseCancelFlag->load(std::memory_order_relaxed))
+    if (mParseCancelFlag && mParseCancelFlag->load(std::memory_order_relaxed))
         return true;
-    return m_localCancelFlag.load(std::memory_order_relaxed);
+    return mLocalCancelFlag.load(std::memory_order_relaxed);
 }
 
 void ParseData::reportParseProgress(ParseProgressPhase phase, int current, int total) const
 {
-    if (!m_parseProgressCallback)
+    if (!mParseProgressCallback)
         return;
     const int safeTotal = qMax(1, total);
     const int safeCurrent = qBound(0, current, safeTotal);
-    m_parseProgressCallback(phase, safeCurrent, safeTotal);
+    mParseProgressCallback(phase, safeCurrent, safeTotal);
 }
 
 void ParseData::mergeSpecTime_online(const H5Spectrum& specPack)
 {
     // -------- 0. 先做道址压缩：8192 道 -> 2048 道，每 4 道求和 --------
-    quint32 compressedSpec[mCHANNEL2048];
-    for (int ch = 0; ch < mCHANNEL2048; ++ch) {
+    quint32 compressedSpec[mChannel2048];
+    for (int ch = 0; ch < mChannel2048; ++ch) {
         const int base = ch * 4;
-        // 简单相加，和你后面 m_mergeSpec 的累加一样，本身就可能溢出，所以这里不额外做饱和判断
+        // 简单相加，和你后面 mMergeSpec 的累加一样，本身就可能溢出，所以这里不额外做饱和判断
         compressedSpec[ch] =
             specPack.spectrum[base]
             + specPack.spectrum[base + 1]
@@ -154,38 +154,38 @@ void ParseData::mergeSpecTime_online(const H5Spectrum& specPack)
 
     // -------- 1. 统计计数率：用压缩后的谱 --------
     int sumCount = 0;
-    for (int i = 0; i < mCHANNEL2048; ++i) {
+    for (int i = 0; i < mChannel2048; ++i) {
         sumCount += compressedSpec[i];
     }
 
-    allSpecTime.push_back(specPack.sequence * specPack.measureTime);
-    allSpecCount.push_back(sumCount);
+    mAllSpecTime.push_back(specPack.sequence * specPack.measureTime);
+    mAllSpecCount.push_back(sumCount);
 
     // 记录打靶时刻
-    if (shotTime < 0 && sumCount > 1000) {
-        shotTime = specPack.sequence * specPack.measureTime;
-        spectDeltaT = specPack.measureTime; // 单个能谱测量时长
+    if (mShotTime < 0 && sumCount > 1000) {
+        mShotTime = specPack.sequence * specPack.measureTime;
+        mSpectDeltaT = specPack.measureTime; // 单个能谱测量时长
     }
 
     // 当前时刻（ms）
     qint64 currentTime = specPack.sequence * specPack.measureTime;
-    int timeAfterShot = (currentTime - shotTime) / 1000; // 单位 s
+    int timeAfterShot = (currentTime - mShotTime) / 1000; // 单位 s
 
-    if (timeAfterShot > startTime_online) {
+    if (timeAfterShot > mStartTimeOnline) {
         quint64 lossTime = 0; // ns
 
-        int timeMerge = timeAfterShot - startTime_online; // s
-        int mergeID = int(ceil(timeMerge * 1.0 / mTimeBin_online));
+        int timeMerge = timeAfterShot - mStartTimeOnline; // s
+        int mergeID = int(ceil(timeMerge * 1.0 / mTimeBinOnline));
 
         // 计算丢包带来的死时间
         qint64 lossTimeTemp =
-            (specPack.sequence - lastSpecID_online - 1) * spectDeltaT; // ms
+            (specPack.sequence - mLastSpecIdOnline - 1) * mSpectDeltaT; // ms
         lossTime = lossTimeTemp * 1000000 + specPack.deathTime * 10;   // ns
 
-        if (m_mergeSpec.size() < mergeID) {
+        if (mMergeSpec.size() < mergeID) {
             // 新的分时能谱
-            if (m_mergeSpec.size() > 0) {
-                QVector<mergeSpecData> mergeSpec_temp = m_mergeSpec;
+            if (mMergeSpec.size() > 0) {
+                QVector<mergeSpecData> mergeSpec_temp = mMergeSpec;
                 // 处理前面已完整的分时能谱，进行拟合
                 getResult(mergeSpec_temp);
             }
@@ -195,32 +195,32 @@ void ParseData::mergeSpecTime_online(const H5Spectrum& specPack)
             tempMerge.deathTime   = lossTime;
 
             // ★ 这里用压缩后的 2048 道
-            for (int i = 0; i < mCHANNEL2048; ++i) {
+            for (int i = 0; i < mChannel2048; ++i) {
                 tempMerge.spectrum[i] += compressedSpec[i];
             }
-            m_mergeSpec.push_back(tempMerge);
+            mMergeSpec.push_back(tempMerge);
 
             qDebug() << "合并一个分时能谱，mergeID = " << mergeID;
         } else {
             // 往已有分时能谱里继续累加
-            m_mergeSpec[mergeID - 1].currentTime = currentTime;
-            m_mergeSpec[mergeID - 1].deathTime  += lossTime;
+            mMergeSpec[mergeID - 1].currentTime = currentTime;
+            mMergeSpec[mergeID - 1].deathTime  += lossTime;
 
-            for (int i = 0; i < mCHANNEL2048; ++i) {
-                m_mergeSpec[mergeID - 1].spectrum[i] += compressedSpec[i];
+            for (int i = 0; i < mChannel2048; ++i) {
+                mMergeSpec[mergeID - 1].spectrum[i] += compressedSpec[i];
             }
         }
     }
 
-    lastSpecID_online = specPack.sequence;
+    mLastSpecIdOnline = specPack.sequence;
 }
 
 
 int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
 {
     clearFitResult();
-    m_fitFailureMessages.clear();
-    m_successfulFitSegmentCount = 0;
+    mFitFailureMessages.clear();
+    mSuccessfulFitSegmentCount = 0;
 
     if (mergeSpec.isEmpty())
         return 0;
@@ -230,8 +230,8 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
     // 511/846/909 keV寻峰成功与否的标志位，0:没找到峰；1：找到了峰；初值为2
     bool fitflag[3] = {false, false, false}; 
     {
-        double *singleSpectrum = new double[mCHANNEL2048];
-        for (int i = 0; i < mCHANNEL2048; ++i)
+        double *singleSpectrum = new double[mChannel2048];
+        for (int i = 0; i < mChannel2048; ++i)
             singleSpectrum[i] = mergeSpec.at(0).spectrum[i] * 1.0;
 
         double energy_scale[2] = {1.272, -26.87};
@@ -240,7 +240,7 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
 
         if (!initial_PeakFind(singleSpectrum, energy_scale, peakParAll, fitflag)) {
             delete[] singleSpectrum;
-            m_fitFailureMessages.append(
+            mFitFailureMessages.append(
                 QStringLiteral("谱仪%1初寻峰失败（511/909 keV），解析失败").arg(mDetId));
             return 0;
         }
@@ -252,7 +252,7 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
     }
 
     if (peakParAll.size() < 3 || !fitflag[0] || !fitflag[2]) {
-        m_fitFailureMessages.append(
+        mFitFailureMessages.append(
             QStringLiteral("谱仪%1初寻峰失败（511/909 keV），解析失败").arg(mDetId));
         return 0;
     }
@@ -283,14 +283,14 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
         fit_c[9] = 1.0;
         fit_c[10] = 5.0;
 
-        double *singleSpectrum = new double[mCHANNEL2048];
-        for (int i = 0; i < mCHANNEL2048; ++i)
+        double *singleSpectrum = new double[mChannel2048];
+        for (int i = 0; i < mChannel2048; ++i)
             singleSpectrum[i] = spec.spectrum[i] * 1.0;
 
         bool exitflag[2] = {false, false};
         QVector<fit_result> peakFindInit = peakPar0;
         if (!PeakFind(singleSpectrum, peakFindInit, exitflag)) {
-            m_fitFailureMessages.append(
+            mFitFailureMessages.append(
                 QStringLiteral("谱仪%1第%2段能谱拟合失败，解析失败").arg(mDetId).arg(segmentIndex));
             delete[] singleSpectrum;
             ++spec_id;
@@ -303,7 +303,7 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
                 qDebug() << "511keV peak height < 100, stop processing segment" << segmentIndex;
             if (!exitflag[1])
                 qDebug() << "909keV peak height < 100, stop processing segment" << segmentIndex;
-            m_fitFailureMessages.append(
+            mFitFailureMessages.append(
                 QStringLiteral("谱仪%1第%2段能谱拟合失败，解析失败").arg(mDetId).arg(segmentIndex));
             delete[] singleSpectrum;
             ++spec_id;
@@ -316,15 +316,15 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
         double newEnergyScal[2] = {1.0, 1.0};
         double r2 = 0.0;
         QVector<QPointF> enFitPoints;
-        enFitPoints << QPointF(peakPar0[0].c1, m_energyCalibration[0])
-                    << QPointF(peakPar0[1].c1, m_energyCalibration[1]);
+        enFitPoints << QPointF(peakPar0[0].c1, mEnergyCalibration[0])
+                    << QPointF(peakPar0[1].c1, mEnergyCalibration[1]);
         CurveFit::fit_linear(enFitPoints, newEnergyScal, &r2);
 
         const double deathRatio = deadTimeRateFromSegment(spec);
         double peakCount = 0.0;
         double peakPos = 0.0;
         if (!SpecStripping(singleSpectrum, newEnergyScal, fit_c, stripFlag, deathRatio, &peakCount, &peakPos)) {
-            m_fitFailureMessages.append(
+            mFitFailureMessages.append(
                 QStringLiteral("谱仪%1第%2段能谱拟合失败，解析失败").arg(mDetId).arg(segmentIndex));
             delete[] singleSpectrum;
             ++spec_id;
@@ -333,28 +333,28 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
         }
 
         initialValue = fit_c;
-        count909_time.push_back(spec.currentTime * 1.0 / 60000.0);
-        count909_count.push_back(peakCount);
-        count909_peakpos.push_back(peakPos);
+        mCount909Time.push_back(spec.currentTime * 1.0 / 60000.0);
+        mCount909Count.push_back(peakCount);
+        mCount909PeakPos.push_back(peakPos);
 
         qDebug() << "SpecStripping End, specID:" << spec_id << "peakCount:" << peakCount;
         ++spec_id;
-        ++m_successfulFitSegmentCount;
+        ++mSuccessfulFitSegmentCount;
         reportParseProgress(ParseProgressPhase::Fit, spec_id, totalSegments);
         delete[] singleSpectrum;
     }
 
     if (isParseCancelled())
-        return m_successfulFitSegmentCount;
+        return mSuccessfulFitSegmentCount;
 
-    if (m_successfulFitSegmentCount > 1) {
+    if (mSuccessfulFitSegmentCount > 1) {
         if (!fit909data()) {
-            m_fitFailureMessages.append(
+            mFitFailureMessages.append(
                 QStringLiteral("谱仪%1衰减曲线拟合失败").arg(mDetId));
         }
     }
 
-    return m_successfulFitSegmentCount;
+    return mSuccessfulFitSegmentCount;
 }
 
 /**
@@ -373,13 +373,13 @@ bool ParseData::initial_PeakFind(double* spectrum, double energy_scale[], QVecto
     }
 
     //平滑两次能谱曲线
-    double* spectrum_smooth1 = new double[mCHANNEL2048];
-    double* spectrum_smooth2 = new double[mCHANNEL2048];
-    SysUtils::smooth(spectrum, spectrum_smooth1, mCHANNEL2048, 5);
-    SysUtils::smooth(spectrum_smooth1, spectrum_smooth2, mCHANNEL2048, 5);
+    double* spectrum_smooth1 = new double[mChannel2048];
+    double* spectrum_smooth2 = new double[mChannel2048];
+    SysUtils::smooth(spectrum, spectrum_smooth1, mChannel2048, 5);
+    SysUtils::smooth(spectrum_smooth1, spectrum_smooth2, mChannel2048, 5);
 
     //搜索峰的能量，keV
-    double m_energyCalibration[3] = {511.0, 846.0, 909.0};
+    double mEnergyCalibration[3] = {511.0, 846.0, 909.0};
 
     //峰位的sigma估值（V1.1 Sigma0 = [5 6 7]）
     double sigma[3] = {5.0, 6.0, 7.0};
@@ -389,7 +389,7 @@ bool ParseData::initial_PeakFind(double* spectrum, double energy_scale[], QVecto
     {
         //峰位搜索宽度，根据初值，给出511keV能峰的大致范围。
         quint32 leftCH, rightCH;
-        double init_peak = (m_energyCalibration[e] - energy_scale[1]) / energy_scale[0];
+        double init_peak = (mEnergyCalibration[e] - energy_scale[1]) / energy_scale[0];
         leftCH = floor(init_peak) - width;
         rightCH = floor(init_peak) + width;
 
@@ -452,7 +452,7 @@ bool ParseData::initial_PeakFind(double* spectrum, double energy_scale[], QVecto
         if(valid_result.size()<1) {
             exitflag[e] = false;
             fit_c_2.push_back(fit_result{0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
-            qDebug()<< QString("Failed to found peak. Found peak for the first merge Spectrum, peak psition:%1").arg(m_energyCalibration[e]);
+            qDebug()<< QString("Failed to found peak. Found peak for the first merge Spectrum, peak psition:%1").arg(mEnergyCalibration[e]);
         } else
         {
             exitflag[e] = true;
@@ -467,7 +467,7 @@ bool ParseData::initial_PeakFind(double* spectrum, double energy_scale[], QVecto
                 temp_result = valid_result.at(minIndex);
                 fit_c_2.push_back(temp_result);
 
-                qDebug()<< QString("Sucessful to found peak for the first merge Spectrum, peak position:%1, fit results, c:").arg(m_energyCalibration[e])
+                qDebug()<< QString("Sucessful to found peak for the first merge Spectrum, peak position:%1, fit results, c:").arg(mEnergyCalibration[e])
                          <<temp_result.c0<<", "<<temp_result.c1<<", "<<temp_result.c2<<", "<<temp_result.c3<<", "<<temp_result.c4;
             }
         }
@@ -509,7 +509,7 @@ bool ParseData::initial_PeakFind(double* spectrum, double energy_scale[], QVecto
             fit_c_2[e].c3 = p[3];
             fit_c_2[e].c4 = p[4];
         } else {
-            qDebug() << "CurveFit::fit_gauss_linear2 failed, peak:" << m_energyCalibration[e]
+            qDebug() << "CurveFit::fit_gauss_linear2 failed, peak:" << mEnergyCalibration[e]
                      << ", keep coarse peak find result";
             if (e == 1) {
                 exitflag[e] = false;
@@ -536,10 +536,10 @@ bool ParseData::PeakFind(double* spectrum, QVector<fit_result>& init_c, bool* ex
     }
 
     //平滑滤波两次能谱曲线
-    double* spectrum_smooth1 = new double[mCHANNEL2048];
-    double* spectrum_smooth2 = new double[mCHANNEL2048];
-    SysUtils::smooth(spectrum, spectrum_smooth1, mCHANNEL2048, 5);
-    SysUtils::smooth(spectrum_smooth1, spectrum_smooth2, mCHANNEL2048, 5);
+    double* spectrum_smooth1 = new double[mChannel2048];
+    double* spectrum_smooth2 = new double[mChannel2048];
+    SysUtils::smooth(spectrum, spectrum_smooth1, mChannel2048, 5);
+    SysUtils::smooth(spectrum_smooth1, spectrum_smooth2, mChannel2048, 5);
 
     //峰位的sigma估值，该值根据能量分辨率可以初步估算得到。
     double Width = 10.0;
@@ -615,7 +615,7 @@ bool ParseData::PeakFind(double* spectrum, QVector<fit_result>& init_c, bool* ex
         if(valid_result.size()<1) {
             exitflag[e] = false;
             fit_c_2.push_back(fit_result{0.0, 0.0, 0.0, 0.0, 0.0, 0.0});
-            qDebug()<< QString("Peak position%1, Failed to found peak.").arg(m_energyCalibration[e]);
+            qDebug()<< QString("Peak position%1, Failed to found peak.").arg(mEnergyCalibration[e]);
         }
         else{
             exitflag[e] = true;
@@ -630,7 +630,7 @@ bool ParseData::PeakFind(double* spectrum, QVector<fit_result>& init_c, bool* ex
                 temp_result = valid_result.at(minIndex);
                 fit_c_2.push_back(temp_result);
 
-                qDebug()<< QString("Peak position%1, Sucessfulll found peak, fit results c:").arg(m_energyCalibration[e])
+                qDebug()<< QString("Peak position%1, Sucessfulll found peak, fit results c:").arg(mEnergyCalibration[e])
                          <<temp_result.c0<<", "<<temp_result.c1<<", "<<temp_result.c2<<", "<<temp_result.c3<<", "<<temp_result.c4;
             }
         }
@@ -673,7 +673,7 @@ bool ParseData::PeakFind(double* spectrum, QVector<fit_result>& init_c, bool* ex
             fit_c_2[e].c3 = p[3];
             fit_c_2[e].c4 = p[4];
         } else {
-            qDebug() << "CurveFit::fit_gauss_linear2 failed, peak:" << m_energyCalibration[e]
+            qDebug() << "CurveFit::fit_gauss_linear2 failed, peak:" << mEnergyCalibration[e]
                      << ", keep coarse peak find result";
         }
 
@@ -712,8 +712,8 @@ bool ParseData::SpecStripping(double *spectrum, double energy_scale[], QVector<d
     double position909peak = 0.0; 
     
     std::vector<double> data;
-    data.reserve(mCHANNEL2048);
-    for (int i = 0; i < mCHANNEL2048; ++i)
+    data.reserve(mChannel2048);
+    for (int i = 0; i < mChannel2048; ++i)
         data.push_back(spectrum[i]);
 
     const std::vector<double> filtered = SysUtils::lowpass(data, 0.1);
@@ -728,7 +728,7 @@ bool ParseData::SpecStripping(double *spectrum, double energy_scale[], QVector<d
     QVector<double> fity;
     QVector<double> fity_curve;
 
-    for (int i = 0; i < mCHANNEL2048; ++i) {
+    for (int i = 0; i < mChannel2048; ++i) {
         const double channel = static_cast<double>(i + 1);
         const double energy = channel * a + b;
         if (energy <= energyLow || energy >= energyHigh)
@@ -839,14 +839,14 @@ bool ParseData::SpecStripping(double *spectrum, double energy_scale[], QVector<d
     if (peakPositionOut)
         *peakPositionOut = position909peak;
 
-    specStripData_x.append(fitx);
-    specStripData_y.append(fity);
-    specStripData_fity.append(fity_curve);
-    specStripData_residualRate.append(residual_rate);
+    mSpecStripDataX.append(fitx);
+    mSpecStripDataY.append(fity);
+    mSpecStripDataFity.append(fity_curve);
+    mSpecStripDataResidualRate.append(residual_rate);
 
-    if (specStrip_rightCH.isEmpty())
-        specStrip_rightCH.push_back(-1);
-    specStrip_rightCH.push_back(specStripData_x.size() - 1);
+    if (mSpecStripRightCh.isEmpty())
+        mSpecStripRightCh.push_back(-1);
+    mSpecStripRightCh.push_back(mSpecStripDataX.size() - 1);
 
     return true;
 }
@@ -857,9 +857,9 @@ bool ParseData::SpecStripping(double *spectrum, double energy_scale[], QVector<d
  */
 bool ParseData::fit909data()
 {
-    count909_fitcount.clear();
-    count909_residual.clear();
-    const int ch_count = count909_count.size();
+    mCount909FitCount.clear();
+    mCount909Residual.clear();
+    const int ch_count = mCount909Count.size();
     if (ch_count < 2)
         return false;
 
@@ -870,8 +870,8 @@ bool ParseData::fit909data()
     fitx.reserve(ch_count);
     fity.reserve(ch_count);
     for (int i = 0; i < ch_count; ++i) {
-        fitx.push_back(count909_time.at(i));
-        fity.push_back(count909_count.at(i));
+        fitx.push_back(mCount909Time.at(i));
+        fity.push_back(mCount909Count.at(i));
         fitPoints.push_back(QPointF(fitx.last(), fity.last()));
     }
 
@@ -891,13 +891,13 @@ bool ParseData::fit909data()
         double yFit = 0.0;
         CurveFit::function_exp_decay(c, xData, yFit, nullptr);
         fity_curve.push_back(yFit);
-        count909_residual.push_back((fity.at(i) - yFit) / yFit * 100.0);
+        mCount909Residual.push_back((fity.at(i) - yFit) / yFit * 100.0);
     }
 
-    count909_fitcount = fity_curve;
+    mCount909FitCount = fity_curve;
 
     const double t1 = log(2.0) / (78.4 * 60.0);
-    const double timeBinMin = mTimeBin_online / 60.0;
+    const double timeBinMin = mTimeBinOnline / 60.0;
     mInitialCount = fit_a / (std::exp(timeBinMin * t1) - 1.0);
     return true;
 }
@@ -906,21 +906,21 @@ bool ParseData::fit909data()
 QVector<specStripData> ParseData::GetStripData(int specID)
 {
     QVector<specStripData> pictureData;
-    if(specID >= specStrip_rightCH.size()-1)
+    if(specID >= mSpecStripRightCh.size()-1)
     {
         printf("ERROR in \"GetStripData(int specID)\": specID is over than size of \"QVector<double> specStrip_leftCH\"");
         return pictureData;
     }
 
     specStripData tempData;
-    int left = specStrip_rightCH.at(specID) + 1;
-    int right = specStrip_rightCH.at(specID+1);
+    int left = mSpecStripRightCh.at(specID) + 1;
+    int right = mSpecStripRightCh.at(specID+1);
     for(int i = left; i<=right; i++)
     {
-        tempData.x = specStripData_x.at(i);
-        tempData.y = specStripData_y.at(i);
-        tempData.fit_y = specStripData_fity.at(i);
-        tempData.residual_rate = specStripData_residualRate.at(i);
+        tempData.x = mSpecStripDataX.at(i);
+        tempData.y = mSpecStripDataY.at(i);
+        tempData.fit_y = mSpecStripDataFity.at(i);
+        tempData.residual_rate = mSpecStripDataResidualRate.at(i);
         pictureData.push_back(tempData);
     }
     return pictureData;
@@ -930,12 +930,12 @@ QVector<specStripData> ParseData::GetCount909Data()
 {
     QVector<specStripData> pictureData;
     specStripData tempData;
-    for(int i=0; i<count909_time.size() && i<count909_fitcount.size() && i<count909_residual.size(); i++)
+    for(int i=0; i<mCount909Time.size() && i<mCount909FitCount.size() && i<mCount909Residual.size(); i++)
     {
-        tempData.x = count909_time.at(i);
-        tempData.y = count909_count.at(i);
-        tempData.fit_y = count909_fitcount.at(i);
-        tempData.residual_rate = count909_residual.at(i);
+        tempData.x = mCount909Time.at(i);
+        tempData.y = mCount909Count.at(i);
+        tempData.fit_y = mCount909FitCount.at(i);
+        tempData.residual_rate = mCount909Residual.at(i);
         pictureData.push_back(tempData);
     }
     return pictureData;
@@ -947,19 +947,19 @@ QVector<specStripData> ParseData::GetCount909Data()
 void ParseData::clearFitResult()
 {
     mInitialCount = 0.0;
-    m_successfulFitSegmentCount = 0;
-    m_fitFailureMessages.clear();
-    count909_time.clear();
-    count909_count.clear(); //909keV计数，采用峰面积求得
-    count909_peakpos.clear(); //909keV峰位道址
-    count909_fitcount.clear(); //909keV计数随时间变化的拟合曲线
-    count909_residual.clear(); //残差
+    mSuccessfulFitSegmentCount = 0;
+    mFitFailureMessages.clear();
+    mCount909Time.clear();
+    mCount909Count.clear(); //909keV计数，采用峰面积求得
+    mCount909PeakPos.clear(); //909keV峰位道址
+    mCount909FitCount.clear(); //909keV计数随时间变化的拟合曲线
+    mCount909Residual.clear(); //残差
 
-    specStripData_x.clear(); //拟合数据点x坐标
-    specStripData_y.clear(); //拟合数据点y坐标
-    specStripData_fity.clear(); //拟合曲线y
-    specStripData_residualRate.clear(); //残差
-    specStrip_rightCH.clear();
+    mSpecStripDataX.clear(); //拟合数据点x坐标
+    mSpecStripDataY.clear(); //拟合数据点y坐标
+    mSpecStripDataFity.clear(); //拟合曲线y
+    mSpecStripDataResidualRate.clear(); //残差
+    mSpecStripRightCh.clear();
 }
 
 /**
@@ -979,21 +979,21 @@ int ParseData::parseH5File(const QString& filePath, const quint32 detectorId)
     // 解析文件，获取能谱
     QTextCodec* gbk_codec = QTextCodec::codecForName("GBK");
     QByteArray filePathBytes = gbk_codec->fromUnicode(filePath);
-    bool readFlag = HDF5Settings::readAllH5Spectrum(filePathBytes.toStdString(), detectorId, m_allSpec);
-    if(readFlag)  return m_allSpec.size();
+    bool readFlag = HDF5Settings::readAllH5Spectrum(filePathBytes.toStdString(), detectorId, mAllSpec);
+    if(readFlag)  return mAllSpec.size();
     else return 0;
 }
 
 // 解析大文件中的网络数据包（流式读取，内部委托 OfflineSpectrumDatReader）
 int ParseData::parseDatFile(const QString &filePath)
 {
-    m_allSpec.clear();
-    m_parasemode = offlineMode;
+    mAllSpec.clear();
+    mParaseMode = offlineMode;
 
-    if (!OfflineSpectrumDatReader::read(filePath, m_allSpec))
+    if (!OfflineSpectrumDatReader::read(filePath, mAllSpec))
         return -1;
 
-    return m_allSpec.size();
+    return mAllSpec.size();
 }
 
 #if 0 // 旧 0x55 协议实现，已废弃
@@ -1002,9 +1002,9 @@ int ParseData::parseDatFile_legacy(const QString &filePath)
     quint64 bufferSize = 10*1024*1024;
 
     //重新初始化相关参数
-    totalPackets = 0;
-    bytesProcessed = 0;
-    m_parasemode = offlineMode;
+    mTotalPackets = 0;
+    mBytesProcessed = 0;
+    mParaseMode = offlineMode;
 
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly)) {
@@ -1026,11 +1026,11 @@ int ParseData::parseDatFile_legacy(const QString &filePath)
 
     //先估算能谱的总个数，这里预分配内存
     int packSize = (1 + 2050 + 5) *4 + 13;
-    m_allSpec.clear();
-    m_allSpec.reserve(fileSize/packSize);
+    mAllSpec.clear();
+    mAllSpec.reserve(fileSize/packSize);
 
-    processingBuffer.clear();
-    processingBuffer.reserve(bufferSize);
+    mProcessingBuffer.clear();
+    mProcessingBuffer.reserve(bufferSize);
 
     while (bytesRead < fileSize) {
         // 读取一块数据
@@ -1042,7 +1042,7 @@ int ParseData::parseDatFile_legacy(const QString &filePath)
         bytesRead += chunk.size();
 
         // 将新数据添加到处理缓冲区
-        processingBuffer.append(chunk);
+        mProcessingBuffer.append(chunk);
 
         // 处理缓冲区中的数据
         packetsFound += processBuffer(false);
@@ -1063,7 +1063,7 @@ int ParseData::parseDatFile_legacy(const QString &filePath)
 
     qDebug() << "Analysis completed! elapsed time:" << timer.elapsed() / 1000.0 << "seconds";
     qDebug() << "Total package:" << packetsFound;
-    qDebug() << "Total number of bytes processed:" << bytesProcessed;
+    qDebug() << "Total number of bytes processed:" << mBytesProcessed;
 
     file.close();
 
@@ -1077,7 +1077,7 @@ int ParseData::processBuffer(bool isFinal)
     int packetsFound = 0;
     int searchPosition = 0;
 
-    while (searchPosition <= processingBuffer.size()) {
+    while (searchPosition <= mProcessingBuffer.size()) {
         // 查找包头 (0x55)
         int headerPos = findPacketHeader(searchPosition);
         if (headerPos == -1) {
@@ -1085,7 +1085,7 @@ int ParseData::processBuffer(bool isFinal)
         }
 
         // 查找下一个包头
-        // if(packetsFound> 1) searchPosition = headerPos + specPackLen; //这种使用方式适用于网络数据不丢字节。一旦丢字节，该方式会引起更多的数据帧丢失。进过检验，运算与原方式几乎相同
+        // if(packetsFound> 1) searchPosition = headerPos + mSpecPackLen; //这种使用方式适用于网络数据不丢字节。一旦丢字节，该方式会引起更多的数据帧丢失。进过检验，运算与原方式几乎相同
         // else searchPosition = headerPos + 1;
         searchPosition = headerPos + 1;
 
@@ -1096,7 +1096,7 @@ int ParseData::processBuffer(bool isFinal)
         }
 
         // 提取和处理数据包
-        if(processSinglePacket(headerPos, nextHeaderPos, m_parasemode)){
+        if(processSinglePacket(headerPos, nextHeaderPos, mParaseMode)){
             packetsFound++;
         }
 
@@ -1106,7 +1106,7 @@ int ParseData::processBuffer(bool isFinal)
 
     // 清理已处理的缓冲区数据
     cleanupBuffer(searchPosition);
-    bytesProcessed += searchPosition;
+    mBytesProcessed += searchPosition;
 
     return packetsFound;
 }
@@ -1116,10 +1116,10 @@ bool ParseData::processSinglePacket(int headerPos, int nextHeaderPos, paraseMode
 {
     int packLen = nextHeaderPos - headerPos;
     // 提取数据部分
-    QByteArray packetData = processingBuffer.mid(headerPos, packLen);
+    QByteArray packetData = mProcessingBuffer.mid(headerPos, packLen);
 
     // 接收方转码
-    QByteArray uncodedMsg = encode(packetData, m_receiverFrom1, m_receiverTo1, m_receiverFrom2, m_receiverTo2);
+    QByteArray uncodedMsg = encode(packetData, mReceiverFrom1, mReceiverTo1, mReceiverFrom2, mReceiverTo2);
 
     // 检查报文完整性
     if (!checkFrame(uncodedMsg)) {
@@ -1130,10 +1130,10 @@ bool ParseData::processSinglePacket(int headerPos, int nextHeaderPos, paraseMode
     //检查是否为能谱数据
     if(!isSpecData(uncodedMsg)) return 0;
 
-    totalPackets++;
-    qDebug() << "找到第" << totalPackets << "个数据包, 数据长度:" << uncodedMsg.size();
-    // if (totalPackets % 1000 == 0) {
-    // qDebug() << "找到第" << totalPackets << "个数据包, 数据长度:" << uncodedMsg.size();
+    mTotalPackets++;
+    qDebug() << "找到第" << mTotalPackets << "个数据包, 数据长度:" << uncodedMsg.size();
+    // if (mTotalPackets % 1000 == 0) {
+    // qDebug() << "找到第" << mTotalPackets << "个数据包, 数据长度:" << uncodedMsg.size();
 
     // 可以在这里进行更复杂的数据解析
     // }
@@ -1150,11 +1150,11 @@ bool ParseData::processSinglePacket(int headerPos, int nextHeaderPos, paraseMode
         sepc_16byte.deathTime = tempSpecdata.deathTime;
 
         // 转换能谱数据，舍弃高位（只保留低16位）
-        for (int i = 0; i < mCHANNEL2048; ++i) {
+        for (int i = 0; i < mChannel2048; ++i) {
             // 将32位数值截断为16位（舍弃高16位）
             sepc_16byte.spectrum[i+3] = static_cast<quint16>(tempSpecdata.spectrum[i]);
         }
-        m_allSpec.push_back(sepc_16byte);
+        mAllSpec.push_back(sepc_16byte);
 
         //在线测量数据处理
         if(mode == onlineMode){
@@ -1178,7 +1178,7 @@ QByteArray ParseData::encode(const QByteArray &data, const QByteArray &from1, co
     // 记录报文头
     QByteArray result;
     // 预计算转码后的数据大小，避免多次扩容
-    result.reserve(specPackLen);
+    result.reserve(mSpecPackLen);
     result.append(data.at(0));
 
     // 从第二位开始进行转码
@@ -1266,19 +1266,19 @@ void ParseData::cleanupBuffer(int bytesToKeep)
 {
     if (bytesToKeep > 0) {
         // 保留未处理的数据
-        processingBuffer = processingBuffer.mid(bytesToKeep);
+        mProcessingBuffer = mProcessingBuffer.mid(bytesToKeep);
     }
 
     // 限制缓冲区大小，防止内存占用过大
-    if (processingBuffer.capacity() > 10 * 1024 * 1024) {
-        processingBuffer.squeeze(); // 释放未使用的内存
+    if (mProcessingBuffer.capacity() > 10 * 1024 * 1024) {
+        mProcessingBuffer.squeeze(); // 释放未使用的内存
     }
 }
 
 // 查找包头
 int ParseData::findPacketHeader(int startPos) {
-    const char* data = processingBuffer.constData();
-    int size = processingBuffer.size();
+    const char* data = mProcessingBuffer.constData();
+    int size = mProcessingBuffer.size();
     const char target = 0x55;
 
     // 使用指针直接操作，减少边界检查开销
@@ -1298,31 +1298,31 @@ int ParseData::findPacketHeader(int startPos) {
 **/
 void ParseData::mergeSpecTime_offline(quint64 timeBin, quint64 start_time, quint64 end_time)
 {
-    mTimeBin_online = timeBin;
+    mTimeBinOnline = timeBin;
     quint32 spectrumNum = (end_time - start_time+1)/timeBin; //整除，给出合并后的能谱个数，对于最后一段时间不满timeBin宽度的能谱直接丢弃。
     if(spectrumNum == 0) return;
 
     //初始化合并能谱
-    m_mergeSpec.resize(spectrumNum);
-    for(auto it = m_mergeSpec.begin(); it!=m_mergeSpec.end(); ++it)
+    mMergeSpec.resize(spectrumNum);
+    for(auto it = mMergeSpec.begin(); it!=mMergeSpec.end(); ++it)
     {
         it->specTime = timeBin*1000;
     }
 
-    quint64 spectDeltaT = m_allSpec.at(0).measureTime; //单个能量测量时间，单位ms. 室假设所有的能谱时间间隔都一样，如果不一样需要重新采取其他算法。
+    quint64 measureTimeMs = mAllSpec.at(0).measureTime; //单个能量测量时间，单位ms. 室假设所有的能谱时间间隔都一样，如果不一样需要重新采取其他算法。
     quint64 lossTime = 0; //死时间，单位ns。
     int lastSpecID = 0; //上一个能谱的编号。
-    qint64 currentTime = T0_beforeShot *1000; //当前能谱对应时刻，应是能谱结束时刻，单位ms
+    qint64 currentTime = mT0BeforeShot *1000; //当前能谱对应时刻，应是能谱结束时刻，单位ms
     qint64 accumulateTime = 0; //计算自start_time开始到当前能谱的时间。单位ms
-    for(auto spec:m_allSpec)
+    for(auto spec:mAllSpec)
     {
         //计算丢包带来的死时间
-        qint64 lossTimeTemp = (spec.sequence - lastSpecID - 1)*spectDeltaT; //单位ms
-        currentTime += spectDeltaT + lossTimeTemp; //ms
+        qint64 lossTimeTemp = (spec.sequence - lastSpecID - 1)*measureTimeMs; //单位ms
+        currentTime += measureTimeMs + lossTimeTemp; //ms
         lossTime = lossTimeTemp * 1000000 + spec.deathTime*10; //ns
         if(currentTime >= start_time*1000)
         {
-            accumulateTime += lossTimeTemp + spectDeltaT;//ms
+            accumulateTime += lossTimeTemp + measureTimeMs;//ms
 
             //对于最后一段时间数据，由于时间宽度不满一个timeBin，直接舍弃。
             if(accumulateTime > spectrumNum*timeBin*1000) break;
@@ -1342,13 +1342,13 @@ void ParseData::mergeSpecTime_offline(quint64 timeBin, quint64 start_time, quint
             }
 
             //更新合并能谱的数值
-            m_mergeSpec[mergeID].currentTime = currentTime;
-            m_mergeSpec[mergeID].deathTime += lossTime;
-            for(int i=0; i<mCHANNEL2048; i++)
+            mMergeSpec[mergeID].currentTime = currentTime;
+            mMergeSpec[mergeID].deathTime += lossTime;
+            for(int i=0; i<mChannel2048; i++)
             {
                 int ch = i*4;
                 int sum = spec.spectrum[ch] + spec.spectrum[ch+1] + spec.spectrum[ch+2] + spec.spectrum[ch+3];
-                m_mergeSpec[mergeID].spectrum[i] += sum;
+                mMergeSpec[mergeID].spectrum[i] += sum;
             }
         }
         lastSpecID = spec.sequence;
@@ -1358,10 +1358,10 @@ void ParseData::mergeSpecTime_offline(quint64 timeBin, quint64 start_time, quint
 bool ParseData::getResult_offline(quint64 timeBin, quint64 start_time, quint64 end_time)
 {
     mergeSpecTime_offline(timeBin, start_time, end_time);
-    if (m_mergeSpec.isEmpty())
+    if (mMergeSpec.isEmpty())
         return false;
-    getResult(m_mergeSpec);
-    return m_successfulFitSegmentCount > 0;
+    getResult(mMergeSpec);
+    return mSuccessfulFitSegmentCount > 0;
 }
 
 void ParseData::addCompressedSpectrumToSegment(mergeSpecData &seg, const H5Spectrum &spec, quint64 lossTimeNs)
@@ -1369,7 +1369,7 @@ void ParseData::addCompressedSpectrumToSegment(mergeSpecData &seg, const H5Spect
     seg.deathTime += lossTimeNs;
     seg.sumMeasureTimeMs += spec.measureTime;
     ++seg.rowCount;
-    for (int i = 0; i < mCHANNEL2048; ++i) {
+    for (int i = 0; i < mChannel2048; ++i) {
         const int ch = i * 4;
         seg.spectrum[i] += spec.spectrum[ch] + spec.spectrum[ch + 1]
                          + spec.spectrum[ch + 2] + spec.spectrum[ch + 3];
@@ -1404,9 +1404,9 @@ bool ParseData::getResult_offlineMultiFileUtc(const QStringList &filePaths,
 {
     // -------- 0. 初始化解析状态 --------
     mDetId = detectorId;
-    m_allSpec.clear();
-    m_mergeSpec.clear();
-    mTimeBin_online = stepSec;
+    mAllSpec.clear();
+    mMergeSpec.clear();
+    mTimeBinOnline = stepSec;
 
     // -------- 1. 参数合法性检查 --------
     if (filePaths.isEmpty() || !fusionTime.isValid() || !windowLeft.isValid() || !windowRight.isValid())
@@ -1519,11 +1519,11 @@ bool ParseData::getResult_offlineMultiFileUtc(const QStringList &filePaths,
                 const qint64 rightEndpointMs = specStartMs(lastSpecInBin)
                     + static_cast<qint64>(lastSpecInBin.measureTime);
                 seg.currentTime = rightEndpointMs - fusionMs;
-                m_mergeSpec.append(seg);
+                mMergeSpec.append(seg);
                 ++fileMergedCount;
                 reportParseProgress(ParseProgressPhase::Merge,
-                                    m_mergeSpec.size(),
-                                    m_mergeSpec.size());
+                                    mMergeSpec.size(),
+                                    mMergeSpec.size());
             }
         }
 
@@ -1544,20 +1544,20 @@ bool ParseData::getResult_offlineMultiFileUtc(const QStringList &filePaths,
     }
 
     // -------- 3. 多文件结果校验 --------
-    if (m_mergeSpec.isEmpty() || totalRawRows == 0)
+    if (mMergeSpec.isEmpty() || totalRawRows == 0)
         return false;
 
     if (isParseCancelled())
         return false;
 
     // -------- 4. 按合并段时刻排序后串联，执行寻峰/剥谱 --------
-    std::sort(m_mergeSpec.begin(), m_mergeSpec.end(),
+    std::sort(mMergeSpec.begin(), mMergeSpec.end(),
               [](const mergeSpecData &a, const mergeSpecData &b) {
                   return a.currentTime < b.currentTime;
               });
 
-    const int totalSegments = m_mergeSpec.size();
+    const int totalSegments = mMergeSpec.size();
     reportParseProgress(ParseProgressPhase::Fit, 0, totalSegments);
-    getResult(m_mergeSpec);
+    getResult(mMergeSpec);
     return !isParseCancelled();
 }

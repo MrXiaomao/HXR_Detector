@@ -77,20 +77,20 @@ public:
     ParseData();
     ~ParseData();
     
-    QVector<mergeSpecData> GetMergeSpec(){ return m_mergeSpec;}
+    QVector<mergeSpecData> GetMergeSpec(){ return mMergeSpec;}
 
     /** @brief 最近一次 getResult 成功拟合的分段能谱数量 */
-    int successfulFitSegmentCount() const { return m_successfulFitSegmentCount; }
+    int successfulFitSegmentCount() const { return mSuccessfulFitSegmentCount; }
 
     /** @brief 最近一次 getResult 中各分段拟合失败信息 */
-    QStringList fitFailureMessages() const { return m_fitFailureMessages; }
+    QStringList fitFailureMessages() const { return mFitFailureMessages; }
 
     //获取剥谱图像数据,给出第i个能谱的剥谱数据，三条曲线数据
     QVector<specStripData> GetStripData(int specID);
 
     QVector<specStripData> GetCount909Data();
 
-    const QVector<double> &count909PeakPos() const { return count909_peakpos; }
+    const QVector<double> &count909PeakPos() const { return mCount909PeakPos; }
 
     double GetInitialCount(){return mInitialCount;}
 
@@ -130,7 +130,7 @@ public:
 
     void setStartTime(int time)
     {
-        T0_beforeShot = time;
+        mT0BeforeShot = time;
     }
 
     void setParseProgressCallback(ParseProgressCallback callback);
@@ -151,7 +151,7 @@ public:
     int parseDatFile(const QString &filePath);
 
     /** @brief 最近一次 parseDatFile / parseH5File 读到的全部能谱 */
-    const QVector<H5Spectrum>& allSpec() const { return m_allSpec; }
+    const QVector<H5Spectrum>& allSpec() const { return mAllSpec; }
 
     // 处理缓冲区中的数据
     int processBuffer(bool isFinal);
@@ -213,62 +213,62 @@ private:
     bool isParseCancelled() const;
     void reportParseProgress(ParseProgressPhase phase, int current, int total) const;
 
-    ParseProgressCallback m_parseProgressCallback;
-    std::atomic<bool> m_localCancelFlag{false};
-    std::atomic<bool> *m_parseCancelFlag = nullptr;
+    ParseProgressCallback mParseProgressCallback;
+    std::atomic<bool> mLocalCancelFlag{false};
+    std::atomic<bool> *mParseCancelFlag = nullptr;
 
-    QVector<mergeSpecData> m_mergeSpec; //对原始数据汇总后的各时段能谱，对丢包带来的死时间做了相应记录
-    QVector<H5Spectrum> m_allSpec;// 从HDF5文件中读取到特定通道的所有能谱
+    QVector<mergeSpecData> mMergeSpec; //对原始数据汇总后的各时段能谱，对丢包带来的死时间做了相应记录
+    QVector<H5Spectrum> mAllSpec;// 从HDF5文件中读取到特定通道的所有能谱
 
-    QVector<int> allSpecTime; //每一个计数点对应的时刻，考虑到可能丢包，所以时刻并不是连续的。
-    QVector<int> allSpecCount; //每秒能谱总计数随时间的变化
+    QVector<int> mAllSpecTime; //每一个计数点对应的时刻，考虑到可能丢包，所以时刻并不是连续的。
+    QVector<int> mAllSpecCount; //每秒能谱总计数随时间的变化
 
-    const double m_energyCalibration[2] = {511.0, 909.0}; //用于能量刻度的特征峰
+    const double mEnergyCalibration[2] = {511.0, 909.0}; //用于能量刻度的特征峰
     const double mStripEnRange[2] = {800.0, 1100.0};//设定剥谱能量范围
 
-    const int mCHANNEL8192 = 8192; //能谱的道数
-    static constexpr int mCHANNEL2048 = 2048; //做能谱寻峰所用的道数（MSVC 栈数组需 constexpr）
-    const int specPackLen = 8237;//2050*4 + 9 +13 + 1 + 3*4+2 %完整数据包的长度（解码后长度），1是包头，9是时间信息以及空白，13是大包的帧内容
-    qint32 T0_beforeShot = 0; //能谱开测时刻相对于打靶零时刻的时间（单位s，可正数可负数)T0_beforeShot = 开测时刻 - 打靶时刻
+    const int mChannel8192 = 8192; //能谱的道数
+    static constexpr int mChannel2048 = 2048; //做能谱寻峰所用的道数（MSVC 栈数组需 constexpr）
+    const int mSpecPackLen = 8237;//2050*4 + 9 +13 + 1 + 3*4+2 %完整数据包的长度（解码后长度），1是包头，9是时间信息以及空白，13是大包的帧内容
+    qint32 mT0BeforeShot = 0; //能谱开测时刻相对于打靶零时刻的时间（单位s，可正数可负数)T0_beforeShot = 开测时刻 - 打靶时刻
 
-    int totalPackets = 0; //读取到的有效数据包长度
-    QByteArray processingBuffer;
-    qint64 bytesProcessed = 0;
+    int mTotalPackets = 0; //读取到的有效数据包长度
+    QByteArray mProcessingBuffer;
+    qint64 mBytesProcessed = 0;
     // 发送方转码
-    const QByteArray m_senderFrom = QByteArray::fromHex("55");                      // 发送方转码前
-    const QByteArray m_senderFrom2 = QByteArray::fromHex("FF");                     // 发送方转码前
-    const QByteArray m_senderTo1 = QByteArray::fromHex("FF 00");                    // 发送方转码后
-    const QByteArray m_senderTo2 = QByteArray::fromHex("FF FF");                    // 发送方转码后
+    const QByteArray mSenderFrom = QByteArray::fromHex("55");                      // 发送方转码前
+    const QByteArray mSenderFrom2 = QByteArray::fromHex("FF");                     // 发送方转码前
+    const QByteArray mSenderTo1 = QByteArray::fromHex("FF 00");                    // 发送方转码后
+    const QByteArray mSenderTo2 = QByteArray::fromHex("FF FF");                    // 发送方转码后
     // 接收方转码
-    const QByteArray m_receiverFrom1 = m_senderTo1;                                 // 接收方转码前
-    const QByteArray m_receiverFrom2 = m_senderTo2;                                 // 接收方转码前
-    const QByteArray m_receiverTo1 = m_senderFrom;                                  // 接收方转码后
-    const QByteArray m_receiverTo2 = m_senderFrom2;                                 // 接收方转码后
+    const QByteArray mReceiverFrom1 = mSenderTo1;                                 // 接收方转码前
+    const QByteArray mReceiverFrom2 = mSenderTo2;                                 // 接收方转码前
+    const QByteArray mReceiverTo1 = mSenderFrom;                                  // 接收方转码后
+    const QByteArray mReceiverTo2 = mSenderFrom2;                                 // 接收方转码后
 
     // 用来存放剥谱处理结果的图像数据，结合GetStripData()
     // 所有的拟合数据依次压入specStripData数据中
-    QVector<double> count909_time; //各分时能谱对应测量结束时间（也就是右端点），单位min
-    QVector<double> count909_count; //909keV计数，采用峰面积求得
-    QVector<double> count909_peakpos; //909keV峰位道址
-    QVector<double> count909_fitcount; //909keV计数随时间变化的拟合曲线
-    QVector<double> count909_residual; //残差
+    QVector<double> mCount909Time; //各分时能谱对应测量结束时间（也就是右端点），单位min
+    QVector<double> mCount909Count; //909keV计数，采用峰面积求得
+    QVector<double> mCount909PeakPos; //909keV峰位道址
+    QVector<double> mCount909FitCount; //909keV计数随时间变化的拟合曲线
+    QVector<double> mCount909Residual; //残差
 
-    QVector<double> specStripData_x; //拟合数据点x坐标
-    QVector<double> specStripData_y; //拟合数据点y坐标
-    QVector<double> specStripData_fity;//拟合曲线y
-    QVector<double> specStripData_residualRate; //残差
+    QVector<double> mSpecStripDataX; //拟合数据点x坐标
+    QVector<double> mSpecStripDataY; //拟合数据点y坐标
+    QVector<double> mSpecStripDataFity;//拟合曲线y
+    QVector<double> mSpecStripDataResidualRate; //残差
 
-    paraseMode m_parasemode;
-    int shotTime = -1; //记录打靶起始时间，单位ms (FPGA内部时钟，仪器开始测量时为时钟为零)，必须在大靶前开始测量，这样才能找到计数率暴增点（打靶瞬间）
-    int lastSpecID_online = 0; //上一个能谱的编号。用于在线处理
-    quint64 spectDeltaT = 0; //单个能谱测量时长，单位ms
-    int startTime_online = 240*60; //解析能谱的起始时刻，单位s
-    int mTimeBin_online = 300*60; //解析能谱的时间宽度，单位s.分时能谱的单个能谱测量时间
+    paraseMode mParaseMode;
+    int mShotTime = -1; //记录打靶起始时间，单位ms (FPGA内部时钟，仪器开始测量时为时钟为零)，必须在大靶前开始测量，这样才能找到计数率暴增点（打靶瞬间）
+    int mLastSpecIdOnline = 0; //上一个能谱的编号。用于在线处理
+    quint64 mSpectDeltaT = 0; //单个能谱测量时长，单位ms
+    int mStartTimeOnline = 240*60; //解析能谱的起始时刻，单位s
+    int mTimeBinOnline = 300*60; //解析能谱的时间宽度，单位s.分时能谱的单个能谱测量时间
 
     double mInitialCount = 0.0; //对数拟合后，给出来的初始计数率
-    QVector<int> specStrip_rightCH; //存放所有剥谱图形的右端点下标
-    int m_successfulFitSegmentCount = 0;
-    QStringList m_fitFailureMessages;
+    QVector<int> mSpecStripRightCh; //存放所有剥谱图形的右端点下标
+    int mSuccessfulFitSegmentCount = 0;
+    QStringList mFitFailureMessages;
     double mSpectrumFitR2Min = CurveFit::kDefaultSpectrumFitR2Min;
 };
 
