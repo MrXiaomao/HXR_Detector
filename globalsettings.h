@@ -17,6 +17,7 @@
 
 #define SYSTEM_CONFIG_FILE "./Config/system_config.ini" //系统配置文件,保存UI界面等全局配置信息,用户不建议编辑
 #define DEVICE_CONFIG_FILE "./Config/device_config.ini" //设备配置文件,保存设备相关的配置信息，如探测器参数等，用户可以编辑
+#define ENERGY_CALIBRATION_CSV_FILE "./Config/csv/energy_calibration.csv" // energy calibration: E = kx + b
 class JsonSettings : public QObject{
     Q_OBJECT
 public:
