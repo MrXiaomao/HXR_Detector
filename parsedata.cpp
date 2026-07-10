@@ -61,6 +61,12 @@ struct DetectorCalChannel {
     double ch909;
 };
 
+struct DetectorSigma {
+    double sigma511;
+    double sigma846;
+    double sigma909;
+};
+
 /** 与 MATLAB Data_Analysis_Main.m V1.1 各探测器 CH 表一致（1~29）；30~32 等待 CSV 导入 */
 constexpr std::array<DetectorCalChannel, DET_NUM> kDefaultDetectorChTable = {{
     {373, 659}, {325, 573}, {296, 525}, {374, 662}, {301, 533},
@@ -72,8 +78,17 @@ constexpr std::array<DetectorCalChannel, DET_NUM> kDefaultDetectorChTable = {{
     {0, 0}, {0, 0}, {0, 0},
 }};
 
+std::array<DetectorSigma, DET_NUM> makeDefaultDetectorSigmaTable()
+{
+    std::array<DetectorSigma, DET_NUM> table{};
+    table.fill({5.0, 6.0, 7.0});
+    return table;
+}
+
 // 当前运行实际使用的初始寻峰道址表，可由 CSV 导入或解析结果更新。
 std::array<DetectorCalChannel, kDefaultDetectorChTable.size()> kDetectorChTable = kDefaultDetectorChTable;
+const std::array<DetectorSigma, DET_NUM> kDefaultDetectorSigmaTable = makeDefaultDetectorSigmaTable();
+std::array<DetectorSigma, DET_NUM> kDetectorSigmaTable = kDefaultDetectorSigmaTable;
 constexpr int kDetectorChTableSize = static_cast<int>(kDefaultDetectorChTable.size());
 constexpr int kRefreshTimeSec = 60;
 constexpr double kPeakHeightMin = 100.0;
@@ -93,6 +108,40 @@ bool initialEnergyScaleForDetector(int detId, double outScale[2])
     bool flag = CurveFit::fit_linear(pts, outScale, &r2);
     qDebug()<<"initialEnergyScaleForDetector: k="<<outScale[0]<<", b="<<outScale[1];
     return flag;
+}
+
+bool validSigma(double sigma)
+{
+    return std::isfinite(sigma) && sigma > 0.0;
+}
+
+bool initialSigmasForDetector(int detId, double sigma[3])
+{
+    if (!sigma || detId < 1 || detId > static_cast<int>(kDetectorSigmaTable.size()))
+        return false;
+
+    const DetectorSigma &entry = kDetectorSigmaTable[detId - 1];
+    if (!validSigma(entry.sigma511) || !validSigma(entry.sigma846) || !validSigma(entry.sigma909))
+        return false;
+
+    sigma[0] = entry.sigma511;
+    sigma[1] = entry.sigma846;
+    sigma[2] = entry.sigma909;
+    return true;
+}
+
+double estimateSigma846(double sigma511, double sigma909)
+{
+    if (!validSigma(sigma511) || !validSigma(sigma909))
+        return 6.0;
+
+    constexpr double e511 = 511.0;
+    constexpr double e846 = 846.0;
+    constexpr double e909 = 909.0;
+    const double ratio = (e846 - e511) / (e909 - e511);
+    const double sigma8462 = sigma511 * sigma511
+        + ratio * (sigma909 * sigma909 - sigma511 * sigma511);
+    return sigma8462 > 0.0 ? std::sqrt(sigma8462) : 6.0;
 }
 
 double deadTimeRateFromSegment(const ParseData::mergeSpecData &spec)
@@ -131,6 +180,22 @@ bool ParseData::setInitialCalibrationChannels(int detectorId, double ch511, doub
     return true;
 }
 
+void ParseData::resetInitialSigmas()
+{
+    kDetectorSigmaTable = kDefaultDetectorSigmaTable;
+}
+
+bool ParseData::setInitialSigmas(int detectorId, double sigma511, double sigma846, double sigma909)
+{
+    if (detectorId < 1 || detectorId > static_cast<int>(kDetectorSigmaTable.size()))
+        return false;
+    if (!validSigma(sigma511) || !validSigma(sigma846) || !validSigma(sigma909))
+        return false;
+
+    kDetectorSigmaTable[detectorId - 1] = {sigma511, sigma846, sigma909};
+    return true;
+}
+
 bool ParseData::latestEnergyCalibration(double *k, double *b) const
 {
     if (!mHasLatestEnergyCalibration)
@@ -140,6 +205,17 @@ bool ParseData::latestEnergyCalibration(double *k, double *b) const
         *k = mLatestEnergyCalibration[0];
     if (b)
         *b = mLatestEnergyCalibration[1];
+    return true;
+}
+
+bool ParseData::latestSigmas(double sigma[3]) const
+{
+    if (!mHasLatestSigmas || !sigma)
+        return false;
+
+    sigma[0] = mLatestSigmas[0];
+    sigma[1] = mLatestSigmas[1];
+    sigma[2] = mLatestSigmas[2];
     return true;
 }
 
@@ -293,6 +369,9 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
         return 0;
     }
 
+    if (!fitflag[1])
+        peakParAll[1].c2 = estimateSigma846(peakParAll[0].c2, peakParAll[2].c2);
+
     QVector<double> initialValue = {
         peakParAll[1].c0, peakParAll[1].c1, peakParAll[1].c2,
         peakParAll[2].c0, peakParAll[2].c1, peakParAll[2].c2,
@@ -385,6 +464,15 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
         mLatestEnergyCalibration[0] = newEnergyScal[0];
         mLatestEnergyCalibration[1] = newEnergyScal[1];
         mHasLatestEnergyCalibration = true;
+        // 511/909 来自寻峰，846 若没有明显峰则按 FWHM^2(E) 线性插值估算。
+        const double sigma511 = std::abs(peakPar0[0].c2);
+        const double sigma909 = std::abs(peakPar0[1].c2);
+        const double sigma846 = stripFlag[0] ? std::abs(fit_c.value(2, 0.0))
+                                             : estimateSigma846(sigma511, sigma909);
+        mLatestSigmas[0] = validSigma(sigma511) ? sigma511 : 5.0;
+        mLatestSigmas[2] = validSigma(sigma909) ? sigma909 : 7.0;
+        mLatestSigmas[1] = validSigma(sigma846) ? sigma846 : estimateSigma846(mLatestSigmas[0], mLatestSigmas[2]);
+        mHasLatestSigmas = true;
 
         qDebug() << "SpecStripping End, specID:" << spec_id << "peakCount:" << peakCount;
         ++spec_id;
@@ -432,6 +520,7 @@ bool ParseData::initial_PeakFind(double* spectrum, double energy_scale[], QVecto
 
     //峰位的sigma估值（V1.1 Sigma0 = [5 6 7]）
     double sigma[3] = {5.0, 6.0, 7.0};
+    initialSigmasForDetector(mDetId, sigma);
     double width = 25.0;
     //------------- 寻找候选峰-------------------
     for(int e = 0; e<3; e++)
@@ -1006,6 +1095,10 @@ void ParseData::clearFitResult()
     mHasLatestEnergyCalibration = false;
     mLatestEnergyCalibration[0] = 1.0;
     mLatestEnergyCalibration[1] = 0.0;
+    mHasLatestSigmas = false;
+    mLatestSigmas[0] = 5.0;
+    mLatestSigmas[1] = 6.0;
+    mLatestSigmas[2] = 7.0;
 
     mSpecStripDataX.clear(); //拟合数据点x坐标
     mSpecStripDataY.clear(); //拟合数据点y坐标

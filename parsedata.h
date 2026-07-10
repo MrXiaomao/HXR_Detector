@@ -88,6 +88,9 @@ public:
     /** @brief 读取最近一次成功剥谱分段得到的能量刻度 E = kx + b */
     bool latestEnergyCalibration(double *k, double *b) const;
 
+    /** @brief 读取最近一次成功解析得到的 511/846/909 keV 峰 sigma */
+    bool latestSigmas(double sigma[3]) const;
+
     //获取剥谱图像数据,给出第i个能谱的剥谱数据，三条曲线数据
     QVector<specStripData> GetStripData(int specID);
 
@@ -146,6 +149,12 @@ public:
 
     /** @brief 更新指定谱仪的 511/909 keV 初始寻峰道址 */
     static bool setInitialCalibrationChannels(int detectorId, double ch511, double ch909);
+
+    /** @brief 恢复内存中的初始 sigma 表为程序默认值 */
+    static void resetInitialSigmas();
+
+    /** @brief 更新指定谱仪的 511/846/909 keV 初始 sigma */
+    static bool setInitialSigmas(int detectorId, double sigma511, double sigma846, double sigma909);
 
     /**
      * @brief 解析H5文件，读取指定探测器的所有能谱数据，目前不支持对正在测量的实验数据的分析（没做文件锁保护）。
@@ -262,6 +271,8 @@ private:
     QVector<double> mCount909Residual; //残差
     bool mHasLatestEnergyCalibration = false;
     double mLatestEnergyCalibration[2] = {1.0, 0.0};
+    bool mHasLatestSigmas = false;
+    double mLatestSigmas[3] = {5.0, 6.0, 7.0};
 
     QVector<double> mSpecStripDataX; //拟合数据点x坐标
     QVector<double> mSpecStripDataY; //拟合数据点y坐标
