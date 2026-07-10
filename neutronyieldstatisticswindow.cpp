@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-04-20 09:21:28
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-02-01 22:39:47
+ * @LastEditTime: 2026-07-10 14:22:57
  * @Description: 离线数据分析 中子产额分析
  */
 #include "neutronyieldstatisticswindow.h"
@@ -39,6 +39,7 @@
 #include <QSet>
 #include <QTextStream>
 #include <QVBoxLayout>
+#include <QPainter>
 #include <math.h>
 #include <algorithm>
 #include <cstring>
@@ -50,6 +51,7 @@
 
 namespace {
 constexpr int kSpectrumPlotSlotCount = 10;
+constexpr int kDetectorTableSelectAllRow = DET_NUM;
 
 // 自动导入时使用：返回全部谱仪编号。
 QSet<int> allEnergyCalibrationDetectors()
@@ -375,6 +377,23 @@ int defaultSpecNoForSlot(int slot, int specCount)
     return qMin(slot, specCount);
 }
 
+QPixmap peakChannelRoundPixmap(const QSize &size, const QColor &color)
+{
+    QPixmap pixmap(size);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(color);
+    painter.drawEllipse(0, 0, size.width(), size.height());
+    return pixmap;
+}
+
+QColor peakChannelGraphColor(int detId)
+{
+    return QColor::fromHsv((detId * 360 / DET_NUM) % 360, 200, 220);
+}
+
 enum FileListColumn {
     ColIndex = 0,
     ColFileName,
@@ -384,7 +403,7 @@ enum FileListColumn {
     ColSpectrumCount,
     ColSpecTimeInterval,
     ColValidChannels,
-    ColGap,
+    ColGapTime,
     ColCount
 };
 
@@ -761,25 +780,23 @@ void NeutronYieldStatisticsWindow::initUi()
     ui->tableWidget->setColumnWidth(0, 40);
 
     ui->tableWidget->blockSignals(true);
-    for (int column=0; column<ui->tableWidget->columnCount(); ++column)
-    {
-        for (int row=0; row<ui->tableWidget->rowCount(); ++row)
-        {
+    for (int column = 0; column < ui->tableWidget->columnCount(); ++column) {
+        for (int row = 0; row < DET_NUM; ++row) {
             auto *item = new QTableWidgetItem("");
             applyDetectorTableItemFlags(item, column);
             ui->tableWidget->setItem(row, column, item);
         }
     }
 
-    for (int row=0; row<ui->tableWidget->rowCount(); ++row)
-    {
+    for (int row = 0; row < DET_NUM; ++row) {
         ui->tableWidget->setRowHeight(row, 25);
-        auto *indexItem = new QTableWidgetItem(QString("#%1").arg(row+1));
+        auto *indexItem = new QTableWidgetItem(QString("#%1").arg(row + 1));
         applyDetectorTableItemFlags(indexItem, 0);
         ui->tableWidget->setItem(row, 0, indexItem);
     }
+    initDetectorTableSelectAllRow();
     ui->tableWidget->blockSignals(false);
-    ui->tableWidget->setFixedHeight((32+1)*25); //表头1行加32行探测器
+    ui->tableWidget->setFixedHeight((DET_NUM + 1 + 1) * 25); // 表头 + 32 通道 + 全选行
     ui->leftStackedWidget->setMinimumWidth(200);
 
     initFileListTable();
@@ -812,6 +829,7 @@ void NeutronYieldStatisticsWindow::initUi()
 
     initSpectrumCustomPlot();
     initCountCustomPlot();
+    initPeakChannelCustomPlot();
     initYieldCustomPlot();
 
     connect(ui->tableWidget, &QTableWidget::itemChanged, this,
@@ -821,9 +839,14 @@ void NeutronYieldStatisticsWindow::initUi()
     QButtonGroup *grp = new QButtonGroup(this);
     grp->addButton(ui->radioButton_spectrum, 0);
     grp->addButton(ui->radioButton_count, 1);
-    grp->addButton(ui->radioButton_neutronYield, 2);
+    grp->addButton(ui->rb_peakChannel_909keV, 2);
+    grp->addButton(ui->radioButton_neutronYield, 3);
     connect(grp, QOverload<int>::of(&QButtonGroup::idClicked), this, [=](int index){
         ui->stackedWidget->setCurrentIndex(index);
+        if (index == 2) {
+            ensurePeakChannelCurveColumn();
+            updateAllPeakChannelPlot();
+        }
     });
 
     //恢复页面布局
@@ -890,12 +913,13 @@ void NeutronYieldStatisticsWindow::initFileListTable()
     table->horizontalHeader()->setSectionResizeMode(ColStartTime, QHeaderView::Fixed);
     table->horizontalHeader()->setSectionResizeMode(ColEndTime, QHeaderView::Fixed);
     table->setColumnWidth(ColIndex, 40);
-    table->setColumnWidth(ColStartTime, 190);
-    table->setColumnWidth(ColEndTime, 190);
+    table->setColumnWidth(ColStartTime, 180);
+    table->setColumnWidth(ColEndTime, 180);
     table->horizontalHeader()->setSectionResizeMode(ColSpecTimeInterval, QHeaderView::Fixed);
-    table->setColumnWidth(ColSpecTimeInterval, 90);
+    table->setColumnWidth(ColSpecTimeInterval, 70);
     table->horizontalHeader()->setSectionResizeMode(ColValidChannels, QHeaderView::Fixed);
-    table->setColumnWidth(ColValidChannels, 100);
+    table->setColumnWidth(ColValidChannels, 70);
+    table->setColumnWidth(ColGapTime, 70);
     ui->tableWidget_fileList->setEditTriggers(
         QAbstractItemView::DoubleClicked |
         QAbstractItemView::SelectedClicked |
@@ -1233,12 +1257,6 @@ bool NeutronYieldStatisticsWindow::readH5FileChannelMeta(const QString &filePath
                                        .arg(firstDt.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss.zzz")))
                                        .arg(lastDt.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss.zzz"))));
 
-                if (applyDetectorLonLat && i >= 0 && i < ui->tableWidget->rowCount()) {
-                    auto *specCountItem = new QTableWidgetItem(QString::number(rows));
-                    applyDetectorTableItemFlags(specCountItem, 6);
-                    ui->tableWidget->setItem(i, 6, specCountItem);
-                }
-
                 group.close();
                 dataset.close();
                 file_space.close();
@@ -1329,11 +1347,11 @@ void NeutronYieldStatisticsWindow::updateFileListGapColumns()
 {
     QTableWidget *table = ui->tableWidget_fileList;
     for (int row = 0; row < table->rowCount(); ++row) {
-        QTableWidgetItem *gapItem = table->item(row, ColGap);
+        QTableWidgetItem *gapItem = table->item(row, ColGapTime);
         if (!gapItem) {
             gapItem = new QTableWidgetItem();
             gapItem->setTextAlignment(Qt::AlignCenter);
-            table->setItem(row, ColGap, gapItem);
+            table->setItem(row, ColGapTime, gapItem);
         }
         if (row == 0) {
             gapItem->setText(QStringLiteral("-"));
@@ -1447,6 +1465,36 @@ int NeutronYieldStatisticsWindow::currentPictureDetId() const
     if (isPerChannelShotTimeMode())
         return ui->spinBox_channelId->value();
     return ui->spinBox_pictureDet->value();
+}
+
+void NeutronYieldStatisticsWindow::updateDetectorTableSpecCount(int detId)
+{
+    if (detId < 1 || detId > DET_NUM)
+        return;
+
+    quint32 count = 0;
+    if (ParseData *parsed = dealFile[detId - 1]) {
+        const QVector<ParseData::mergeSpecData> mergeSpec = parsed->GetMergeSpec();
+        for (const ParseData::mergeSpecData &seg : mergeSpec)
+            count += seg.rowCount;
+    }
+
+    auto *specCountItem = ui->tableWidget->item(detId - 1, 6);
+    if (!specCountItem) {
+        specCountItem = new QTableWidgetItem;
+        applyDetectorTableItemFlags(specCountItem, 6);
+        ui->tableWidget->setItem(detId - 1, 6, specCountItem);
+    }
+    specCountItem->setText(count > 0 ? QString::number(count) : QString());
+}
+
+void NeutronYieldStatisticsWindow::clearDetectorTableSpecCount(int detId)
+{
+    if (detId < 1 || detId > DET_NUM)
+        return;
+
+    if (QTableWidgetItem *specCountItem = ui->tableWidget->item(detId - 1, 6))
+        specCountItem->setText(QString());
 }
 
 void NeutronYieldStatisticsWindow::updatePictureForDetector(int detID)
@@ -2041,6 +2089,300 @@ void NeutronYieldStatisticsWindow::initCountCustomPlot()
     });
 }
 
+void NeutronYieldStatisticsWindow::initPeakChannelCustomPlot()
+{
+    QCustomPlot *customPlot = ui->spectorMeter_PeakChannel;
+    QCustomPlotHelper *customPlotHelper = new QCustomPlotHelper(customPlot, this);
+    customPlotHelper->setResetActionVisible(true);
+    customPlotHelper->setClearMarkerActionVisible(false);
+    customPlotHelper->setStraightLineActionVisible(true);
+    customPlotHelper->setRangeSelectActionVisible(false);
+    customPlot->setProperty("enable-dataTracer", true);
+
+    customPlot->setAntialiasedElements(QCP::aeAll);
+    customPlot->legend->setVisible(true);
+    customPlot->legend->setFont(QFont(QStringLiteral("Helvetica"), 8));
+    customPlot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectPlottables);
+    customPlot->xAxis->setLabel(tr("时间(分钟)"));
+    customPlot->yAxis->setLabel(tr("峰位(道址)"));
+    customPlot->yAxis->ticker()->setTickCount(6);
+    customPlot->xAxis->ticker()->setTickCount(8);
+
+    customPlot->xAxis2->setTicks(false);
+    customPlot->xAxis2->setSubTicks(false);
+    customPlot->yAxis2->setTicks(false);
+    customPlot->yAxis2->setSubTicks(false);
+
+    for (int detId = 1; detId <= DET_NUM; ++detId) {
+        QCPGraph *graph = customPlot->addGraph();
+        graph->setName(QStringLiteral("Ch%1").arg(detId));
+        graph->setProperty("peakChannelDetId", detId);
+        graph->setAntialiased(true);
+        graph->setPen(QPen(peakChannelGraphColor(detId), 2, Qt::SolidLine));
+        graph->setLineStyle(QCPGraph::lsLine);
+        graph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 6));
+        graph->setVisible(false);
+    }
+
+    customPlot->replot();
+    connect(customPlot->xAxis, SIGNAL(rangeChanged(const QCPRange &)), customPlot->xAxis2, SLOT(setRange(const QCPRange &)));
+    connect(customPlot->yAxis, SIGNAL(rangeChanged(const QCPRange &)), customPlot->yAxis2, SLOT(setRange(const QCPRange &)));
+    connect(customPlot, SIGNAL(mousePress(QMouseEvent*)), this, SLOT(slotShowTracer(QMouseEvent*)));
+    connect(customPlot, SIGNAL(mouseRelease(QMouseEvent*)), this, SLOT(slotRestorePlot(QMouseEvent*)));
+}
+
+QCheckBox *NeutronYieldStatisticsWindow::peakChannelCurveCheckBox(int row) const
+{
+    if (!mPeakChannelCurveColumnReady || mPeakChannelCurveColumn < 0)
+        return nullptr;
+    if (row < 0 || row >= DET_NUM)
+        return nullptr;
+    QWidget *cell = ui->tableWidget->cellWidget(row, mPeakChannelCurveColumn);
+    return cell ? cell->findChild<QCheckBox*>() : nullptr;
+}
+
+void NeutronYieldStatisticsWindow::initDetectorTableSelectAllRow()
+{
+    if (ui->tableWidget->rowCount() <= kDetectorTableSelectAllRow)
+        ui->tableWidget->insertRow(kDetectorTableSelectAllRow);
+
+    ui->tableWidget->setRowHeight(kDetectorTableSelectAllRow, 25);
+
+    auto *indexItem = new QTableWidgetItem(tr("全选"));
+    applyDetectorTableItemFlags(indexItem, 0);
+    indexItem->setFlags(indexItem->flags() & ~Qt::ItemIsEditable);
+    ui->tableWidget->setItem(kDetectorTableSelectAllRow, 0, indexItem);
+
+    for (int col = 1; col < ui->tableWidget->columnCount(); ++col) {
+        auto *item = new QTableWidgetItem;
+        applyDetectorTableItemFlags(item, col);
+        item->setFlags(item->flags() & ~Qt::ItemIsEditable);
+        ui->tableWidget->setItem(kDetectorTableSelectAllRow, col, item);
+    }
+}
+
+void NeutronYieldStatisticsWindow::updatePeakChannelSelectAllState()
+{
+    if (!mCheckBoxPeakChannelSelectAll)
+        return;
+
+    int checkedCount = 0;
+    int enabledCount = 0;
+    for (int row = 0; row < DET_NUM; ++row) {
+        QCheckBox *cb = peakChannelCurveCheckBox(row);
+        if (!cb || !cb->isEnabled())
+            continue;
+        ++enabledCount;
+        if (cb->isChecked())
+            ++checkedCount;
+    }
+
+    mUpdatingPeakChannelSelectAll = true;
+    if (enabledCount == 0 || checkedCount == 0) {
+        mCheckBoxPeakChannelSelectAll->setTristate(false);
+        mCheckBoxPeakChannelSelectAll->setCheckState(Qt::Unchecked);
+    } else if (checkedCount == enabledCount) {
+        mCheckBoxPeakChannelSelectAll->setTristate(false);
+        mCheckBoxPeakChannelSelectAll->setCheckState(Qt::Checked);
+    } else {
+        mCheckBoxPeakChannelSelectAll->setTristate(true);
+        mCheckBoxPeakChannelSelectAll->setCheckState(Qt::PartiallyChecked);
+    }
+    mUpdatingPeakChannelSelectAll = false;
+}
+
+void NeutronYieldStatisticsWindow::ensurePeakChannelCurveColumn()
+{
+    if (mPeakChannelCurveColumnReady)
+        return;
+
+    const int col = ui->tableWidget->columnCount();
+    ui->tableWidget->insertColumn(col);
+    mPeakChannelCurveColumn = col;
+
+    auto *header = new QTableWidgetItem(tr("曲线显示"));
+    ui->tableWidget->setHorizontalHeaderItem(col, header);
+
+    for (int row = 0; row < DET_NUM; ++row) {
+        const int detId = row + 1;
+        auto *checkBox = new QCheckBox();
+        checkBox->setText(QString::number(detId));
+        checkBox->setProperty("detId", detId);
+        checkBox->setIcon(QIcon(peakChannelRoundPixmap(QSize(16, 16), peakChannelGraphColor(detId))));
+        checkBox->setChecked(true);
+
+        auto *cellWidget = new QWidget(ui->tableWidget);
+        auto *cellLayout = new QHBoxLayout(cellWidget);
+        cellLayout->setContentsMargins(4, 0, 0, 0);
+        cellLayout->setSpacing(0);
+        cellLayout->addWidget(checkBox, 0, Qt::AlignLeft | Qt::AlignVCenter);
+        cellLayout->addStretch();
+        ui->tableWidget->setCellWidget(row, col, cellWidget);
+
+        connect(checkBox, &QCheckBox::stateChanged, this, [this](int) {
+            if (!mUpdatingPeakChannelSelectAll)
+                updatePeakChannelSelectAllState();
+            if (ui->stackedWidget->currentIndex() == 2)
+                applyPeakChannelCurveVisibility();
+        });
+    }
+
+    mCheckBoxPeakChannelSelectAll = new QCheckBox(tr("全选"));
+    mCheckBoxPeakChannelSelectAll->setTristate(true);
+    mCheckBoxPeakChannelSelectAll->setChecked(true);
+    auto *selectAllCell = new QWidget(ui->tableWidget);
+    auto *selectAllLayout = new QHBoxLayout(selectAllCell);
+    selectAllLayout->setContentsMargins(4, 0, 0, 0);
+    selectAllLayout->setSpacing(0);
+    selectAllLayout->addWidget(mCheckBoxPeakChannelSelectAll, 0, Qt::AlignLeft | Qt::AlignVCenter);
+    selectAllLayout->addStretch();
+    ui->tableWidget->setCellWidget(kDetectorTableSelectAllRow, col, selectAllCell);
+    connect(mCheckBoxPeakChannelSelectAll, &QCheckBox::stateChanged, this, [this](int state) {
+        if (mUpdatingPeakChannelSelectAll || state == Qt::PartiallyChecked)
+            return;
+        const bool checked = (state == Qt::Checked);
+        mUpdatingPeakChannelSelectAll = true;
+        for (int row = 0; row < DET_NUM; ++row) {
+            if (QCheckBox *cb = peakChannelCurveCheckBox(row)) {
+                if (cb->isEnabled())
+                    cb->setChecked(checked);
+            }
+        }
+        mUpdatingPeakChannelSelectAll = false;
+        updatePeakChannelSelectAllState();
+        if (ui->stackedWidget->currentIndex() == 2)
+            applyPeakChannelCurveVisibility();
+    });
+
+    mPeakChannelCurveColumnReady = true;
+    updatePeakChannelSelectAllState();
+}
+
+void NeutronYieldStatisticsWindow::applyPeakChannelCurveVisibility()
+{
+    if (ui->stackedWidget->currentIndex() != 2)
+        return;
+
+    QCustomPlot *customPlot = ui->spectorMeter_PeakChannel;
+    if (!customPlot)
+        return;
+
+    bool hasVisible = false;
+    double minY = 0.0;
+    double maxY = 0.0;
+    bool yInit = false;
+
+    for (int detId = 1; detId <= DET_NUM; ++detId) {
+        QCPGraph *graph = customPlot->graph(detId - 1);
+        if (!graph)
+            continue;
+
+        const bool hasData = graph->dataCount() > 0;
+        QCheckBox *checkBox = peakChannelCurveCheckBox(detId - 1);
+        if (checkBox)
+            checkBox->setEnabled(hasData);
+
+        const bool shouldShow = hasData && checkBox && checkBox->isChecked();
+        graph->setVisible(shouldShow);
+        if (!shouldShow)
+            continue;
+
+        hasVisible = true;
+        for (auto it = graph->data()->constBegin(); it != graph->data()->constEnd(); ++it) {
+            if (!yInit) {
+                minY = maxY = it->value;
+                yInit = true;
+            } else {
+                minY = qMin(minY, it->value);
+                maxY = qMax(maxY, it->value);
+            }
+        }
+    }
+
+    if (hasVisible) {
+        customPlot->xAxis->rescale(true);
+        if (yInit) {
+            const double margin = qMax(1.0, (maxY - minY) * 0.05);
+            customPlot->yAxis->setRange(minY - margin, maxY + margin);
+        } else {
+            customPlot->yAxis->rescale(true);
+        }
+        customPlot->xAxis->scaleRange(1.05, customPlot->xAxis->range().center());
+    }
+
+    updatePeakChannelSelectAllState();
+    customPlot->replot();
+}
+
+void NeutronYieldStatisticsWindow::updateAllPeakChannelPlot()
+{
+    QCustomPlot *customPlot = ui->spectorMeter_PeakChannel;
+    if (!customPlot)
+        return;
+
+    bool hasAny = false;
+    double minY = 0.0;
+    double maxY = 0.0;
+    bool yInit = false;
+
+    for (int detId = 1; detId <= DET_NUM; ++detId) {
+        QCPGraph *graph = customPlot->graph(detId - 1);
+        if (!graph)
+            continue;
+
+        ParseData *parsed = dealFile[detId - 1];
+        const QVector<double> peakPos = parsed ? parsed->count909PeakPos() : QVector<double>();
+        const QVector<specStripData> countData = parsed ? parsed->GetCount909Data() : QVector<specStripData>();
+
+        if (!parsed || peakPos.isEmpty() || countData.isEmpty()) {
+            graph->setVisible(false);
+            graph->data()->clear();
+            continue;
+        }
+
+        QVector<double> keys;
+        QVector<double> values;
+        const int n = qMin(peakPos.size(), countData.size());
+        keys.reserve(n);
+        values.reserve(n);
+        for (int i = 0; i < n; ++i) {
+            keys << countData.at(i).x;
+            values << peakPos.at(i);
+            if (!yInit) {
+                minY = maxY = peakPos.at(i);
+                yInit = true;
+            } else {
+                minY = qMin(minY, peakPos.at(i));
+                maxY = qMax(maxY, peakPos.at(i));
+            }
+        }
+
+        graph->setData(keys, values);
+        hasAny = true;
+    }
+
+    if (ui->stackedWidget->currentIndex() == 2)
+        applyPeakChannelCurveVisibility();
+    else if (hasAny) {
+        for (int detId = 1; detId <= DET_NUM; ++detId) {
+            QCPGraph *graph = customPlot->graph(detId - 1);
+            if (graph && graph->dataCount() > 0)
+                graph->setVisible(true);
+        }
+        customPlot->xAxis->rescale(true);
+        if (yInit) {
+            const double margin = qMax(1.0, (maxY - minY) * 0.05);
+            customPlot->yAxis->setRange(minY - margin, maxY + margin);
+        } else {
+            customPlot->yAxis->rescale(true);
+        }
+        customPlot->xAxis->scaleRange(1.05, customPlot->xAxis->range().center());
+        customPlot->replot();
+    } else {
+        customPlot->replot();
+    }
+}
+
 void NeutronYieldStatisticsWindow::initYieldCustomPlot()
 {
    // auto *w = new MollweideHeatmapWidget(ui->heatmapContainer);
@@ -2224,6 +2566,9 @@ void NeutronYieldStatisticsWindow::on_action_startCalculate_triggered()
     const QDateTime windowLeft = fusionTime.addSecs(startTime);
     const QDateTime windowRight = fusionTime.addSecs(endTime);
 
+    for (int detId : detIds)
+        clearDetectorTableSpecCount(detId);
+
     const QString tmStart = windowLeft.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss"));
     const QString tmEnd = windowRight.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss"));
     const QString step = QString::number(timeStep / 60);
@@ -2343,6 +2688,94 @@ void NeutronYieldStatisticsWindow::setParseBusy(bool busy)
     ui->bt_clearFiles->setEnabled(!busy);
     ui->btn_sort->setEnabled(!busy);
     ui->doubleSpinBox_fitR2Min->setEnabled(!busy);
+    updateClearActionEnabled();
+}
+
+void NeutronYieldStatisticsWindow::updateClearActionEnabled()
+{
+    ui->action_clear->setEnabled(mParseWorkerThread == nullptr);
+}
+
+void NeutronYieldStatisticsWindow::clearDetectorTableResults()
+{
+    ui->tableWidget->blockSignals(true);
+    for (int row = 0; row < DET_NUM; ++row) {
+        for (int col : {1, 2, 5, 6}) {
+            if (QTableWidgetItem *item = ui->tableWidget->item(row, col))
+                item->setText(QString());
+        }
+        if (mPeakChannelCurveColumnReady) {
+            if (QCheckBox *cb = peakChannelCurveCheckBox(row)) {
+                cb->setChecked(true);
+                cb->setEnabled(false);
+            }
+        }
+    }
+    ui->tableWidget->blockSignals(false);
+    if (mPeakChannelCurveColumnReady)
+        updatePeakChannelSelectAllState();
+}
+
+void NeutronYieldStatisticsWindow::clearAllPlotViews()
+{
+    slotUpdateMultiSegmentPlotDatas({});
+
+    if (QCustomPlot *countPlot = ui->spectorMeter_Count) {
+        const QStringList graphNames = {
+            QStringLiteral("timeCountGraph"),
+            QStringLiteral("timeCountFitGraph"),
+            QStringLiteral("timeCountRemainGraph"),
+            QStringLiteral("Spec909_Graph"),
+            QStringLiteral("spec909_FitGraph"),
+            QStringLiteral("Spec909_residualGraph"),
+        };
+        for (const QString &name : graphNames) {
+            if (QCPGraph *graph = countPlot->graph(name))
+                graph->data()->clear();
+        }
+        countPlot->replot();
+    }
+
+    if (QCustomPlot *peakPlot = ui->spectorMeter_PeakChannel) {
+        for (int i = 0; i < peakPlot->graphCount(); ++i) {
+            if (QCPGraph *graph = peakPlot->graph(i)) {
+                graph->data()->clear();
+                graph->setVisible(false);
+            }
+        }
+        peakPlot->replot();
+    }
+
+    slotUpdate_yieldDis({});
+}
+
+void NeutronYieldStatisticsWindow::clearAllParseResults()
+{
+    for (int i = 0; i < DET_NUM; ++i) {
+        delete dealFile[i];
+        dealFile[i] = nullptr;
+    }
+
+    mDealSucess.clear();
+    myield.clear();
+    m_currentMergeSpectrum.clear();
+
+    clearDetectorTableResults();
+    clearAllPlotViews();
+}
+
+void NeutronYieldStatisticsWindow::on_action_clear_triggered()
+{
+    if (mParseWorkerThread)
+        return;
+
+    if (QMessageBox::question(this, tr("确认"),
+                              tr("确定清除所有处理结果吗？文件列表和经纬度将保留。")) != QMessageBox::Yes) {
+        return;
+    }
+
+    clearAllParseResults();
+    emit reporWriteLog(tr("已清除全部处理结果。"));
 }
 
 void NeutronYieldStatisticsWindow::onParseProgress(int value, int maximum, const QString &message)
@@ -2367,6 +2800,7 @@ void NeutronYieldStatisticsWindow::onParseChannelFinished(int detId, bool mergeO
     mDealSucess[detId] = false;
 
     if (!mergeOk || !mParseWorker) {
+        clearDetectorTableSpecCount(detId);
         emit reporWriteLog(tr("谱仪%1解析失败").arg(detId));
         emit reporWriteLog(QString("谱仪%1解析完成").arg(detId));
         return;
@@ -2374,6 +2808,7 @@ void NeutronYieldStatisticsWindow::onParseChannelFinished(int detId, bool mergeO
 
     ParseData *parsed = mParseWorker->takeParseData(detId);
     if (!parsed) {
+        clearDetectorTableSpecCount(detId);
         emit reporWriteLog(tr("谱仪%1解析失败").arg(detId));
         emit reporWriteLog(QString("谱仪%1解析完成").arg(detId));
         return;
@@ -2381,6 +2816,8 @@ void NeutronYieldStatisticsWindow::onParseChannelFinished(int detId, bool mergeO
 
     delete dealFile[detId - 1];
     dealFile[detId - 1] = parsed;
+
+    updateDetectorTableSpecCount(detId);
 
     const bool fitOk = dealFile[detId - 1]->successfulFitSegmentCount() > 0;
     mDealSucess[detId] = fitOk;
@@ -2456,7 +2893,7 @@ void NeutronYieldStatisticsWindow::on_action_stopCalculate_triggered()
 
 void NeutronYieldStatisticsWindow::updateYieldSpatialDistributionForRow(int row)
 {
-    if (row < 0 || row >= ui->tableWidget->rowCount())
+    if (row < 0 || row >= DET_NUM)
         return;
 
     const int detID = row + 1;
@@ -2477,6 +2914,9 @@ void NeutronYieldStatisticsWindow::on_tableWidget_itemChanged(QTableWidgetItem *
     if (!item)
         return;
 
+    if (item->row() == kDetectorTableSelectAllRow)
+        return;
+
     const int col = item->column();
     if (col != 3 && col != 4)
         return;
@@ -2491,7 +2931,7 @@ void NeutronYieldStatisticsWindow::on_tableWidget_selectionChanged()
         return;
 
     const int row = selectedItems[0]->row();
-    if (row < 0)
+    if (row < 0 || row >= DET_NUM)
         return;
 
     updatePictureForDetector(row + 1);
@@ -2510,7 +2950,7 @@ void NeutronYieldStatisticsWindow::slotSuccess(int detID)
     qDebug() << "slotSuccess called with detID:" << detID;
     // 显示909初始计数
     double count909_N0 = dealFile[detID-1]->GetInitialCount();
-    if(detID > 0 && detID <= ui->tableWidget->rowCount()){
+    if (detID > 0 && detID <= DET_NUM) {
         auto *countItem = new QTableWidgetItem(QString::number(count909_N0));
         applyDetectorTableItemFlags(countItem, 5);
         ui->tableWidget->setItem(detID-1, 5, countItem);
@@ -2543,6 +2983,11 @@ void NeutronYieldStatisticsWindow::slotSuccess(int detID)
 
     if (detID == currentPictureDetId())
         updatePictureForDetector(detID);
+
+    if (ui->stackedWidget->currentIndex() == 2) {
+        ensurePeakChannelCurveColumn();
+        updateAllPeakChannelPlot();
+    }
 
     // QTimer::singleShot(1, this, [=](){
     //     SplashWidget::instance()->hide();
@@ -2948,7 +3393,7 @@ void NeutronYieldStatisticsWindow::slotUpdate_yieldDis(QMap<int, Sensor> yields)
 bool NeutronYieldStatisticsWindow::setLonLat(int row, double lon, double lat)
 {
     // 行号合法性
-    if (row < 0 || row >= ui->tableWidget->rowCount())
+    if (row < 0 || row >= DET_NUM)
         return false;
 
     // 范围校验（与你前面的规则一致）
@@ -3018,17 +3463,17 @@ void NeutronYieldStatisticsWindow::on_bt_saveResult_clicked()
         //写入表头
         out << "DetectorID\tYield\tUncertainty\tLongitude\tLatitude\tInitial909Count\tSpecCount\n";
         //写入数据
-        for (int row = 0; row < ui->tableWidget->rowCount(); row++)
+        for (int row = 0; row < DET_NUM; row++)
         {
             QStringList rowData;
-            //如果最后一列的数据为空，则认为该行没有数据，跳过
-            QTableWidgetItem* lastItem = ui->tableWidget->item(row, ui->tableWidget->columnCount() - 1);
-            if (!lastItem || lastItem->text().isEmpty())
+            // 能谱个数为空则视为该行无数据，跳过（曲线显示列不参与导出）
+            QTableWidgetItem* specCountItem = ui->tableWidget->item(row, 6);
+            if (!specCountItem || specCountItem->text().isEmpty())
                 continue;
-            for (int col = 0; col < ui->tableWidget->columnCount(); col++)
+            for (int col = 0; col < 7; col++)
             {
                 QTableWidgetItem* item = ui->tableWidget->item(row, col);
-                rowData << (item ? item->text() : ""); //如果单元格没有数据，则写入空字符串
+                rowData << (item ? item->text() : "");
             }
             out << rowData.join("\t") << "\n";
         }

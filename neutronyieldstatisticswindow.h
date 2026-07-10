@@ -2,8 +2,9 @@
  * @Author: MrPan
  * @Date: 2026-01-15 21:24:55
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-03-06 09:29:58
- * @Description: 请填写简介
+ * @LastEditTime: 2026-07-10 09:37:48
+ * @Description: 用于中子产额统计分析的窗口，根据H5文件中的能谱数据，
+ * 计算中子产额、909keV峰位随时间演变图、909keV峰位随时间演变图（全通道）、中子产额空间分布图。
  */
 #ifndef NEUTRONYIELDSTATISTICSWINDOW_H
 #define NEUTRONYIELDSTATISTICSWINDOW_H
@@ -20,6 +21,7 @@ class CrasterParabolicHeatmapWidget;
 class QTableWidgetItem;
 class QProgressBar;
 class QThread;
+class QCheckBox;
 
 namespace Ui {
 class NeutronYieldStatisticsWindow;
@@ -39,6 +41,8 @@ public:
     void initSpectrumCustomPlot();
     // 初始化909keV伽马计数随时间变化曲线及各时间段的909能谱
     void initCountCustomPlot();
+    // 初始化909峰位随时间演变图（全通道）
+    void initPeakChannelCustomPlot();
     // 初始化中子产额空间分布
     void initYieldCustomPlot();
     
@@ -128,6 +132,8 @@ private slots:
     // 停止解析，在解析时，逐个通道解析，当解析函数返回到主界面的函数中时，对停止解析动作做判断，停止后续解析
     void on_action_stopCalculate_triggered();
 
+    void on_action_clear_triggered();
+
     void on_action_lightTheme_triggered();
     void on_action_darkTheme_triggered();
     void on_action_colorTheme_triggered();
@@ -181,6 +187,18 @@ private:
     qint64 beginTimeForDetector(int detId, const QDateTime &fusionTime) const;
     int currentPictureDetId() const;
     void updatePictureForDetector(int detID);
+    void updateAllPeakChannelPlot();
+    void ensurePeakChannelCurveColumn();
+    void applyPeakChannelCurveVisibility();
+    QCheckBox *peakChannelCurveCheckBox(int row) const;
+    void updateDetectorTableSpecCount(int detId);
+    void clearDetectorTableSpecCount(int detId);
+    void updatePeakChannelSelectAllState();
+    void initDetectorTableSelectAllRow();
+    void updateClearActionEnabled();
+    void clearAllParseResults();
+    void clearDetectorTableResults();
+    void clearAllPlotViews();
     void updateYieldSpatialDistributionForRow(int row);
     void refreshSpectrumPlotSlot(int slotIndex);
     void refreshAllSpectrumPlotSlots();
@@ -221,6 +239,11 @@ private:
     QProgressBar *mProgressBar = nullptr;
     NeutronYieldParseWorker *mParseWorker = nullptr;
     QThread *mParseWorkerThread = nullptr;
+
+    bool mPeakChannelCurveColumnReady = false;
+    int mPeakChannelCurveColumn = -1;
+    QCheckBox *mCheckBoxPeakChannelSelectAll = nullptr;
+    bool mUpdatingPeakChannelSelectAll = false;
 };
 
 #endif // NEUTRONYIELDSTATISTICSWINDOW_H

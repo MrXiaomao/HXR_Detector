@@ -463,7 +463,7 @@
        <item>
         <widget class="QStackedWidget" name="stackedWidget">
          <property name="currentIndex">
-          <number>1</number>
+          <number>0</number>
          </property>
          <widget class="QWidget" name="page_spectrum">
           <layout class="QVBoxLayout" name="verticalLayout_3">
@@ -516,6 +516,28 @@
            </property>
            <item row="0" column="0">
             <widget class="QCustomPlot" name="spectorMeter_Count" native="true"/>
+           </item>
+          </layout>
+         </widget>
+         <widget class="QWidget" name="page_peakChannel">
+          <layout class="QGridLayout" name="gridLayout_peakChannel">
+           <property name="leftMargin">
+            <number>0</number>
+           </property>
+           <property name="topMargin">
+            <number>0</number>
+           </property>
+           <property name="rightMargin">
+            <number>0</number>
+           </property>
+           <property name="bottomMargin">
+            <number>0</number>
+           </property>
+           <property name="spacing">
+            <number>0</number>
+           </property>
+           <item row="0" column="0">
+            <widget class="QCustomPlot" name="spectorMeter_PeakChannel" native="true"/>
            </item>
           </layout>
          </widget>
@@ -603,7 +625,7 @@
           <item>
            <widget class="QRadioButton" name="radioButton_spectrum">
             <property name="text">
-             <string>显示能谱</string>
+             <string>分时能谱图</string>
             </property>
             <property name="checked">
              <bool>true</bool>
@@ -613,14 +635,21 @@
           <item>
            <widget class="QRadioButton" name="radioButton_count">
             <property name="text">
-             <string>显示计数</string>
+             <string>909全能峰计数图</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QRadioButton" name="rb_peakChannel_909keV">
+            <property name="text">
+             <string>909峰位演变图</string>
             </property>
            </widget>
           </item>
           <item>
            <widget class="QRadioButton" name="radioButton_neutronYield">
             <property name="text">
-             <string>显示中子产额空间分布图</string>
+             <string>中子产额空间分布图</string>
             </property>
            </widget>
           </item>
@@ -1267,6 +1296,8 @@
     </property>
     <addaction name="action_open"/>
     <addaction name="separator"/>
+    <addaction name="action_clear"/>
+    <addaction name="separator"/>
     <addaction name="action_exit"/>
    </widget>
    <widget class="QMenu" name="menu_help">
@@ -1314,6 +1345,7 @@
    <addaction name="action_startCalculate"/>
    <addaction name="action_stopCalculate"/>
    <addaction name="separator"/>
+   <addaction name="action_clear"/>
    <addaction name="action_exit"/>
   </widget>
   <action name="action_open">
@@ -1446,6 +1478,24 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+Alt+C</string>
+   </property>
+  </action>
+  <action name="action_clear">
+   <property name="icon">
+    <iconset resource="../3rdParty/resource/resource.qrc">
+     <normaloff>:/qingchu.png</normaloff>:/qingchu.png</iconset>
+   </property>
+   <property name="text">
+    <string>清除数据</string>
+   </property>
+   <property name="iconText">
+    <string>清除数据</string>
+   </property>
+   <property name="toolTip">
+    <string>清除全部处理结果（包含图像、表格数据）</string>
+   </property>
+   <property name="menuRole">
+    <enum>QAction::NoRole</enum>
    </property>
   </action>
   <action name="action_aboutQt">

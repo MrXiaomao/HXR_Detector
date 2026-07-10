@@ -521,7 +521,7 @@ bool ParseData::initial_PeakFind(double* spectrum, double energy_scale[], QVecto
     //峰位的sigma估值（V1.1 Sigma0 = [5 6 7]）
     double sigma[3] = {5.0, 6.0, 7.0};
     initialSigmasForDetector(mDetId, sigma);
-    double width = 25.0;
+    double width = 20.0;
     //------------- 寻找候选峰-------------------
     for(int e = 0; e<3; e++)
     {
@@ -578,8 +578,8 @@ bool ParseData::initial_PeakFind(double* spectrum, double energy_scale[], QVecto
         for(auto tempResult:fit_result_All)
         {
             if(tempResult.c0 >= kPeakHeightMin &&
-                tempResult.c2 <= 1.5*sigma[e] &&
-                tempResult.c2 >= 0.5*sigma[e])
+                tempResult.c2 <= 1.2*sigma[e] &&
+                tempResult.c2 >= 0.8*sigma[e])
             {
                 valid_result.push_back(tempResult);
                 valid_chi_square.push_back(tempResult.chi_square);
