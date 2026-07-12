@@ -138,10 +138,12 @@ double estimateSigma846(double sigma511, double sigma909)
     constexpr double e511 = 511.0;
     constexpr double e846 = 846.0;
     constexpr double e909 = 909.0;
-    const double ratio = (e846 - e511) / (e909 - e511);
-    const double sigma8462 = sigma511 * sigma511
-        + ratio * (sigma909 * sigma909 - sigma511 * sigma511);
-    return sigma8462 > 0.0 ? std::sqrt(sigma8462) : 6.0;
+    //根据文献中,RMS值最小的线性拟合公式为：sigma = a + b*E
+    //文献名称：Implicit FWHM calibration for gamma-ray spectra
+    const double b = (sigma909 - sigma511) / (e909 - e511);
+    const double a = sigma511 - b * e511;
+    const double sigma846 = a + b * e846;
+    return validSigma(sigma846) ? sigma846 : 6.0;
 }
 
 double deadTimeRateFromSegment(const ParseData::mergeSpecData &spec)
@@ -464,7 +466,7 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
         mLatestEnergyCalibration[0] = newEnergyScal[0];
         mLatestEnergyCalibration[1] = newEnergyScal[1];
         mHasLatestEnergyCalibration = true;
-        // 511/909 来自寻峰，846 若没有明显峰则按 FWHM^2(E) 线性插值估算。
+        // 511/909 来自寻峰，846 若没有明显峰则按 sigma = a + bE 线性模型估算。
         const double sigma511 = std::abs(peakPar0[0].c2);
         const double sigma909 = std::abs(peakPar0[1].c2);
         const double sigma846 = stripFlag[0] ? std::abs(fit_c.value(2, 0.0))
