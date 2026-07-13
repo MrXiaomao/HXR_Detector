@@ -144,6 +144,19 @@ public:
     void setParseCancelFlag(std::atomic<bool> *flag);
     void setSpectrumFitR2Min(double r2Min) { mSpectrumFitR2Min = r2Min; }
     double spectrumFitR2Min() const { return mSpectrumFitR2Min; }
+
+    static constexpr double kDefaultInitialPeakFindWidth = 20.0;
+    static constexpr double kDefaultPeakHeightMin = 100.0;
+    static constexpr double kDefaultPeakSigmaRatioMin = 0.8;
+    static constexpr double kDefaultPeakSigmaRatioMax = 1.2;
+
+    void setInitialPeakFindWidth(double width) { mInitialPeakFindWidth = width; }
+    void setPeakHeightMin(double min) { mPeakHeightMin = min; }
+    void setPeakSigmaRatioRange(double minRatio, double maxRatio)
+    {
+        mPeakSigmaRatioMin = minRatio;
+        mPeakSigmaRatioMax = maxRatio;
+    }
     /** @brief 恢复内存中的初始能量刻度道址表为程序默认值 */
     static void resetInitialCalibrationChannels();
 
@@ -291,6 +304,10 @@ private:
     int mSuccessfulFitSegmentCount = 0;
     QStringList mFitFailureMessages;
     double mSpectrumFitR2Min = CurveFit::kDefaultSpectrumFitR2Min;
+    double mInitialPeakFindWidth = kDefaultInitialPeakFindWidth;
+    double mPeakHeightMin = kDefaultPeakHeightMin;
+    double mPeakSigmaRatioMin = kDefaultPeakSigmaRatioMin;
+    double mPeakSigmaRatioMax = kDefaultPeakSigmaRatioMax;
 };
 
 #endif // PARSEDATA_H

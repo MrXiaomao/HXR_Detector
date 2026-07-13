@@ -91,7 +91,6 @@ const std::array<DetectorSigma, DET_NUM> kDefaultDetectorSigmaTable = makeDefaul
 std::array<DetectorSigma, DET_NUM> kDetectorSigmaTable = kDefaultDetectorSigmaTable;
 constexpr int kDetectorChTableSize = static_cast<int>(kDefaultDetectorChTable.size());
 constexpr int kRefreshTimeSec = 60;
-constexpr double kPeakHeightMin = 100.0;
 
 bool initialEnergyScaleForDetector(int detId, double outScale[2])
 {
@@ -360,8 +359,8 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
         }
         delete[] singleSpectrum;
         if (!fitflag[1]) {
-            qInfo().nospace() << "Detector" << mDetId
-                              << "846keV peak not found on first segment, single-Gauss stripping will be used";
+            qInfo().nospace() << "Detector#" << mDetId
+                              << " 846keV peak not found on first segment, single-Gauss stripping will be used";
         }
     }
 
@@ -523,7 +522,7 @@ bool ParseData::initial_PeakFind(double* spectrum, double energy_scale[], QVecto
     //峰位的sigma估值（V1.1 Sigma0 = [5 6 7]）
     double sigma[3] = {5.0, 6.0, 7.0};
     initialSigmasForDetector(mDetId, sigma);
-    double width = 20.0;
+    double width = mInitialPeakFindWidth;
     //------------- 寻找候选峰-------------------
     for(int e = 0; e<3; e++)
     {
@@ -579,9 +578,9 @@ bool ParseData::initial_PeakFind(double* spectrum, double energy_scale[], QVecto
         QVector<double> valid_chi_square;
         for(auto tempResult:fit_result_All)
         {
-            if(tempResult.c0 >= kPeakHeightMin &&
-                tempResult.c2 <= 1.2*sigma[e] &&
-                tempResult.c2 >= 0.8*sigma[e])
+            if(tempResult.c0 >= mPeakHeightMin &&
+                tempResult.c2 <= mPeakSigmaRatioMax * sigma[e] &&
+                tempResult.c2 >= mPeakSigmaRatioMin * sigma[e])
             {
                 valid_result.push_back(tempResult);
                 valid_chi_square.push_back(tempResult.chi_square);
@@ -742,9 +741,9 @@ bool ParseData::PeakFind(double* spectrum, QVector<fit_result>& init_c, bool* ex
         QVector<double> valid_chi_square;
         for(auto temp_result:fit_result_All)
         {
-            if(temp_result.c0 >= kPeakHeightMin &&
-                temp_result.c2 <= 1.5*sigma &&
-                temp_result.c2 >= 0.5*sigma)
+            if(temp_result.c0 >= mPeakHeightMin &&
+                temp_result.c2 <= mPeakSigmaRatioMax * sigma &&
+                temp_result.c2 >= mPeakSigmaRatioMin * sigma)
             {
                 valid_result.push_back(temp_result);
                 valid_chi_square.push_back(temp_result.chi_square);
@@ -817,7 +816,7 @@ bool ParseData::PeakFind(double* spectrum, QVector<fit_result>& init_c, bool* ex
                      << ", keep coarse peak find result";
         }
 
-        if (fit_c_2[e].c0 < kPeakHeightMin)
+        if (fit_c_2[e].c0 < mPeakHeightMin)
             exitflag[e] = false;
     }
 

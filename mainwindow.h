@@ -346,6 +346,7 @@ private:
     std::atomic<bool> mCountRatePlotReady = false; // 计数率曲线待刷新
     std::atomic<bool> mSpectrumPlotReady = false;  // 能谱曲线待刷新
     void replotSpectrumBottom(QCustomPlot *plot, bool allowYRescale);
+    void updateSpectrumBottomXAxisLabels(bool energyScale);
     void setCurveVisible(int detectorId, bool visible);
     void updateCurveSelectAllState();
 

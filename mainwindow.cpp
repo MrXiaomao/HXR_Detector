@@ -720,9 +720,9 @@ void MainWindow::initUi()
 
     for (int i=1; i<=2; ++i){
         QCustomPlot *spectroMeter_top = this->findChild<QCustomPlot*>(QString("spectroMeter%1_top").arg(i));
-        initCustomPlot(i, spectroMeter_top, tr(""), tr("时间/s 计数率/cps"), tr("计数曲线"), DET_NUM/2);
+        initCustomPlot(i, spectroMeter_top, tr("时间/s"), tr("计数率/cps"), tr("计数曲线"), DET_NUM/2);
         QCustomPlot *spectroMeter_bottom = this->findChild<QCustomPlot*>(QString("spectroMeter%1_bottom").arg(i));
-        initCustomPlot(i, spectroMeter_bottom, tr(""), tr("道址 计数"), tr("累积能谱"), DET_NUM/2);
+        initCustomPlot(i, spectroMeter_bottom, tr("道址"), tr("计数"), tr("累积能谱"), DET_NUM/2);
     }
 
     QCustomPlot *spectroMeter_left = this->findChild<QCustomPlot*>(QString("spectroMeter_left"));
@@ -3075,6 +3075,13 @@ QCPGraph* MainWindow::getGraph(int detectorId, bool isSpectrum)
     return  customPlot->graph((detectorId-1) % (DET_NUM/2));
 }
 
+void MainWindow::updateSpectrumBottomXAxisLabels(bool energyScale)
+{
+    const QString xLabel = energyScale ? tr("能量/keV") : tr("道址");
+    ui->spectroMeter1_bottom->xAxis->setLabel(xLabel);
+    ui->spectroMeter2_bottom->xAxis->setLabel(xLabel);
+}
+
 void MainWindow::replotSpectrumBottom(QCustomPlot *plot, bool allowYRescale)
 {
     if (!plot)
@@ -3158,6 +3165,7 @@ void MainWindow::on_cbb_energyCalibration_toggled(bool checked)
 {
     mEnScale = checked;
 
+    updateSpectrumBottomXAxisLabels(checked);
     updateSpectrumPlotSettings();
     ui->spectroMeter1_bottom->replot();
     ui->spectroMeter2_bottom->replot();

@@ -22,6 +22,10 @@ struct NeutronYieldParseJob {
     QMap<int, int> beginTimeByDet;
     bool perChannelMode = false;
     double spectrumFitR2Min = CurveFit::kDefaultSpectrumFitR2Min; //谱峰拟合R2最小值
+    double initialPeakFindWidth = ParseData::kDefaultInitialPeakFindWidth;
+    double peakHeightMin = ParseData::kDefaultPeakHeightMin;
+    double peakSigmaRatioMin = ParseData::kDefaultPeakSigmaRatioMin;
+    double peakSigmaRatioMax = ParseData::kDefaultPeakSigmaRatioMax;
 };
 
 class NeutronYieldParseWorker : public QObject

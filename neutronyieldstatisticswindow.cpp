@@ -124,6 +124,55 @@ QSet<int> selectEnergyCalibrationDetectors(QWidget *parent,
     return selectedDetectors;
 }
 
+QString neutronYieldConfigPath()
+{
+    return QStringLiteral("./config/NeutronYield.ini");
+}
+
+void ensureParseConfigDefaults(QSettings &settings)
+{
+    settings.beginGroup(QStringLiteral("Parse"));
+    if (!settings.contains(QStringLiteral("spectrumFitR2Min")))
+        settings.setValue(QStringLiteral("spectrumFitR2Min"), CurveFit::kDefaultSpectrumFitR2Min);
+    if (!settings.contains(QStringLiteral("initialPeakFindWidth")))
+        settings.setValue(QStringLiteral("initialPeakFindWidth"), ParseData::kDefaultInitialPeakFindWidth);
+    if (!settings.contains(QStringLiteral("peakHeightMin")))
+        settings.setValue(QStringLiteral("peakHeightMin"), ParseData::kDefaultPeakHeightMin);
+    if (!settings.contains(QStringLiteral("peakSigmaRatioMin")))
+        settings.setValue(QStringLiteral("peakSigmaRatioMin"), ParseData::kDefaultPeakSigmaRatioMin);
+    if (!settings.contains(QStringLiteral("peakSigmaRatioMax")))
+        settings.setValue(QStringLiteral("peakSigmaRatioMax"), ParseData::kDefaultPeakSigmaRatioMax);
+    settings.endGroup();
+}
+
+void ensureTableConfigDefaults(QSettings &settings)
+{
+    settings.beginGroup(QStringLiteral("Table"));
+    for (int detId = 1; detId <= DET_NUM; ++detId) {
+        if (!settings.contains(QStringLiteral("yield%1").arg(detId)))
+            settings.setValue(QStringLiteral("yield%1").arg(detId), 1.0);
+        if (!settings.contains(QStringLiteral("initial909Count%1").arg(detId)))
+            settings.setValue(QStringLiteral("initial909Count%1").arg(detId), 1.0);
+        if (!settings.contains(QStringLiteral("sensitivity%1").arg(detId)))
+            settings.setValue(QStringLiteral("sensitivity%1").arg(detId), 1.0);
+    }
+    settings.endGroup();
+}
+
+void ensureNeutronYieldConfigExists()
+{
+    QDir().mkpath(QStringLiteral("./config"));
+
+    const QString configPath = neutronYieldConfigPath();
+    const bool fileExists = QFileInfo::exists(configPath);
+
+    QSettings settings(configPath, QSettings::IniFormat);
+    ensureParseConfigDefaults(settings);
+    if (!fileExists)
+        ensureTableConfigDefaults(settings);
+    settings.sync();
+}
+
 // 统一生成能量刻度 CSV 的运行时路径。
 QString energyCalibrationCsvFilePath()
 {
@@ -542,6 +591,8 @@ NeutronYieldStatisticsWindow::NeutronYieldStatisticsWindow(bool isDarkTheme, QWi
     for (int i = 0; i < DET_NUM; ++i)
         dealFile[i] = nullptr;
 
+    ensureNeutronYieldConfigExists();
+
     ui->setupUi(this);
 
     // 初始化界面
@@ -881,7 +932,7 @@ void NeutronYieldStatisticsWindow::initUi()
     }
 
     {
-        QSettings nySettings(QStringLiteral("./config/NeutronYield.ini"), QSettings::IniFormat);
+        QSettings nySettings(neutronYieldConfigPath(), QSettings::IniFormat);
         ui->doubleSpinBox_fitR2Min->setValue(
             nySettings.value(QStringLiteral("Parse/spectrumFitR2Min"),
                              CurveFit::kDefaultSpectrumFitR2Min).toDouble());
@@ -2512,7 +2563,7 @@ void NeutronYieldStatisticsWindow::on_action_startCalculate_triggered()
     }
 
     {
-        QSettings nySettings(QStringLiteral("./config/NeutronYield.ini"), QSettings::IniFormat);
+        QSettings nySettings(neutronYieldConfigPath(), QSettings::IniFormat);
         nySettings.setValue(QStringLiteral("Parse/spectrumFitR2Min"), spectrumFitR2Min);
     }
 
@@ -2631,6 +2682,21 @@ void NeutronYieldStatisticsWindow::on_action_startCalculate_triggered()
     job.timeStepSec = timeStep;
     job.perChannelMode = perChannelMode;
     job.spectrumFitR2Min = spectrumFitR2Min;
+    {
+        QSettings nySettings(neutronYieldConfigPath(), QSettings::IniFormat);
+        job.initialPeakFindWidth = nySettings.value(
+            QStringLiteral("Parse/initialPeakFindWidth"),
+            ParseData::kDefaultInitialPeakFindWidth).toDouble();
+        job.peakHeightMin = nySettings.value(
+            QStringLiteral("Parse/peakHeightMin"),
+            ParseData::kDefaultPeakHeightMin).toDouble();
+        job.peakSigmaRatioMin = nySettings.value(
+            QStringLiteral("Parse/peakSigmaRatioMin"),
+            ParseData::kDefaultPeakSigmaRatioMin).toDouble();
+        job.peakSigmaRatioMax = nySettings.value(
+            QStringLiteral("Parse/peakSigmaRatioMax"),
+            ParseData::kDefaultPeakSigmaRatioMax).toDouble();
+    }
     for (int detID : detIds) {
         if (detID >= 1 && detID <= DET_NUM)
             job.beginTimeByDet.insert(detID, static_cast<int>(beginTimeForDetector(detID, fusionTime)));
@@ -2956,7 +3022,7 @@ void NeutronYieldStatisticsWindow::slotSuccess(int detID)
         ui->tableWidget->setItem(detID-1, 5, countItem);
 
         //读取灵敏度标定数据，给出中子产额
-        QSettings mSettings("./config/NeutronYield.ini", QSettings::IniFormat);
+        QSettings mSettings(neutronYieldConfigPath(), QSettings::IniFormat);
         double yield_c = mSettings.value(QString("Table/yield%1").arg(detID), 1.0).toDouble();
         double initN_c = mSettings.value(QString("Table/initial909Count%1").arg(detID), 1.0).toDouble();
         double yield = 0.0;
