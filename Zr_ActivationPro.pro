@@ -210,6 +210,7 @@ include($$PWD/../3rdParty/QCustomplot/QCustomplot.pri)
 include($$PWD/../3rdParty/QGoodWindow/QGoodWindowHelper/QGoodWindowHelper.pri)
 include($$PWD/../3rdParty/hdf5/C++/hdf5Wrapper.pri)
 include($$PWD/../3rdParty/alglib-cpp/alglib.pri)
+include($$PWD/../3rdParty/QXlsx/QXlsx.pri)
 INCLUDEPATH += $$PWD/../3rdParty/eigen-5.0.0
 
 # 预编译头：log4qt 与 Qt 宏在 PCH 下会冲突（ttcclayout.h），暂不启用

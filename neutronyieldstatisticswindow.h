@@ -16,6 +16,13 @@
 #include "qcustomplothelper.h"
 #include "parsedata.h"
 #include "neutronyieldparseworker.h"
+#include "xlsxdocument.h"
+#include "xlsxchartsheet.h"
+#include "xlsxcellrange.h"
+#include "xlsxchart.h"
+#include "xlsxrichstring.h"
+#include "xlsxworkbook.h"
+//using namespace QXlsx;
 
 class CrasterParabolicHeatmapWidget;
 class QTableWidgetItem;

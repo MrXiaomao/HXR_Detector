@@ -111,7 +111,6 @@ static void applyUtf8EncodingToAllLog4QtAppenders()
     }
 }
 
-bool gMatlabInited = false;
 #include <locale.h>
 #include <QTextCodec>
 #include <QTranslator>
