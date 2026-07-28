@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-04-20 09:21:28
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-07-28 09:59:55
+ * @LastEditTime: 2026-07-28 10:49:44
  * @Description: 离线数据分析 中子产额分析
  */
 #include "neutronyieldstatisticswindow.h"
@@ -2897,117 +2897,6 @@ void NeutronYieldStatisticsWindow::onParseChannelFinished(int detId, bool mergeO
     delete dealFile[detId - 1];
     dealFile[detId - 1] = parsed;
 
-    // 保存 909峰位演变数据.xlsx
-    {
-        ParseData *parsed = dealFile[detId - 1];
-        const QVector<double> peakPos = parsed ? parsed->count909PeakPos() : QVector<double>();
-        const QVector<specStripData> countData = parsed ? parsed->GetCount909Data() : QVector<specStripData>();
-
-        // 判断文件是否存在，不存在则创建一个新的文档
-        int channel = ui->spinBox_channelId->value();
-
-        // 统一指定文件名，避免硬编码重复
-        const QString fileName = QStringLiteral("909峰位演变数据.xlsx");
-        QXlsx::Document xlsx;
-
-        // 1. 优先尝试加载已存在的文件，不存在则自动新建空文档
-        if (!QFile::exists(fileName)) {
-            // 文件不存在时直接新建，不需要额外load，后续saveAs会创建实体文件
-            xlsx.saveAs(fileName);
-        } else {
-            // 文件存在则安全加载
-            xlsx.load(fileName);
-        }
-
-        const QString sheetName = QStringLiteral("通道#") + QString::number(channel);
-
-        // 2. 处理同名工作表：先判断是否存在
-        if (xlsx.sheetNames().contains(sheetName)) {
-            // 方案二选一：直接删除旧表
-            xlsx.deleteSheet(sheetName);
-        }
-
-        // 3. 添加新工作表，后续可以直接往sheet中写入数据
-        QXlsx::Worksheet* sheet = static_cast<QXlsx::Worksheet *>(xlsx.insertSheet(channel-1, sheetName));
-        int row = 1, col = 1;
-
-        // 文件名
-        const QStringList allFilePaths = filePathsFromTable();
-        xlsx.write(row, 1, QStringLiteral("文件名"));
-        xlsx.write(row++, 2, allFilePaths.join(';'));
-
-        // 测量属性
-
-        // 打靶时刻
-        xlsx.write(row, 1, QStringLiteral("打靶时刻"));
-        xlsx.write(row++, 2, ui->fusionDateTime->dateTime().toString("yyyy-MM-dd HH:mm:ss"));
-        // 开测时刻
-        xlsx.write(row, 1, QStringLiteral("开测时刻"));
-        xlsx.write(row++, 2, ui->fusionDateTime->dateTime().toString("yyyy-MM-dd HH:mm:ss"));
-        // 通道号
-        xlsx.write(row, 1, QStringLiteral("通道号"));
-        xlsx.write(row++, 2, channel);
-        // 解析时间起点/min
-        xlsx.write(row, 1, QStringLiteral("解析时间起点/min"));
-        xlsx.write(row++, 2, ui->spinBox_timeStart->value());
-        // 解析时间终点/min
-        xlsx.write(row, 1, QStringLiteral("解析时间终点/min"));
-        xlsx.write(row++, 2, ui->spinBox_timeEnd->value());
-        // 时间步长/min
-        xlsx.write(row, 1, QStringLiteral("时间步长/min"));
-        xlsx.write(row++, 2, ui->spinBox_step->value());
-        // 拟合优度下限R²
-        xlsx.write(row, 1, QStringLiteral("拟合优度下限R²"));
-        xlsx.write(row++, 2, ui->doubleSpinBox_fitR2Min->value());
-
-        // 标题(横向显示)
-        row++;
-        col = 1;
-        xlsx.write(row, col, QStringLiteral("时间(分钟)"));
-        xlsx.write(row+1, col, QStringLiteral("峰位(道址)"));
-
-        // 值
-        col++;
-        const int n = qMin(peakPos.size(), countData.size());
-        for (int i=0; i<n; ++i){
-            xlsx.write(row, col+i, countData.at(i).x);
-            xlsx.write(row+1, col+i, peakPos.at(i));
-        }
-
-        // 接下来保存每个能谱的详细信息 909全能峰能量
-        // 标题(竖向显示)
-        row += 3;
-
-        // 值
-        for (int i=0; i<n; ++i){
-            col = 1;
-            xlsx.write(row, col, QStringLiteral("时间(分钟)"));
-            xlsx.write(row+1, col, QStringLiteral("能量(keV)"));
-            xlsx.write(row+2, col, QStringLiteral("能谱计数"));
-            xlsx.write(row+3, col, QStringLiteral("拟合曲线"));
-            xlsx.write(row+4, col, QStringLiteral("残差(%)"));
-
-            col++;
-            xlsx.write(row, col, countData.at(i).x);
-            QVector<specStripData> allSpec = dealFile[detId-1]->GetStripData(i);
-            for(auto data:allSpec)
-            {
-                xlsx.write(row+1, col, data.x);
-                xlsx.write(row+2, col, data.y);
-                xlsx.write(row+3, col, data.fit_y);
-                xlsx.write(row+4, col++, data.residual_rate);
-            }
-
-            row += 6;
-        }
-
-        // 4. 原子性保存，避免文件损坏
-        if (!xlsx.saveAs(fileName)) {
-            qDebug() << "XLSX文件保存失败，请检查文件是否被其他程序占用、是否有写入权限";
-        }
-
-    }
-
     updateDetectorTableSpecCount(detId);
 
     const bool fitOk = dealFile[detId - 1]->successfulFitSegmentCount() > 0;
@@ -3246,107 +3135,6 @@ void NeutronYieldStatisticsWindow::slotUpdateMultiSegmentPlotDatas(std::vector<P
     customPlot->clearGraphs();
     m_currentMergeSpectrum = std::move(allSpectrum);
 
-    // 保存 分时能谱.xlsx
-    {
-        // 判断文件是否存在，不存在则创建一个新的文档
-        int channel = ui->spinBox_channelId->value();
-
-        // 统一指定文件名，避免硬编码重复
-        const QString fileName = QStringLiteral("分时能谱.xlsx");
-        QXlsx::Document xlsx;
-
-        // 1. 优先尝试加载已存在的文件，不存在则自动新建空文档
-        if (!QFile::exists(fileName)) {
-            // 文件不存在时直接新建，不需要额外load，后续saveAs会创建实体文件
-            xlsx.saveAs(fileName);
-        } else {
-            // 文件存在则安全加载
-            xlsx.load(fileName);
-        }
-
-        const QString sheetName = QStringLiteral("通道#") + QString::number(channel);
-
-        // 2. 处理同名工作表：先判断是否存在
-        if (xlsx.sheetNames().contains(sheetName)) {
-            // 方案二选一：直接删除旧表
-            xlsx.deleteSheet(sheetName);
-        }
-
-        // 3. 添加新工作表，后续可以直接往sheet中写入数据
-        QXlsx::Worksheet* sheet = static_cast<QXlsx::Worksheet *>(xlsx.insertSheet(channel-1, sheetName));
-        int row = 1, col = 1;
-
-        // 文件名
-        const QStringList allFilePaths = filePathsFromTable();
-        xlsx.write(row, 1, QStringLiteral("文件名"));
-        xlsx.write(row++, 2, allFilePaths.join(';'));
-
-        // 测量属性
-
-        // 打靶时刻
-        xlsx.write(row, 1, QStringLiteral("打靶时刻"));
-        xlsx.write(row++, 2, ui->fusionDateTime->dateTime().toString("yyyy-MM-dd HH:mm:ss"));
-        // 开测时刻
-        xlsx.write(row, 1, QStringLiteral("开测时刻"));
-        xlsx.write(row++, 2, ui->fusionDateTime->dateTime().toString("yyyy-MM-dd HH:mm:ss"));
-        // 通道号
-        xlsx.write(row, 1, QStringLiteral("通道号"));
-        xlsx.write(row++, 2, channel);
-        // 解析时间起点/min
-        xlsx.write(row, 1, QStringLiteral("解析时间起点/min"));
-        xlsx.write(row++, 2, ui->spinBox_timeStart->value());
-        // 解析时间终点/min
-        xlsx.write(row, 1, QStringLiteral("解析时间终点/min"));
-        xlsx.write(row++, 2, ui->spinBox_timeEnd->value());
-        // 时间步长/min
-        xlsx.write(row, 1, QStringLiteral("时间步长/min"));
-        xlsx.write(row++, 2, ui->spinBox_step->value());
-        // 拟合优度下限R²
-        xlsx.write(row, 1, QStringLiteral("拟合优度下限R²"));
-        xlsx.write(row++, 2, ui->doubleSpinBox_fitR2Min->value());
-
-        // 标题
-        col = 1;
-        row++;
-        xlsx.write(row, col++, QStringLiteral("分时段"));
-        xlsx.write(row, col++, QStringLiteral("能谱测量结束时刻"));
-        xlsx.write(row, col++, QStringLiteral("时间步长，单位ms"));
-        xlsx.write(row, col++, QStringLiteral("死时间，单位ns"));
-        xlsx.write(row, col++, QStringLiteral("合并子能谱个数"));
-        xlsx.write(row, col++, QStringLiteral("各子能谱测量时长累加，单位 ms"));
-        xlsx.write(row, col++, QStringLiteral("道址"));
-        for (int i = 0; i < 2048; ++i){
-            xlsx.write(row, col+i, i+1);
-        }
-
-        // 值
-        col = 1;
-        row++;
-        for (int i=0; i<m_currentMergeSpectrum.size(); ++i){
-            col = 1;
-            xlsx.write(row, col++, i+1);
-            xlsx.write(row, col++, m_currentMergeSpectrum.at(i).currentTime);
-            xlsx.write(row, col++, m_currentMergeSpectrum.at(i).specTime);
-            xlsx.write(row, col++, m_currentMergeSpectrum.at(i).deathTime);
-            xlsx.write(row, col++, m_currentMergeSpectrum.at(i).rowCount);
-            xlsx.write(row, col++, m_currentMergeSpectrum.at(i).sumMeasureTimeMs);
-            xlsx.write(row, col++, QStringLiteral("值"));
-
-            // 能谱数据
-            for (int j = 0; j < 2048; ++j){
-                xlsx.write(row, col+j, m_currentMergeSpectrum.at(i).spectrum[j]);
-            }
-
-            row++;
-        }
-
-        // 4. 原子性保存，避免文件损坏
-        if (!xlsx.saveAs(fileName)) {
-            qDebug() << "XLSX文件保存失败，请检查文件是否被其他程序占用、是否有写入权限";
-        }
-
-    }
-
     QFlowLayout *flowLayout = this->findChild<QFlowLayout *>("flowLayout");
     QWidget *flowLayoutContainer = ui->widget_flowLayoutContainer;
     while (QLayoutItem *item = flowLayout->takeAt(0)) {
@@ -3454,104 +3242,6 @@ void NeutronYieldStatisticsWindow::slotUpdate_Count909_time(std::vector<double> 
                               std::vector<double> fitcount/*拟合曲线*/, std::vector<double> residual/*残差*/)
 {
     QCustomPlot *customPlot = ui->spectorMeter_Count;
-
-    // 保存 909全能峰计数.xlsx
-    {
-        // 判断文件是否存在，不存在则创建一个新的文档
-        int channel = ui->spinBox_channelId->value();
-
-        // 统一指定文件名，避免硬编码重复
-        const QString fileName = QStringLiteral("909全能峰计数.xlsx");
-        QXlsx::Document xlsx;
-
-        // 1. 优先尝试加载已存在的文件，不存在则自动新建空文档
-        if (!QFile::exists(fileName)) {
-            // 文件不存在时直接新建，不需要额外load，后续saveAs会创建实体文件
-            xlsx.saveAs(fileName);
-        } else {
-            // 文件存在则安全加载
-            xlsx.load(fileName);
-        }
-
-        const QString sheetName = QStringLiteral("通道#") + QString::number(channel);
-
-        // 2. 处理同名工作表：先判断是否存在
-        if (xlsx.sheetNames().contains(sheetName)) {
-            // 方案二选一：直接删除旧表
-            xlsx.deleteSheet(sheetName);
-        }
-
-        // 3. 添加新工作表，后续可以直接往sheet中写入数据
-        QXlsx::Worksheet* sheet = static_cast<QXlsx::Worksheet *>(xlsx.insertSheet(channel-1, sheetName));
-        int row = 1, col = 1;
-
-        // 文件名
-        const QStringList allFilePaths = filePathsFromTable();
-        xlsx.write(row, 1, QStringLiteral("文件名"));
-        xlsx.write(row++, 2, allFilePaths.join(';'));
-
-        // 测量属性
-
-        // 打靶时刻
-        xlsx.write(row, 1, QStringLiteral("打靶时刻"));
-        xlsx.write(row++, 2, ui->fusionDateTime->dateTime().toString("yyyy-MM-dd HH:mm:ss"));
-        // 开测时刻
-        xlsx.write(row, 1, QStringLiteral("开测时刻"));
-        xlsx.write(row++, 2, ui->fusionDateTime->dateTime().toString("yyyy-MM-dd HH:mm:ss"));
-        // 通道号
-        xlsx.write(row, 1, QStringLiteral("通道号"));
-        xlsx.write(row++, 2, channel);
-        // 解析时间起点/min
-        xlsx.write(row, 1, QStringLiteral("解析时间起点/min"));
-        xlsx.write(row++, 2, ui->spinBox_timeStart->value());
-        // 解析时间终点/min
-        xlsx.write(row, 1, QStringLiteral("解析时间终点/min"));
-        xlsx.write(row++, 2, ui->spinBox_timeEnd->value());
-        // 时间步长/min
-        xlsx.write(row, 1, QStringLiteral("时间步长/min"));
-        xlsx.write(row++, 2, ui->spinBox_step->value());
-        // 拟合优度下限R²
-        xlsx.write(row, 1, QStringLiteral("拟合优度下限R²"));
-        xlsx.write(row++, 2, ui->doubleSpinBox_fitR2Min->value());
-
-        // 标题
-        col = 1;
-        row++;
-        xlsx.write(row, col++, QStringLiteral("时间，单位 min"));
-        for (int i=0; i<time.size(); ++i){
-            xlsx.write(row, col+i, time[i]);
-        }
-
-        // 计数率/cps
-        row++;
-        col = 1;
-        xlsx.write(row, col++, QStringLiteral("计数率/cps"));
-        for (int i=0; i<time.size(); ++i){
-            xlsx.write(row, col+i, count[i]);
-        }
-
-        // 拟合曲线点
-        row++;
-        col = 1;
-        xlsx.write(row, col++, QStringLiteral("计数率拟合曲线"));
-        for (int i=0; i<time.size(); ++i){
-            xlsx.write(row, col+i, fitcount[i]);
-        }
-
-        // 残差(%)
-        row++;
-        col = 1;
-        xlsx.write(row, col++, QStringLiteral("残差(%)"));
-        for (int i=0; i<time.size(); ++i){
-            xlsx.write(row, col+i, residual[i]);
-        }
-
-        // 4. 原子性保存，避免文件损坏
-        if (!xlsx.saveAs(fileName)) {
-            qDebug() << "XLSX文件保存失败，请检查文件是否被其他程序占用、是否有写入权限";
-        }
-
-    }
 
     //计数随时间变化的散点
     {
@@ -3775,86 +3465,6 @@ void NeutronYieldStatisticsWindow::slotUpdate_yieldDis(QMap<int, Sensor> yields)
     if (!w)
         return;
 
-    // 保存 中子产额空间分布.xlsx
-    {
-        // 判断文件是否存在，不存在则创建一个新的文档
-        int channel = ui->spinBox_channelId->value();
-
-        // 统一指定文件名，避免硬编码重复
-        const QString fileName = QStringLiteral("中子产额空间分布.xlsx");
-        QXlsx::Document xlsx;
-
-        // 1. 优先尝试加载已存在的文件，不存在则自动新建空文档
-        if (!QFile::exists(fileName)) {
-            // 文件不存在时直接新建，不需要额外load，后续saveAs会创建实体文件
-            xlsx.saveAs(fileName);
-        } else {
-            // 文件存在则安全加载
-            xlsx.load(fileName);
-        }
-
-        const QString sheetName = QStringLiteral("通道#") + QString::number(channel);
-
-        // 2. 处理同名工作表：先判断是否存在
-        if (xlsx.sheetNames().contains(sheetName)) {
-            // 方案二选一：直接删除旧表
-            xlsx.deleteSheet(sheetName);
-        }
-
-        // 3. 添加新工作表，后续可以直接往sheet中写入数据
-        QXlsx::Worksheet* sheet = static_cast<QXlsx::Worksheet *>(xlsx.insertSheet(channel-1, sheetName));
-        int row = 1, col = 1;
-
-        // 文件名
-        const QStringList allFilePaths = filePathsFromTable();
-        xlsx.write(row, 1, QStringLiteral("文件名"));
-        xlsx.write(row++, 2, allFilePaths.join(';'));
-
-        // 测量属性
-
-        // 打靶时刻
-        xlsx.write(row, 1, QStringLiteral("打靶时刻"));
-        xlsx.write(row++, 2, ui->fusionDateTime->dateTime().toString("yyyy-MM-dd HH:mm:ss"));
-        // 开测时刻
-        xlsx.write(row, 1, QStringLiteral("开测时刻"));
-        xlsx.write(row++, 2, ui->fusionDateTime->dateTime().toString("yyyy-MM-dd HH:mm:ss"));
-        // 通道号
-        xlsx.write(row, 1, QStringLiteral("通道号"));
-        xlsx.write(row++, 2, channel);
-        // 解析时间起点/min
-        xlsx.write(row, 1, QStringLiteral("解析时间起点/min"));
-        xlsx.write(row++, 2, ui->spinBox_timeStart->value());
-        // 解析时间终点/min
-        xlsx.write(row, 1, QStringLiteral("解析时间终点/min"));
-        xlsx.write(row++, 2, ui->spinBox_timeEnd->value());
-        // 时间步长/min
-        xlsx.write(row, 1, QStringLiteral("时间步长/min"));
-        xlsx.write(row++, 2, ui->spinBox_step->value());
-        // 拟合优度下限R²
-        xlsx.write(row, 1, QStringLiteral("拟合优度下限R²"));
-        xlsx.write(row++, 2, ui->doubleSpinBox_fitR2Min->value());
-
-        // 标题
-        col = 1;
-        row++;
-        xlsx.write(row, col, QStringLiteral("经度"));
-        xlsx.write(row+1, col, QStringLiteral("纬度"));
-        xlsx.write(row+2, col, QStringLiteral("中子产额"));
-        col++;
-        for(auto yield:yields)
-        {
-            xlsx.write(row, col, yield.lonDeg);
-            xlsx.write(row+1, col, yield.latDeg);
-            xlsx.write(row+2, col++, yield.value);
-        }
-
-        // 4. 原子性保存，避免文件损坏
-        if (!xlsx.saveAs(fileName)) {
-            qDebug() << "XLSX文件保存失败，请检查文件是否被其他程序占用、是否有写入权限";
-        }
-
-    }
-
     std::vector<Sensor> sensors;
     for(auto yield:yields)
     {
@@ -3900,67 +3510,360 @@ bool NeutronYieldStatisticsWindow::setLonLat(int row, double lon, double lat)
     return true;
 }
 
+void NeutronYieldStatisticsWindow::writeCommonAnalysisParams(QXlsx::Document &xlsx, int &row, int channel) const
+{
+    const QStringList allFilePaths = filePathsFromTable();
+    xlsx.write(row, 1, QStringLiteral("文件名"));
+    xlsx.write(row++, 2, allFilePaths.join(';'));
+
+    xlsx.write(row, 1, QStringLiteral("打靶时刻"));
+    xlsx.write(row++, 2, ui->fusionDateTime->dateTime().toString("yyyy-MM-dd HH:mm:ss"));
+    xlsx.write(row, 1, QStringLiteral("开测时刻"));
+    xlsx.write(row++, 2, ui->messureDateTime->dateTime().toString("yyyy-MM-dd HH:mm:ss"));
+    xlsx.write(row, 1, QStringLiteral("通道号"));
+    xlsx.write(row++, 2, channel);
+    xlsx.write(row, 1, QStringLiteral("解析时间起点/min"));
+    xlsx.write(row++, 2, ui->spinBox_timeStart->value());
+    xlsx.write(row, 1, QStringLiteral("解析时间终点/min"));
+    xlsx.write(row++, 2, ui->spinBox_timeEnd->value());
+    xlsx.write(row, 1, QStringLiteral("时间步长/min"));
+    xlsx.write(row++, 2, ui->spinBox_step->value());
+    xlsx.write(row, 1, QStringLiteral("拟合优度下限R²"));
+    xlsx.write(row++, 2, ui->doubleSpinBox_fitR2Min->value());
+}
+
+bool NeutronYieldStatisticsWindow::exportResultTableXlsx(const QString &filePath) const
+{
+    QXlsx::Document xlsx;
+    const QStringList headers = {
+        QStringLiteral("DetectorID"),
+        QStringLiteral("Yield"),
+        QStringLiteral("Uncertainty"),
+        QStringLiteral("Longitude"),
+        QStringLiteral("Latitude"),
+        QStringLiteral("Initial909Count"),
+        QStringLiteral("SpecCount")
+    };
+    for (int c = 0; c < headers.size(); ++c)
+        xlsx.write(1, c + 1, headers.at(c));
+
+    int outRow = 2;
+    for (int row = 0; row < DET_NUM; ++row) {
+        QTableWidgetItem *specCountItem = ui->tableWidget->item(row, 6);
+        if (!specCountItem || specCountItem->text().isEmpty())
+            continue;
+        for (int col = 0; col < 7; ++col) {
+            QTableWidgetItem *item = ui->tableWidget->item(row, col);
+            xlsx.write(outRow, col + 1, item ? item->text() : QString());
+        }
+        ++outRow;
+    }
+    return xlsx.saveAs(filePath);
+}
+
+bool NeutronYieldStatisticsWindow::exportPeakEvolutionXlsx(const QString &filePath) const
+{
+    QXlsx::Document xlsx;
+    bool hasSheet = false;
+
+    for (int detId = 1; detId <= DET_NUM; ++detId) {
+        ParseData *parsed = dealFile[detId - 1];
+        if (!parsed)
+            continue;
+
+        const QVector<double> peakPos = parsed->count909PeakPos();
+        const QVector<specStripData> countData = parsed->GetCount909Data();
+        if (peakPos.isEmpty() && countData.isEmpty())
+            continue;
+
+        const QString sheetName = QStringLiteral("通道#") + QString::number(detId);
+        if (xlsx.sheetNames().contains(sheetName))
+            xlsx.deleteSheet(sheetName);
+        if (!hasSheet && !xlsx.sheetNames().isEmpty()) {
+            xlsx.renameSheet(xlsx.sheetNames().first(), sheetName);
+        } else {
+            xlsx.insertSheet(xlsx.sheetNames().size(), sheetName);
+        }
+        xlsx.selectSheet(sheetName);
+        hasSheet = true;
+
+        int row = 1;
+        int col = 1;
+        writeCommonAnalysisParams(xlsx, row, detId);
+
+        row++;
+        col = 1;
+        xlsx.write(row, col, QStringLiteral("时间(分钟)"));
+        xlsx.write(row + 1, col, QStringLiteral("峰位(道址)"));
+
+        col++;
+        const int n = qMin(peakPos.size(), countData.size());
+        for (int i = 0; i < n; ++i) {
+            xlsx.write(row, col + i, countData.at(i).x);
+            xlsx.write(row + 1, col + i, peakPos.at(i));
+        }
+
+        row += 3;
+        for (int i = 0; i < n; ++i) {
+            col = 1;
+            xlsx.write(row, col, QStringLiteral("时间(分钟)"));
+            xlsx.write(row + 1, col, QStringLiteral("能量(keV)"));
+            xlsx.write(row + 2, col, QStringLiteral("能谱计数"));
+            xlsx.write(row + 3, col, QStringLiteral("拟合曲线"));
+            xlsx.write(row + 4, col, QStringLiteral("残差(%)"));
+
+            col++;
+            xlsx.write(row, col, countData.at(i).x);
+            const QVector<specStripData> allSpec = parsed->GetStripData(i);
+            for (const auto &data : allSpec) {
+                xlsx.write(row + 1, col, data.x);
+                xlsx.write(row + 2, col, data.y);
+                xlsx.write(row + 3, col, data.fit_y);
+                xlsx.write(row + 4, col++, data.residual_rate);
+            }
+            row += 6;
+        }
+    }
+
+    if (!hasSheet) {
+        xlsx.write(1, 1, QStringLiteral("无可用的909峰位演变数据"));
+    }
+    return xlsx.saveAs(filePath);
+}
+
+bool NeutronYieldStatisticsWindow::exportMultiSegmentXlsx(const QString &filePath) const
+{
+    QXlsx::Document xlsx;
+    bool hasSheet = false;
+
+    for (int detId = 1; detId <= DET_NUM; ++detId) {
+        ParseData *parsed = dealFile[detId - 1];
+        if (!parsed)
+            continue;
+
+        const QVector<ParseData::mergeSpecData> mergeSpec = parsed->GetMergeSpec();
+        if (mergeSpec.isEmpty())
+            continue;
+
+        const QString sheetName = QStringLiteral("通道#") + QString::number(detId);
+        if (xlsx.sheetNames().contains(sheetName))
+            xlsx.deleteSheet(sheetName);
+        if (!hasSheet && !xlsx.sheetNames().isEmpty()) {
+            xlsx.renameSheet(xlsx.sheetNames().first(), sheetName);
+        } else {
+            xlsx.insertSheet(xlsx.sheetNames().size(), sheetName);
+        }
+        xlsx.selectSheet(sheetName);
+        hasSheet = true;
+
+        int row = 1;
+        int col = 1;
+        writeCommonAnalysisParams(xlsx, row, detId);
+
+        col = 1;
+        row++;
+        xlsx.write(row, col++, QStringLiteral("分时段"));
+        xlsx.write(row, col++, QStringLiteral("能谱测量结束时刻"));
+        xlsx.write(row, col++, QStringLiteral("时间步长，单位ms"));
+        xlsx.write(row, col++, QStringLiteral("死时间，单位ns"));
+        xlsx.write(row, col++, QStringLiteral("合并子能谱个数"));
+        xlsx.write(row, col++, QStringLiteral("各子能谱测量时长累加，单位 ms"));
+        xlsx.write(row, col++, QStringLiteral("道址"));
+        for (int i = 0; i < 2048; ++i)
+            xlsx.write(row, col + i, i + 1);
+
+        row++;
+        for (int i = 0; i < mergeSpec.size(); ++i) {
+            col = 1;
+            xlsx.write(row, col++, i + 1);
+            xlsx.write(row, col++, mergeSpec.at(i).currentTime);
+            xlsx.write(row, col++, static_cast<qulonglong>(mergeSpec.at(i).specTime));
+            xlsx.write(row, col++, static_cast<qulonglong>(mergeSpec.at(i).deathTime));
+            xlsx.write(row, col++, mergeSpec.at(i).rowCount);
+            xlsx.write(row, col++, static_cast<qulonglong>(mergeSpec.at(i).sumMeasureTimeMs));
+            xlsx.write(row, col++, QStringLiteral("值"));
+            for (int j = 0; j < 2048; ++j)
+                xlsx.write(row, col + j, mergeSpec.at(i).spectrum[j]);
+            row++;
+        }
+    }
+
+    if (!hasSheet) {
+        xlsx.write(1, 1, QStringLiteral("无可用的分时能谱数据"));
+    }
+    return xlsx.saveAs(filePath);
+}
+
+bool NeutronYieldStatisticsWindow::exportCount909Xlsx(const QString &filePath) const
+{
+    QXlsx::Document xlsx;
+    bool hasSheet = false;
+
+    for (int detId = 1; detId <= DET_NUM; ++detId) {
+        ParseData *parsed = dealFile[detId - 1];
+        if (!parsed)
+            continue;
+
+        const QVector<specStripData> countData = parsed->GetCount909Data();
+        if (countData.isEmpty())
+            continue;
+
+        const QString sheetName = QStringLiteral("通道#") + QString::number(detId);
+        if (xlsx.sheetNames().contains(sheetName))
+            xlsx.deleteSheet(sheetName);
+        if (!hasSheet && !xlsx.sheetNames().isEmpty()) {
+            xlsx.renameSheet(xlsx.sheetNames().first(), sheetName);
+        } else {
+            xlsx.insertSheet(xlsx.sheetNames().size(), sheetName);
+        }
+        xlsx.selectSheet(sheetName);
+        hasSheet = true;
+
+        int row = 1;
+        int col = 1;
+        writeCommonAnalysisParams(xlsx, row, detId);
+
+        col = 1;
+        row++;
+        xlsx.write(row, col++, QStringLiteral("时间，单位 min"));
+        for (int i = 0; i < countData.size(); ++i)
+            xlsx.write(row, col + i, countData.at(i).x);
+
+        row++;
+        col = 1;
+        xlsx.write(row, col++, QStringLiteral("计数率/cps"));
+        for (int i = 0; i < countData.size(); ++i)
+            xlsx.write(row, col + i, countData.at(i).y);
+
+        row++;
+        col = 1;
+        xlsx.write(row, col++, QStringLiteral("计数率拟合曲线"));
+        for (int i = 0; i < countData.size(); ++i)
+            xlsx.write(row, col + i, countData.at(i).fit_y);
+
+        row++;
+        col = 1;
+        xlsx.write(row, col++, QStringLiteral("残差(%)"));
+        for (int i = 0; i < countData.size(); ++i)
+            xlsx.write(row, col + i, countData.at(i).residual_rate);
+    }
+
+    if (!hasSheet) {
+        xlsx.write(1, 1, QStringLiteral("无可用的909全能峰计数数据"));
+    }
+    return xlsx.saveAs(filePath);
+}
+
+bool NeutronYieldStatisticsWindow::exportYieldDisXlsx(const QString &filePath) const
+{
+    QXlsx::Document xlsx;
+    const int channel = currentPictureDetId();
+    const QString sheetName = QStringLiteral("通道#") + QString::number(channel);
+    if (!xlsx.sheetNames().isEmpty())
+        xlsx.renameSheet(xlsx.sheetNames().first(), sheetName);
+    else
+        xlsx.addSheet(sheetName);
+    xlsx.selectSheet(sheetName);
+
+    int row = 1;
+    int col = 1;
+    writeCommonAnalysisParams(xlsx, row, channel);
+
+    col = 1;
+    row++;
+    xlsx.write(row, col, QStringLiteral("经度"));
+    xlsx.write(row + 1, col, QStringLiteral("纬度"));
+    xlsx.write(row + 2, col, QStringLiteral("中子产额"));
+    col++;
+    for (auto it = myield.constBegin(); it != myield.constEnd(); ++it) {
+        xlsx.write(row, col, it.value().lonDeg);
+        xlsx.write(row + 1, col, it.value().latDeg);
+        xlsx.write(row + 2, col++, it.value().value);
+    }
+
+    return xlsx.saveAs(filePath);
+}
+
 void NeutronYieldStatisticsWindow::on_bt_saveResult_clicked()
 {
-    //先检查文件路径是否存在
-    QString filePath = ui->lineEdit_savepath->text().trimmed();
-    if (!QFileInfo::exists(filePath))
-    {
+    const QString filePath = ui->lineEdit_savepath->text().trimmed();
+    if (!QFileInfo::exists(filePath)) {
         QMessageBox::information(this, tr("提示"), tr("文件路径不存在，请重新选择！"));
         return;
     }
 
-    //检查文件名，当存在后缀.txt时，直接使用，否则自动添加后缀
-    QString fileName = ui->lineEdit_fileName->text();
-    if (!fileName.endsWith(".txt", Qt::CaseInsensitive))
-    {        fileName += ".txt";
+    QString prefix = ui->lineEdit_fileName->text().trimmed();
+    if (prefix.endsWith(QStringLiteral(".txt"), Qt::CaseInsensitive))
+        prefix.chop(4);
+    if (prefix.endsWith(QStringLiteral(".xlsx"), Qt::CaseInsensitive))
+        prefix.chop(5);
+    prefix = prefix.trimmed();
+    if (prefix.isEmpty()) {
+        QMessageBox::information(this, tr("提示"), tr("请输入文件名前缀！"));
+        return;
     }
 
-    //拼接文件全路径
-    QString wholeFileName = QDir(filePath).filePath(fileName);
+    const QStringList suffixes = {
+        QStringLiteral("计算结果.xlsx"),
+        QStringLiteral("909峰位演变数据.xlsx"),
+        QStringLiteral("分时能谱.xlsx"),
+        QStringLiteral("909全能峰计数.xlsx"),
+        QStringLiteral("中子产额空间分布.xlsx")
+    };
 
-    //文件存在时，提示用户是否覆盖
-    if (QFileInfo::exists(wholeFileName))
-    {        
-        if (QMessageBox::question(this, tr("提示"), tr("文件已存在，是否覆盖？"), 
-                QMessageBox::Yes, QMessageBox::No) != QMessageBox::Yes)        
-        {
+    QStringList outputPaths;
+    outputPaths.reserve(suffixes.size());
+    for (const QString &suffix : suffixes)
+        outputPaths << QDir(filePath).filePath(prefix + QLatin1Char('_') + suffix);
+
+    bool anyExists = false;
+    for (const QString &path : outputPaths) {
+        if (QFileInfo::exists(path)) {
+            anyExists = true;
+            break;
+        }
+    }
+    if (anyExists) {
+        if (QMessageBox::question(this, tr("提示"),
+                                  tr("部分结果文件已存在，是否覆盖？"),
+                                  QMessageBox::Yes, QMessageBox::No) != QMessageBox::Yes) {
             return;
         }
     }
 
-    //保存文件,将tableWidget数据全部导出
-    QFile file(wholeFileName);
-    if (file.open(QIODevice::WriteOnly | QIODevice::Text))
-    {        
-        QTextStream out(&file);
-        //写入表头
-        out << "DetectorID\tYield\tUncertainty\tLongitude\tLatitude\tInitial909Count\tSpecCount\n";
-        //写入数据
-        for (int row = 0; row < DET_NUM; row++)
-        {
-            QStringList rowData;
-            // 能谱个数为空则视为该行无数据，跳过（曲线显示列不参与导出）
-            QTableWidgetItem* specCountItem = ui->tableWidget->item(row, 6);
-            if (!specCountItem || specCountItem->text().isEmpty())
-                continue;
-            for (int col = 0; col < 7; col++)
-            {
-                QTableWidgetItem* item = ui->tableWidget->item(row, col);
-                rowData << (item ? item->text() : "");
-            }
-            out << rowData.join("\t") << "\n";
+    struct SaveItem {
+        QString path;
+        bool ok;
+    };
+    QVector<SaveItem> results;
+    results.append({outputPaths.at(0), exportResultTableXlsx(outputPaths.at(0))});
+    results.append({outputPaths.at(1), exportPeakEvolutionXlsx(outputPaths.at(1))});
+    results.append({outputPaths.at(2), exportMultiSegmentXlsx(outputPaths.at(2))});
+    results.append({outputPaths.at(3), exportCount909Xlsx(outputPaths.at(3))});
+    results.append({outputPaths.at(4), exportYieldDisXlsx(outputPaths.at(4))});
+
+    int okCount = 0;
+    QStringList failed;
+    for (const SaveItem &item : results) {
+        if (item.ok) {
+            ++okCount;
+            emit reporWriteLog(tr("文件保存成功，路径：%1").arg(item.path));
+        } else {
+            failed << item.path;
+            emit reporWriteLog(tr("文件保存失败，路径：%1").arg(item.path), QtWarningMsg);
         }
-        //弹出对话框提示保存成功，并打印日志
-        QMessageBox::information(this, tr("提示"), tr("文件保存成功！"));
-        emit reporWriteLog(tr("文件保存成功，路径：%1").arg(wholeFileName));
     }
-    else
-    {
-        QMessageBox::information(this, tr("提示"), tr("文件保存失败，请检查路径和文件名！"));
-        emit reporWriteLog(tr("文件保存失败，路径：%1").arg(wholeFileName));
+
+    if (failed.isEmpty()) {
+        QMessageBox::information(this, tr("提示"),
+                                 tr("已成功保存 %1 个 Excel 文件到：\n%2").arg(okCount).arg(filePath));
+    } else {
+        QMessageBox::warning(this, tr("提示"),
+                             tr("成功 %1 个，失败 %2 个：\n%3")
+                                 .arg(okCount)
+                                 .arg(failed.size())
+                                 .arg(failed.join('\n')));
     }
-    file.close();
 }
 
 

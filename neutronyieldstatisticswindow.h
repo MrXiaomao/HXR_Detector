@@ -210,6 +210,13 @@ private:
     void refreshSpectrumPlotSlot(int slotIndex);
     void refreshAllSpectrumPlotSlots();
 
+    void writeCommonMeasurementMeta(QXlsx::Document &xlsx, int &row, int channel) const;
+    bool exportResultTableXlsx(const QString &filePath) const;
+    bool exportPeakEvolutionXlsx(const QString &filePath) const;
+    bool exportMultiSegmentXlsx(const QString &filePath) const;
+    bool exportCount909Xlsx(const QString &filePath) const;
+    bool exportYieldDisXlsx(const QString &filePath) const;
+
     Ui::NeutronYieldStatisticsWindow *ui;
     bool mIsDarkTheme = true;
     bool mThemeColorEnable = true;
