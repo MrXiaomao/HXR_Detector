@@ -837,9 +837,20 @@ void NeutronYieldStatisticsWindow::initUi()
                                      | QAbstractItemView::SelectedClicked
                                      | QAbstractItemView::EditKeyPressed);
     ui->tableWidget->setSelectionMode(QAbstractItemView::SingleSelection);
-    ui->tableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    ui->tableWidget->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Fixed);
-    ui->tableWidget->setColumnWidth(0, 40);
+    ui->tableWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    {
+        QHeaderView *header = ui->tableWidget->horizontalHeader();
+        header->setSectionResizeMode(QHeaderView::Interactive);
+        header->setStretchLastSection(false);
+        header->setSectionResizeMode(0, QHeaderView::Fixed);
+        ui->tableWidget->setColumnWidth(0, 40);   // #
+        ui->tableWidget->setColumnWidth(1, 90);   // 中子产额
+        ui->tableWidget->setColumnWidth(2, 95);   // 不确定度(%)
+        ui->tableWidget->setColumnWidth(3, 60);   // 经度
+        ui->tableWidget->setColumnWidth(4, 60);   // 纬度
+        ui->tableWidget->setColumnWidth(5, 130);  // 初始计数(909keV)
+        ui->tableWidget->setColumnWidth(6, 70);   // 能谱个数
+    }
 
     ui->tableWidget->blockSignals(true);
     for (int column = 0; column < ui->tableWidget->columnCount(); ++column) {
@@ -858,7 +869,9 @@ void NeutronYieldStatisticsWindow::initUi()
     }
     initDetectorTableSelectAllRow();
     ui->tableWidget->blockSignals(false);
-    ui->tableWidget->setFixedHeight((DET_NUM + 1 + 1) * 25); // 表头 + 32 通道 + 全选行
+    // 表头 + 32 通道 + 全选行，并预留横向滚动条高度
+    const int horizontalScrollBarSpace = 18;
+    ui->tableWidget->setFixedHeight((DET_NUM + 1 + 1) * 25 + horizontalScrollBarSpace);
     ui->leftStackedWidget->setMinimumWidth(200);
 
     initFileListTable();
@@ -2271,6 +2284,7 @@ void NeutronYieldStatisticsWindow::ensurePeakChannelCurveColumn()
 
     auto *header = new QTableWidgetItem(tr("曲线显示"));
     ui->tableWidget->setHorizontalHeaderItem(col, header);
+    ui->tableWidget->setColumnWidth(col, 80);
 
     for (int row = 0; row < DET_NUM; ++row) {
         const int detId = row + 1;

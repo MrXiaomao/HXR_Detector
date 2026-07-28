@@ -1,10 +1,40 @@
 #include "CrasterParabolicHeatmapWidget.h"
 #include <QPainter>
+#include <QMenu>
+#include <QAction>
+#include <QFileDialog>
+#include <QMessageBox>
 #include <algorithm>
 
 CrasterParabolicHeatmapWidget::CrasterParabolicHeatmapWidget(QWidget* parent)
     : QWidget(parent) {
     setMinimumSize(400, 220);
+    setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(this, &QWidget::customContextMenuRequested,
+            this, &CrasterParabolicHeatmapWidget::onCustomContextMenuRequested);
+}
+
+void CrasterParabolicHeatmapWidget::onCustomContextMenuRequested(const QPoint &pos)
+{
+    QMenu menu(this);
+    QAction *exportPngAct = menu.addAction(tr("导出为 PNG…"));
+    if (menu.exec(mapToGlobal(pos)) != exportPngAct)
+        return;
+
+    const QString path = QFileDialog::getSaveFileName(
+        this,
+        tr("导出图片"),
+        QStringLiteral("中子产额空间分布.png"),
+        tr("PNG 图片 (*.png)"));
+    if (path.isEmpty())
+        return;
+
+    const QPixmap pix = grab();
+    if (pix.isNull() || !pix.save(path, "PNG")) {
+        QMessageBox::warning(this, tr("提示"), tr("PNG 导出失败。"));
+        return;
+    }
+    QMessageBox::information(this, tr("提示"), tr("已导出：%1").arg(path));
 }
 
 void CrasterParabolicHeatmapWidget::setSensors(const std::vector<Sensor>& s) {

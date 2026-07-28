@@ -26,6 +26,9 @@ public:
     void setSHOrder(int L);           // 建议 3 或 4
     void setSHLambda(double lambda);  // 建议 1e-6 ~ 1e-3
 
+private slots:
+    void onCustomContextMenuRequested(const QPoint &pos);
+
 protected:
     void paintEvent(QPaintEvent*) override;
     void resizeEvent(QResizeEvent* e) override;
