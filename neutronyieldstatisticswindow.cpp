@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-04-20 09:21:28
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-07-28 11:35:11
+ * @LastEditTime: 2026-07-28 16:23:54
  * @Description: 离线数据分析 中子产额分析
  */
 #include "neutronyieldstatisticswindow.h"
@@ -896,8 +896,7 @@ void NeutronYieldStatisticsWindow::initUi()
                 syncMeasureDateTimeForDetector(detId);
         });
         connect(ui->spinBox_pictureDet, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int detId) {
-            if (!isPerChannelShotTimeMode())
-                updatePictureForDetector(detId);
+            updatePictureForDetector(detId);
         });
         updateShotTimeModeUi();
     }
@@ -1537,15 +1536,14 @@ void NeutronYieldStatisticsWindow::updateShotTimeModeUi()
     const bool perChannel = isPerChannelShotTimeMode();
     ui->label_channelId->setVisible(perChannel);
     ui->spinBox_channelId->setVisible(perChannel);
-    ui->spinBox_pictureDet->setEnabled(!perChannel);
+    // spinBox_pictureDet 始终用于切换查看已解析通道结果，与解析通道号解耦
+    ui->spinBox_pictureDet->setEnabled(true);
     if (perChannel)
         syncMeasureDateTimeForDetector(ui->spinBox_channelId->value());
 }
 
 int NeutronYieldStatisticsWindow::currentPictureDetId() const
 {
-    if (isPerChannelShotTimeMode())
-        return ui->spinBox_channelId->value();
     return ui->spinBox_pictureDet->value();
 }
 
@@ -2041,7 +2039,7 @@ void NeutronYieldStatisticsWindow::initCountCustomPlot()
         //graph->setSelectable(QCP::SelectionType::stNone);
         //graph->selectionDecorator()->setPen(QPen(clrLine));
         graph->setLineStyle(QCPGraph::lsStepCenter);
-        graph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 8));//显示散点图
+        graph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 5));//显示散点图
     }
 
     // 创建Graph-曲线-拟合 909keV能段的能谱拟合曲线
@@ -2054,7 +2052,7 @@ void NeutronYieldStatisticsWindow::initCountCustomPlot()
         //graph->setSelectable(QCP::SelectionType::stNone);
         //graph->selectionDecorator()->setPen(QPen(clrLine));
         graph->setLineStyle(QCPGraph::lsLine);
-        graph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 8));//显示散点图
+        // graph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 5));//显示散点图
     }
 
     QCPAxisRect *Spec909_residualAxisRect = new QCPAxisRect(customPlot);
@@ -2076,7 +2074,7 @@ void NeutronYieldStatisticsWindow::initCountCustomPlot()
         graph->setPen(QPen(QColor(Qt::black)));
         //graph->selectionDecorator()->setPen(QPen(clrLine));
         graph->setLineStyle(QCPGraph::lsNone);
-        graph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 8));//显示散点图
+        graph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 5));//显示散点图
     }
 
     // 设置左边边界联动对齐
@@ -2962,8 +2960,11 @@ void NeutronYieldStatisticsWindow::onParseFinished(bool cancelled, const QString
 
     emit reporWriteLog(summaryMessage);
 
-    if (!cancelled)
+    if (!cancelled) {
+        ui->radioButton_count->setChecked(true);
+        ui->stackedWidget->setCurrentIndex(1);
         QMessageBox::information(this, tr("提示"), summaryMessage);
+    }
 
     if (mParseWorkerThread)
         mParseWorkerThread->quit();
@@ -3348,7 +3349,7 @@ void NeutronYieldStatisticsWindow::slotUpdate_Count909_time(std::vector<double> 
             graph->setAntialiased(true);
             graph->setPen(QPen(QBrush(QColor(0,0,0)), 2, Qt::SolidLine));
             graph->setLineStyle(QCPGraph::lsNone);
-            graph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 8));//显示散点图
+            graph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 5));//显示散点图
             graph->setVisible(true);
         }
 
@@ -3393,7 +3394,7 @@ void NeutronYieldStatisticsWindow::slotUpdateSpec_909keV(std::vector<double> cha
             graph->setAntialiased(true);
             graph->setPen(QPen(QBrush(Qt::black), 1, Qt::SolidLine));
             graph->setLineStyle(QCPGraph::lsStepCenter);
-            //graph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 8));//显示散点图
+            //graph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 5));//显示散点图
             graph->setVisible(true);
         }
         QVector<double> keys, values;
@@ -3423,7 +3424,7 @@ void NeutronYieldStatisticsWindow::slotUpdateSpec_909keV(std::vector<double> cha
             graph->setPen(QPen(QBrush(Qt::red), 1, Qt::SolidLine));
             graph->setLineStyle(QCPGraph::lsLine);
             graph->setSmooth(true);
-            //graph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 8));//显示散点图
+            //graph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 5));//显示散点图
             graph->setVisible(true);
         }
         QVector<double> keys, values;
@@ -3454,7 +3455,7 @@ void NeutronYieldStatisticsWindow::slotUpdateSpec_909keV(std::vector<double> cha
             graph->setAntialiased(true);
             graph->setPen(QPen(QBrush(Qt::black), 1, Qt::SolidLine));
             graph->setLineStyle(QCPGraph::lsNone);
-            graph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 8));//显示散点图
+            graph->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 4));//显示散点图
             graph->setVisible(true);
         }
 
