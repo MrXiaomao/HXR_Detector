@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-04-20 09:21:28
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-07-28 10:49:44
+ * @LastEditTime: 2026-07-28 11:35:11
  * @Description: 离线数据分析 中子产额分析
  */
 #include "neutronyieldstatisticswindow.h"
@@ -971,15 +971,21 @@ void NeutronYieldStatisticsWindow::initFileListTable()
     table->verticalHeader()->setVisible(false);
     table->horizontalHeader()->setStretchLastSection(true);
     table->horizontalHeader()->setSectionResizeMode(ColIndex, QHeaderView::Fixed);
-    table->horizontalHeader()->setSectionResizeMode(ColFileName, QHeaderView::Stretch);
+    table->horizontalHeader()->setSectionResizeMode(ColFileName, QHeaderView::Interactive);
     table->horizontalHeader()->setSectionResizeMode(ColStartTime, QHeaderView::Fixed);
     table->horizontalHeader()->setSectionResizeMode(ColEndTime, QHeaderView::Fixed);
+    table->horizontalHeader()->setSectionResizeMode(ColDuration, QHeaderView::Fixed);
+    table->horizontalHeader()->setSectionResizeMode(ColSpectrumCount, QHeaderView::Fixed);
+    table->horizontalHeader()->setSectionResizeMode(ColSpecTimeInterval, QHeaderView::Fixed);
+    table->horizontalHeader()->setSectionResizeMode(ColValidChannels, QHeaderView::Fixed);
+    table->horizontalHeader()->setSectionResizeMode(ColGapTime, QHeaderView::Interactive);
     table->setColumnWidth(ColIndex, 40);
+    table->setColumnWidth(ColFileName, 150);
     table->setColumnWidth(ColStartTime, 180);
     table->setColumnWidth(ColEndTime, 180);
-    table->horizontalHeader()->setSectionResizeMode(ColSpecTimeInterval, QHeaderView::Fixed);
-    table->setColumnWidth(ColSpecTimeInterval, 70);
-    table->horizontalHeader()->setSectionResizeMode(ColValidChannels, QHeaderView::Fixed);
+    table->setColumnWidth(ColDuration, 70);
+    table->setColumnWidth(ColSpectrumCount, 60);
+    table->setColumnWidth(ColSpecTimeInterval, 90);
     table->setColumnWidth(ColValidChannels, 70);
     table->setColumnWidth(ColGapTime, 70);
     ui->tableWidget_fileList->setEditTriggers(
@@ -988,6 +994,7 @@ void NeutronYieldStatisticsWindow::initFileListTable()
         QAbstractItemView::EditKeyPressed
     );
     connect(table->model(), &QAbstractItemModel::rowsMoved, this, [this]() {
+        updateFileListGapColumns();
         refreshFileListBasicColumns();
         updateMeasurementInfoFromFirstFile();
     });
@@ -1314,10 +1321,10 @@ bool NeutronYieldStatisticsWindow::readH5FileChannelMeta(const QString &filePath
                     out.hasMeasureTime = true;
                 }
 
-                emit reporWriteLog(tr("谱仪%1时间范围：%2 ~ %3")
-                                       .arg(detId)
-                                       .arg(firstDt.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss.zzz")))
-                                       .arg(lastDt.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss.zzz"))));
+                // emit reporWriteLog(tr("谱仪%1时间范围：%2 ~ %3")
+                //                        .arg(detId)
+                //                        .arg(firstDt.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss.zzz")))
+                //                        .arg(lastDt.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss.zzz"))));
 
                 group.close();
                 dataset.close();
@@ -2523,6 +2530,7 @@ void NeutronYieldStatisticsWindow::on_bt_removeFile_clicked()
         return;
 
     table->removeRow(row);
+    updateFileListGapColumns();
     refreshFileListBasicColumns();
     updateMeasurementInfoFromFirstFile();
 }

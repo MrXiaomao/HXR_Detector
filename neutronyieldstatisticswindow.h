@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2026-01-15 21:24:55
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-07-10 09:37:48
+ * @LastEditTime: 2026-07-28 10:54:06
  * @Description: 用于中子产额统计分析的窗口，根据H5文件中的能谱数据，
  * 计算中子产额、909keV峰位随时间演变图、909keV峰位随时间演变图（全通道）、中子产额空间分布图。
  */
@@ -210,7 +210,7 @@ private:
     void refreshSpectrumPlotSlot(int slotIndex);
     void refreshAllSpectrumPlotSlots();
 
-    void writeCommonMeasurementMeta(QXlsx::Document &xlsx, int &row, int channel) const;
+    void writeCommonAnalysisParams(QXlsx::Document &xlsx, int &row, int channel) const;
     bool exportResultTableXlsx(const QString &filePath) const;
     bool exportPeakEvolutionXlsx(const QString &filePath) const;
     bool exportMultiSegmentXlsx(const QString &filePath) const;
