@@ -14,6 +14,8 @@
 #include <QFileSystemWatcher>
 #include <QColor>
 #include <QSettings>
+#include <QMap>
+#include <QString>
 
 #define SYSTEM_CONFIG_FILE "./Config/system_config.ini" //系统配置文件,保存UI界面等全局配置信息,用户不建议编辑
 #define DEVICE_CONFIG_FILE "./Config/device_config.ini" //设备配置文件,保存设备相关的配置信息，如探测器参数等，用户可以编辑
@@ -581,17 +583,30 @@ public:
     // 导出探测器参数配置数据(内存数据）到本地文件Config/Settings.H5
     void export_LocalDetPara();
 
-    // 创建测量数据 H5文件
+    // 创建测量数据 H5文件（整次开测共用文件）
     void createH5Spectrum(QString filePath,  const QString& startTime, const QString& shotTime = QString());
 
     /** @brief 创建测量数据 H5 文件并写入指定探测器配置（不修改内存中的 mMapDetParameter） */
     void createH5Spectrum(QString filePath, const QString& startTime, const QString& shotTime,
                           const QVector<DetParameter>& configuration);
+
+    /**
+     * @brief 为掉线重测通道创建独立 H5（含完整 Config），之后该通道写入路由到此文件
+     * @param index 探测器编号 1..DET_NUM
+     * @return 实际创建的文件路径；失败返回空
+     */
+    QString createChannelH5Spectrum(quint8 index, QString filePath, const QString& startTime,
+                                 const QString& shotTime = QString());
+    QString createChannelH5Spectrum(quint8 index, QString filePath, const QString& startTime,
+                                 const QString& shotTime, const QVector<DetParameter>& configuration);
+
+    bool hasChannelH5Spectrum(quint8 index) const;
+    void closeChannelH5Spectrum(quint8 index);
     
-    // 向当前测量H5文件写入/更新打靶时刻（Config/shotTime）
+    // 向当前测量H5文件写入/更新打靶时刻（Config/shotTime）；同步写入各通道独立 H5
     bool writeShotTimeToCurrentH5(const QString& shotTime);
 
-    // 关闭测量数据 H5文件
+    // 关闭测量数据 H5文件（共用文件 + 全部通道独立文件）
     void closeH5Spectrum();
 
     // 创建指定探测器的测量数据H5文件中的数据集 Detector#%1/Spectrum
@@ -685,11 +700,27 @@ private:
     // 打开本地文件Config/Settings.H5，返回H5File对象指针
     H5::H5File *open_localDetParaFile();
 
-    H5::H5File *mfH5Spectrum = nullptr; // H5能谱文件
-    QString mSpectrumFilePath;          // 当前能谱文件路径
-    bool mSpectrumFileFull = false;     // 文件是否已达到容量上限
+    struct ChannelSpectrumH5 {
+        H5::H5File *file = nullptr;
+        QString path;
+        H5::DataSet dataset;
+        bool full = false;
+        quint32 flushRef = 0;
+    };
+
+    void closeAllChannelH5SpectrumUnlocked();
+    bool writeShotTimeToFileUnlocked(H5::H5File *file, const QString &shotTime);
+    void writeH5SpectrumBatchToTarget(H5::H5File *file, H5::DataSet &dataset, quint8 index,
+                                      const QVector<H5Spectrum> &data, const QString &filePath,
+                                      bool *fileFullFlag, quint32 *flushRef);
+
+    H5::H5File *mfH5Spectrum = nullptr; // 整次开测共用 H5 能谱文件
+    QString mSpectrumFilePath;          // 共用能谱文件路径
+    bool mSpectrumFileFull = false;     // 共用文件是否已达到容量上限
     quint32 mSpectrumRef = 0;// 能谱计数
     H5::DataSet mSpectrumDataset[DET_NUM];
+    /** 掉线重测后按通道拆分的独立 H5；存在时该通道不再写入共用文件 */
+    QMap<quint8, ChannelSpectrumH5> mChannelSpectrumH5;
     
     H5::CompType mConfigDataType;//复合数据类型
     H5::CompType mSpectrumDataType;//复合数据类型

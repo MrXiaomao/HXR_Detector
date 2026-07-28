@@ -1274,24 +1274,28 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
 
     mMeasureStartTime = tmStart.toString("yyyy-MM-dd_HHmmss");// QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
     mCurrentWorkMode = workMode;
+    const bool wasMeasuring = mMeasuring;
     mMeasuring = true;
-    // 初始化
-    for (int i = 1; i <= DET_NUM; ++i) {
-        QMutexLocker lock(&mSpectrumH5MutexByDetector[i]);
-        mPendingH5ByDetector[i].clear();
-        mPendingH5ByDetector[i].reserve(kReserveH5PerDetector);
-    }
-    for (int i = 1; i <= DET_NUM; ++i) {
-        QMutexLocker lock(&mSpectrumRawMutexByDetector[i]);
-        mPendingNetRawByDetector[i].clear();
-        mPendingNetRawByDetector[i].reserve(kReserveRawBytesPerDetector);
-    }
 
-    if (index == 0){
+    if (index == 0) {
+        for (int i = 1; i <= DET_NUM; ++i) {
+            QMutexLocker lock(&mSpectrumH5MutexByDetector[i]);
+            mPendingH5ByDetector[i].clear();
+            mPendingH5ByDetector[i].reserve(kReserveH5PerDetector);
+        }
+        for (int i = 1; i <= DET_NUM; ++i) {
+            QMutexLocker lock(&mSpectrumRawMutexByDetector[i]);
+            mPendingNetRawByDetector[i].clear();
+            mPendingNetRawByDetector[i].reserve(kReserveRawBytesPerDetector);
+        }
+
         mDataFileList.clear();
+        mSessionMeasureStartTime = mMeasureStartTime;
+        mShotTime = shotTime;
         QString filePath = QString("%1/%2/%3.H5").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime);
         HDF5Settings::instance()->closeH5Spectrum();
         HDF5Settings::instance()->createH5Spectrum(filePath, mMeasureStartTime, shotTime);
+        mDataFileList.push_back(filePath);
 
         for (index = 1; index <= DET_NUM; ++index){
             if (mDetectFileProcessor.contains(index)){
@@ -1353,6 +1357,29 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
         {
             QMutexLocker flushLocker(&mMutexFileFlush);
             mFileFlushInfo.remove(index);
+        }
+
+        // 测量中单通道重测（掉线重上线）：先冲刷共用文件缓冲，再为该通道新建独立 H5
+        if (wasMeasuring && workMode == CommandAdapter::WorkMode::wmSpectrum) {
+            QVector<H5Spectrum> pending;
+            {
+                QMutexLocker lock(&mSpectrumH5MutexByDetector[index]);
+                mPendingH5ByDetector[index].swap(pending);
+                mPendingH5ByDetector[index].reserve(kReserveH5PerDetector);
+            }
+            if (!pending.isEmpty())
+                HDF5Settings::instance()->writeH5SpectrumBatch(index, pending);
+
+            const QString channelStartTime = mMeasureStartTime;
+            QString h5Path = QString("%1/%2/%3_%4.H5")
+                                 .arg(mShotDir)
+                                 .arg(mShotNum)
+                                 .arg(channelStartTime)
+                                 .arg(index);
+            const QString createdPath = HDF5Settings::instance()->createChannelH5Spectrum(
+                index, h5Path, channelStartTime, mShotTime.isEmpty() ? shotTime : mShotTime);
+            if (!createdPath.isEmpty() && !mDataFileList.contains(createdPath))
+                mDataFileList.push_back(createdPath);
         }
 
         DataProcessor* detectorDataProcessor = mDetectorDataProcessor[index];
@@ -1496,6 +1523,8 @@ void CommHelper::stopMeasure(quint8 index/* = 0*/)
 
         mMeasuring = false;
         mCurrentWorkMode = CommandAdapter::WorkMode::wmSpectrum;
+        mSessionMeasureStartTime.clear();
+        mShotTime.clear();
         HDF5Settings::instance()->closeH5Spectrum();
     }
     else if (index >= 1 && index <= DET_NUM){ //关闭单个通道
@@ -1536,6 +1565,7 @@ void CommHelper::stopMeasure(quint8 index/* = 0*/)
             }
 
             //关闭能谱文件
+            HDF5Settings::instance()->closeChannelH5Spectrum(index);
             if (mDetectFileProcessor.isEmpty()){
                 mMeasuring = false;
                 mCurrentWorkMode = CommandAdapter::WorkMode::wmSpectrum;

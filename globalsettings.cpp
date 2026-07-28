@@ -5,6 +5,7 @@
 #include <QMessageBox>
 #include <QDateTime>
 #include <QThread>
+#include <QDebug>
 
 namespace {
 
@@ -512,6 +513,9 @@ void HDF5Settings::createH5Spectrum(QString filePath, const QString& startTime, 
         fapl.setFcloseDegree(H5F_CLOSE_STRONG);
 
         try {
+            QMutexLocker locker(&mWrite_mutex);
+            closeAllChannelH5SpectrumUnlocked();
+
             mSpectrumRef = 0;
             mSpectrumFileFull = false;
             mSpectrumFilePath = filePath;
@@ -566,12 +570,200 @@ void HDF5Settings::createH5Spectrum(QString filePath, const QString& startTime, 
     createH5Spectrum(filePath, startTime, shotTime, dataTemp);
 }
 
+void HDF5Settings::closeAllChannelH5SpectrumUnlocked()
+{
+    for (auto it = mChannelSpectrumH5.begin(); it != mChannelSpectrumH5.end(); ++it) {
+        ChannelSpectrumH5 &ch = it.value();
+        try {
+            if (ch.dataset.getId() >= 0)
+                ch.dataset.close();
+        } catch (H5::Exception &) {
+        }
+        if (ch.file) {
+            try {
+                H5Fflush(ch.file->getId(), H5F_SCOPE_GLOBAL);
+                ch.file->close();
+            } catch (H5::Exception &) {
+            }
+            delete ch.file;
+            ch.file = nullptr;
+        }
+    }
+    mChannelSpectrumH5.clear();
+}
+
+void HDF5Settings::closeChannelH5Spectrum(quint8 index)
+{
+    if (index < 1 || index > DET_NUM)
+        return;
+
+    QMutexLocker locker(&mWrite_mutex);
+    auto it = mChannelSpectrumH5.find(index);
+    if (it == mChannelSpectrumH5.end())
+        return;
+
+    ChannelSpectrumH5 &ch = it.value();
+    try {
+        if (ch.dataset.getId() >= 0)
+            ch.dataset.close();
+    } catch (H5::Exception &) {
+    }
+    if (ch.file) {
+        try {
+            H5Fflush(ch.file->getId(), H5F_SCOPE_GLOBAL);
+            ch.file->close();
+        } catch (H5::Exception &) {
+        }
+        delete ch.file;
+        ch.file = nullptr;
+    }
+    mChannelSpectrumH5.erase(it);
+}
+
+bool HDF5Settings::hasChannelH5Spectrum(quint8 index) const
+{
+    return mChannelSpectrumH5.contains(index);
+}
+
+QString HDF5Settings::createChannelH5Spectrum(quint8 index, QString filePath, const QString& startTime,
+                                           const QString& shotTime)
+{
+    normalizeDetParameterMap(mMapDetParameter);
+    const QVector<DetParameter*> data = configurationRowsForWrite(mMapDetParameter);
+
+    QVector<DetParameter> dataTemp;
+    dataTemp.reserve(DET_NUM);
+    for (int i = 0; i < data.size(); ++i)
+        dataTemp.push_back(*data[i]);
+
+    return createChannelH5Spectrum(index, filePath, startTime, shotTime, dataTemp);
+}
+
+QString HDF5Settings::createChannelH5Spectrum(quint8 index, QString filePath, const QString& startTime,
+                                           const QString& shotTime,
+                                           const QVector<DetParameter>& configuration)
+{
+    if (index < 1 || index > DET_NUM || filePath.isEmpty())
+        return {};
+
+    // 同秒重复重连时避免覆盖：在文件名后追加序号
+    QString uniquePath = filePath;
+    if (QFileInfo::exists(uniquePath)) {
+        const QFileInfo info(filePath);
+        const QString dir = info.path();
+        const QString base = info.completeBaseName();
+        const QString suffix = info.suffix();
+        int n = 2;
+        do {
+            uniquePath = QStringLiteral("%1/%2_%3.%4").arg(dir, base).arg(n).arg(suffix);
+            ++n;
+        } while (QFileInfo::exists(uniquePath) && n < 1000);
+    }
+
+    H5::FileAccPropList fapl;
+    fapl.setFcloseDegree(H5F_CLOSE_STRONG);
+
+    QMutexLocker locker(&mWrite_mutex);
+
+    // 关闭该通道已有独立文件（若有）
+    {
+        auto it = mChannelSpectrumH5.find(index);
+        if (it != mChannelSpectrumH5.end()) {
+            ChannelSpectrumH5 &old = it.value();
+            try {
+                if (old.dataset.getId() >= 0)
+                    old.dataset.close();
+            } catch (H5::Exception &) {
+            }
+            if (old.file) {
+                try {
+                    H5Fflush(old.file->getId(), H5F_SCOPE_GLOBAL);
+                    old.file->close();
+                } catch (H5::Exception &) {
+                }
+                delete old.file;
+            }
+            mChannelSpectrumH5.erase(it);
+        }
+    }
+
+    try {
+        QTextCodec *gbk_codec = QTextCodec::codecForName("GBK");
+        QByteArray filePathBytes = gbk_codec->fromUnicode(uniquePath);
+
+        ChannelSpectrumH5 &ch = mChannelSpectrumH5[index];
+        ch.file = new H5::H5File(filePathBytes.toStdString(), H5F_ACC_TRUNC);
+        ch.path = uniquePath;
+        ch.full = false;
+        ch.flushRef = 0;
+
+        QVector<DetParameter> dataTemp = configuration;
+        dataTemp.resize(DET_NUM);
+        for (int i = 0; i < DET_NUM; ++i) {
+            if (dataTemp[i].id == 0)
+                dataTemp[i].id = static_cast<quint8>(i + 1);
+        }
+
+        hsize_t dims[1] = {DET_NUM};
+        H5::DataSpace dataspace(1, dims);
+        H5::Group cfgGroup = ch.file->createGroup("Config");
+        H5::DataSet cfgDs = cfgGroup.createDataSet("Configuration", mConfigDataType, dataspace);
+        cfgDs.write(dataTemp.data(), mConfigDataType);
+
+        H5::StrType strType(H5::PredType::C_S1, H5T_VARIABLE);
+        H5::DataSpace scalarSpace(H5S_SCALAR);
+        std::string timeStr = startTime.toStdString();
+        H5::DataSet startDs = cfgGroup.createDataSet("StartTime", strType, scalarSpace);
+        startDs.write(timeStr, strType);
+
+        if (!shotTime.isEmpty()) {
+            std::string shotTimeStr = shotTime.toStdString();
+            H5::DataSet shotDs = cfgGroup.createDataSet("ShotTime", strType, scalarSpace);
+            shotDs.write(shotTimeStr, strType);
+        }
+
+        {
+            hsize_t chDims[1] = {1};
+            H5::DataSpace chSpace(1, chDims);
+            H5::DataSet chIdDs = cfgGroup.createDataSet("ChannelId", H5::PredType::NATIVE_UINT8, chSpace);
+            quint8 channelId = index;
+            chIdDs.write(&channelId, H5::PredType::NATIVE_UINT8);
+        }
+
+        ch.dataset = createSpecDataSet(ch.file, index);
+
+        qInfo().nospace() << "谱仪[#" << index << "]掉线重测，新建独立 H5：" << uniquePath;
+        return uniquePath;
+    } catch (H5::Exception &e) {
+        qWarning() << "创建通道独立 H5 失败:" << e.getCDetailMsg() << uniquePath;
+        auto it = mChannelSpectrumH5.find(index);
+        if (it != mChannelSpectrumH5.end()) {
+            if (it->file) {
+                try {
+                    it->file->close();
+                } catch (H5::Exception &) {
+                }
+                delete it->file;
+            }
+            mChannelSpectrumH5.erase(it);
+        }
+        return {};
+    }
+}
+
 void HDF5Settings::closeH5Spectrum()
 {
+    QMutexLocker locker(&mWrite_mutex);
+    closeAllChannelH5SpectrumUnlocked();
+
     if (mfH5Spectrum)
     {
         for (int i=0;i<DET_NUM; ++i){
-            mSpectrumDataset[i].close();
+            try {
+                if (mSpectrumDataset[i].getId() >= 0)
+                    mSpectrumDataset[i].close();
+            } catch (H5::Exception &) {
+            }
         }
         H5Fflush(mfH5Spectrum->getId(), H5F_SCOPE_GLOBAL);  // 同步文件元数据
         mfH5Spectrum->close();
@@ -582,21 +774,17 @@ void HDF5Settings::closeH5Spectrum()
     }
 }
 
-bool HDF5Settings::writeShotTimeToCurrentH5(const QString& shotTime)
+bool HDF5Settings::writeShotTimeToFileUnlocked(H5::H5File *file, const QString &shotTime)
 {
-    if (shotTime.isEmpty())
-        return false;
-
-    QMutexLocker locker(&mWrite_mutex);
-    if (!mfH5Spectrum || mSpectrumFilePath.isEmpty() || !QFileInfo::exists(mSpectrumFilePath))
+    if (!file || shotTime.isEmpty())
         return false;
 
     try {
         H5::Group cfgGroup;
-        if (H5Lexists(mfH5Spectrum->getId(), "Config", H5P_DEFAULT) > 0) {
-            cfgGroup = mfH5Spectrum->openGroup("Config");
+        if (H5Lexists(file->getId(), "Config", H5P_DEFAULT) > 0) {
+            cfgGroup = file->openGroup("Config");
         } else {
-            cfgGroup = mfH5Spectrum->createGroup("Config");
+            cfgGroup = file->createGroup("Config");
         }
 
         H5::StrType strType(H5::PredType::C_S1, H5T_VARIABLE);
@@ -611,12 +799,29 @@ bool HDF5Settings::writeShotTimeToCurrentH5(const QString& shotTime)
             shotTimeDataset.write(shotTimeStr, strType);
         }
 
-        H5Fflush(mfH5Spectrum->getId(), H5F_SCOPE_GLOBAL);
+        H5Fflush(file->getId(), H5F_SCOPE_GLOBAL);
         return true;
-    } catch (H5::Exception& e) {
+    } catch (H5::Exception &e) {
         qWarning() << "写入shotTime失败:" << e.getCDetailMsg();
         return false;
     }
+}
+
+bool HDF5Settings::writeShotTimeToCurrentH5(const QString& shotTime)
+{
+    if (shotTime.isEmpty())
+        return false;
+
+    QMutexLocker locker(&mWrite_mutex);
+    bool ok = false;
+    if (mfH5Spectrum && !mSpectrumFilePath.isEmpty() && QFileInfo::exists(mSpectrumFilePath))
+        ok = writeShotTimeToFileUnlocked(mfH5Spectrum, shotTime) || ok;
+
+    for (auto it = mChannelSpectrumH5.begin(); it != mChannelSpectrumH5.end(); ++it) {
+        if (it->file)
+            ok = writeShotTimeToFileUnlocked(it->file, shotTime) || ok;
+    }
+    return ok;
 }
 
 H5::CompType HDF5Settings::createCfgDataType()
@@ -731,73 +936,64 @@ H5::CompType HDF5Settings::createH5SpectrumType()
  */
 void HDF5Settings::writeH5Spectrum(quint8 index, const H5Spectrum& data)
 {
-    // 如果文件已经标记为写满，直接返回
-    if (mSpectrumFileFull)
-        return;
+    QVector<H5Spectrum> batch;
+    batch.append(data);
+    writeH5SpectrumBatch(index, batch);
+}
 
-    QMutexLocker locker(&mWrite_mutex);
-    if (!mfH5Spectrum)
+void HDF5Settings::writeH5SpectrumBatchToTarget(H5::H5File *file, H5::DataSet &dataset, quint8 index,
+                                                const QVector<H5Spectrum> &data, const QString &filePath,
+                                                bool *fileFullFlag, quint32 *flushRef)
+{
+    if (!file || data.isEmpty() || !fileFullFlag || !flushRef)
+        return;
+    if (*fileFullFlag)
         return;
 
     try {
-        // 写入前预测大小，若超过 16GB，则整条丢弃、关闭文件
-        if (!mSpectrumFilePath.isEmpty()) {
-            const qint64 maxBytes = 16ll * 1024 * 1024 * 1024; // 16GB
-            QFileInfo info(mSpectrumFilePath);
+        const hsize_t columns = sizeof(H5Spectrum) / sizeof(quint32);
+        const hsize_t rows = static_cast<hsize_t>(data.size());
+
+        if (!filePath.isEmpty()) {
+            const qint64 maxBytes = 512LL * 1024 * 1024 * 1024; // 512GB
+            QFileInfo info(filePath);
             if (info.exists()) {
-                const qint64 currentSize  = info.size();
-                const qint64 estimateSize = currentSize + static_cast<qint64>(sizeof(H5Spectrum));
+                const qint64 currentSize = info.size();
+                const qint64 estimateSize = currentSize
+                    + static_cast<qint64>(rows) * static_cast<qint64>(sizeof(H5Spectrum));
                 if (estimateSize > maxBytes) {
-                    mSpectrumFileFull = true;
-                    qWarning().noquote().nospace()
-                        << QObject::tr("HDF5 能谱文件已达到 16GB 上限，丢弃后续能谱写入：")
-                        << mSpectrumFilePath;
-                    closeH5Spectrum();
+                    *fileFullFlag = true;
+                    qWarning().noquote()
+                        << QObject::tr("HDF5 能谱文件已达到容量上限，丢弃后续能谱写入：")
+                        << filePath;
                     return;
                 }
             }
         }
 
-        // hsize_t columns = 8195;
-        hsize_t columns = sizeof(H5Spectrum) / sizeof(quint32);
+        if (dataset.getId() == -1)
+            dataset = createSpecDataSet(file, index);
 
-        // 检查数据集是否存在，如果不存在，则创建
-        if (mSpectrumDataset[index-1].getId() == -1)
-            mSpectrumDataset[index-1] = this->createSpecDataSet(mfH5Spectrum, index);
-
-        // 获取当前维度
-        H5::DataSet dataset = mSpectrumDataset[index-1];
-
-        // 获取当前维度
-        H5::DataSpace file_space = dataset.getSpace();  // 初始文件空间
+        H5::DataSpace file_space = dataset.getSpace();
         hsize_t current_dims[2];
-        file_space.getSimpleExtentDims(current_dims, NULL);
+        file_space.getSimpleExtentDims(current_dims, nullptr);
 
-        // 1. 扩展数据集维度
-        current_dims[0] += 1;
+        current_dims[0] += rows;
         dataset.extend(current_dims);
 
-        // 2. 重新获取扩展后的文件空间
-        file_space = dataset.getSpace();  // 关键：更新文件空间
-
-        // 3. 定义内存空间（1行数据）
-        hsize_t mem_dims[2] = {1, columns};
+        file_space = dataset.getSpace();
+        hsize_t mem_dims[2] = {rows, columns};
         H5::DataSpace mem_space(2, mem_dims);
-
-        // 4. 设置写入偏移（新行位置）
-        hsize_t offset[2] = {current_dims[0] - 1, 0};  // 偏移到最后一行
+        hsize_t offset[2] = {current_dims[0] - rows, 0};
         file_space.selectHyperslab(H5S_SELECT_SET, mem_dims, offset);
+        dataset.write(data.constData(), H5::PredType::NATIVE_UINT, mem_space, file_space);
 
-        // 5. 写入数据
-        dataset.write(&data, H5::PredType::NATIVE_UINT, mem_space, file_space);
-
-        // 强制同步（避免异常丢失）
-        if (++mSpectrumRef >= 100)
-        {
-            H5Fflush(mfH5Spectrum->getId(), H5F_SCOPE_GLOBAL);  // 同步文件元数据
-            mSpectrumRef = 0;
+        *flushRef += static_cast<quint32>(rows);
+        if (*flushRef >= 100) {
+            H5Fflush(file->getId(), H5F_SCOPE_GLOBAL);
+            *flushRef = 0;
         }
-    } catch (H5::Exception& e) {
+    } catch (H5::Exception &e) {
         e.printErrorStack();
     }
 }
@@ -809,80 +1005,26 @@ void HDF5Settings::writeH5Spectrum(quint8 index, const H5Spectrum& data)
  */
 void HDF5Settings::writeH5SpectrumBatch(quint8 index, const QVector<H5Spectrum>& data)
 {
-    QElapsedTimer costTimer;
-    costTimer.start();
-    if (data.isEmpty())
-        return;
-
-    // 如果文件已经标记为写满，直接返回
-    if (mSpectrumFileFull)
+    if (data.isEmpty() || index < 1 || index > DET_NUM)
         return;
 
     QMutexLocker locker(&mWrite_mutex);
-    if (!mfH5Spectrum)
+
+    auto chIt = mChannelSpectrumH5.find(index);
+    if (chIt != mChannelSpectrumH5.end()) {
+        ChannelSpectrumH5 &ch = chIt.value();
+        if (!ch.file)
+            return;
+        writeH5SpectrumBatchToTarget(ch.file, ch.dataset, index, data, ch.path,
+                                     &ch.full, &ch.flushRef);
+        return;
+    }
+
+    if (mSpectrumFileFull || !mfH5Spectrum)
         return;
 
-    try {
-        const hsize_t columns = sizeof(H5Spectrum) / sizeof(quint32);
-        const hsize_t rows    = static_cast<hsize_t>(data.size());
-
-        // 写入前预测大小，若超过 16GB，则整批丢弃、关闭文件
-        if (!mSpectrumFilePath.isEmpty()) {
-            const qint64 maxBytes = 512LL * 1024 * 1024 * 1024; // 512GB
-            QFileInfo info(mSpectrumFilePath);
-            if (info.exists()) {
-                const qint64 currentSize  = info.size();
-                const qint64 estimateSize = currentSize + static_cast<qint64>(rows) * static_cast<qint64>(sizeof(H5Spectrum));
-                if (estimateSize > maxBytes) {
-                    mSpectrumFileFull = true;
-                    qWarning().noquote()
-                        << QObject::tr("HDF5 能谱文件已达到 16GB 上限，丢弃后续能谱写入：")
-                        << mSpectrumFilePath;
-                    closeH5Spectrum();
-                    return;
-                }
-            }
-        }
-
-        // 确保数据集存在
-        if (mSpectrumDataset[index-1].getId() == -1)
-            mSpectrumDataset[index-1] = this->createSpecDataSet(mfH5Spectrum, index);
-
-        H5::DataSet dataset = mSpectrumDataset[index-1];
-
-        // 1. 获取当前维度
-        H5::DataSpace file_space = dataset.getSpace();
-        hsize_t current_dims[2];
-        file_space.getSimpleExtentDims(current_dims, nullptr);
-
-        // 2. 扩展数据集维度，一次扩展 rows 行
-        current_dims[0] += rows;
-        dataset.extend(current_dims);
-
-        // 3. 重新获取扩展后的文件空间
-        file_space = dataset.getSpace();
-
-        // 4. 定义内存空间（rows 行数据）
-        hsize_t mem_dims[2] = {rows, columns};
-        H5::DataSpace mem_space(2, mem_dims);
-
-        // 5. 设置写入偏移（从原来最后一行之后开始）
-        hsize_t offset[2] = {current_dims[0] - rows, 0};
-        file_space.selectHyperslab(H5S_SELECT_SET, mem_dims, offset);
-
-        // 6. 批量写入
-        dataset.write(data.constData(), H5::PredType::NATIVE_UINT, mem_space, file_space);
-
-        // 7. 更新 flush 计数器（按行数累加）
-        mSpectrumRef += rows;
-        if (mSpectrumRef >= 100)
-        {
-            H5Fflush(mfH5Spectrum->getId(), H5F_SCOPE_GLOBAL);  // 同步文件元数据
-            mSpectrumRef = 0;
-        }
-    } catch (H5::Exception& e) {
-        e.printErrorStack();
-    }
+    writeH5SpectrumBatchToTarget(mfH5Spectrum, mSpectrumDataset[index - 1], index, data,
+                                 mSpectrumFilePath, &mSpectrumFileFull, &mSpectrumRef);
 }
 
 QDateTime HDF5Settings::parseConfigTimeString(const QString &raw)

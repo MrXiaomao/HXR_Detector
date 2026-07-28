@@ -256,7 +256,9 @@ private:
     QString mShotNum;// 测量发次
 
     // QMutex mMutexTriggerTime;
-    QString mMeasureStartTime;//测量开始时刻
+    QString mMeasureStartTime;//测量开始时刻（单通道重测时会更新为该通道本次开测时刻）
+    QString mSessionMeasureStartTime; // 整次开测共用 H5 的开测时刻（单通道重测不覆盖）
+    QString mShotTime; // 打靶时刻字符串，重测新建通道 H5 时复用
     bool mMeasuring = false; // 是否正在测量
     CommandAdapter::WorkMode mCurrentWorkMode = CommandAdapter::WorkMode::wmSpectrum;
 

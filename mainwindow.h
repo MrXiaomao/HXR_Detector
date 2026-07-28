@@ -43,9 +43,22 @@ struct DetectorData {
     quint32 lastSpectrumID;              // 上次测量累积时间的能谱序号
     quint32 lastAccumulateCount;         // 上次测量累积时间的计数率,暂时不考虑丢包带来的计数率修复
     double lastAccuCountFixed;     // 上次测量累积时间的计数率，考虑死时间修复后的值
+    /** 计数率曲线已画到的最右 X（秒）；重测时叠墙钟缺口 deltaT 后再作为新段 offset */
+    double lastCountRatePlotTimeSec;
+    /** 当前测量段的时间偏置：plotTime = offset + sequence*measureTime/1000 */
+    double countRateTimeOffsetSec;
+    /** 掉线/停收时的墙钟 ms，用于计算重测缺口 */
+    qint64 disconnectWallMs;
     // QDateTime lastUpdate;
 
-    DetectorData() : lastSpectrumID(0), lastAccumulateCount(0), lastAccuCountFixed(0.0) {
+    DetectorData()
+        : lastSpectrumID(0)
+        , lastAccumulateCount(0)
+        , lastAccuCountFixed(0.0)
+        , lastCountRatePlotTimeSec(0.0)
+        , countRateTimeOffsetSec(0.0)
+        , disconnectWallMs(0)
+    {
         countRateHistory.clear();
         for(int i=0; i<8192; i++) spectrum[i] = 0;// 初始化能谱为全0
     }

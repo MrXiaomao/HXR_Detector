@@ -175,7 +175,21 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
         QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 2));
         cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::green));
 
-        // 重置该探测器的能谱数据
+        // 掉线重测：把墙钟缺口叠进 lastCountRatePlotTimeSec，作为新段时间偏置
+        {
+            QMutexLocker locker(&mDetectorDataMutex);
+            DetectorData &data = m_detectorData[index];
+            if (data.disconnectWallMs > 0 && data.lastCountRatePlotTimeSec > 0.0) {
+                const double deltaT =
+                    (QDateTime::currentMSecsSinceEpoch() - data.disconnectWallMs) / 1000.0;
+                if (deltaT > 0.0)
+                    data.lastCountRatePlotTimeSec += deltaT;
+                data.countRateTimeOffsetSec = data.lastCountRatePlotTimeSec;
+            }
+            data.disconnectWallMs = 0;
+        }
+
+        // 重置该探测器的能谱累积（保留计数率曲线时间轴与已绘数据）
         resetDetectorSpectrum(index);
 
         // 记录探测器正在测量
@@ -192,6 +206,13 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
         int row = index;
         QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 2));
         cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::red));
+
+        if (index >= 1 && index <= DET_NUM) {
+            QMutexLocker locker(&mDetectorDataMutex);
+            auto it = m_detectorData.find(index);
+            if (it != m_detectorData.end() && it->disconnectWallMs == 0)
+                it->disconnectWallMs = QDateTime::currentMSecsSinceEpoch();
+        }
 
         qInfo().nospace() << "谱仪[#" << index << "]测量已停止";
     }, Qt::QueuedConnection);
@@ -1006,6 +1027,15 @@ void MainWindow::clearCustomPlotData(const std::vector<int>& channels)
             int graphIndex = detectorId>16? detectorId - 17 : detectorId-1;
             customPlot->graph(graphIndex)->data()->clear();  // 只清数据
         }
+
+        // 全新开测/手动清图：重置计数率时间轴
+        QMutexLocker locker(&mDetectorDataMutex);
+        auto it = m_detectorData.find(detectorId);
+        if (it != m_detectorData.end()) {
+            it->lastCountRatePlotTimeSec = 0.0;
+            it->countRateTimeOffsetSec = 0.0;
+            it->disconnectWallMs = 0;
+        }
     };
 
     if (channels.empty()) {
@@ -1236,6 +1266,13 @@ void MainWindow::onDetectorOffline(quint8 index)
         mOnlineDetectors.removeOne(index);
         // qInfo().nospace() << "谱仪[#" << index << "]离线";
     }
+
+    if (index >= 1 && index <= DET_NUM) {
+        QMutexLocker locker(&mDetectorDataMutex);
+        auto it = m_detectorData.find(index);
+        if (it != m_detectorData.end())
+            it->disconnectWallMs = QDateTime::currentMSecsSinceEpoch();
+    }
 }
 
 // 交换机POE电源状态报告
@@ -1321,7 +1358,8 @@ void MainWindow::onFullSpectrum_Thread(int index, const FullSpectrum& fullSpectr
 
         //最快每秒更新一次能谱、计数率,这里不考虑丢包带来的计数率修复
         const quint32 accuTime = (fullSpectrum.sequence - data.lastSpectrumID) * fullSpectrum.measureTime;//单位ms
-        currenTime = 1.0 * fullSpectrum.sequence * fullSpectrum.measureTime / 1000; //单位s，这里最大数对应2^32/24/3600=49days
+        currenTime = data.countRateTimeOffsetSec
+            + 1.0 * fullSpectrum.sequence * fullSpectrum.measureTime / 1000; //单位s
         if (accuTime >= 1000) {
             const double countRate = 1000.0 * data.lastAccumulateCount * 1.0 / accuTime; //cps
             fixedCountRate = 1000.0 * data.lastAccuCountFixed * 1.0 / accuTime; //修正后的cps
@@ -1329,6 +1367,7 @@ void MainWindow::onFullSpectrum_Thread(int index, const FullSpectrum& fullSpectr
             data.lastAccumulateCount = 0;
             data.lastAccuCountFixed = 0;
             data.countRateHistory.append(countRate);
+            data.lastCountRatePlotTimeSec = currenTime;
 
             std::memcpy(spectrumSnap.data(), data.spectrum, sizeof(spectrumSnap));
             needPlotUpdate = true;
@@ -2488,7 +2527,7 @@ void MainWindow::restoreSettings()
     }
 }
 
-// 重置能谱
+// 重置能谱累积（不清除计数率曲线时间轴，便于掉线重测续画）
 void MainWindow::resetDetectorSpectrum(int detectorId) {
     QMutexLocker locker(&mDetectorDataMutex);
     auto it = m_detectorData.find(detectorId);
@@ -2501,7 +2540,8 @@ void MainWindow::resetDetectorSpectrum(int detectorId) {
     it->lastSpectrumID = 0;
     // 清空上次测量累积时间的计数率
     it->lastAccumulateCount = 0;
-    // 清空计数率历史并释放内存
+    it->lastAccuCountFixed = 0.0;
+    // 清空计数率历史并释放内存（Y 轴近窗统计从新段重新累积）
     QVector<double>().swap(it->countRateHistory);
 }
 
