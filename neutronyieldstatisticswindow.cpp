@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-04-20 09:21:28
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-07-10 14:22:57
+ * @LastEditTime: 2026-07-28 09:59:55
  * @Description: 离线数据分析 中子产额分析
  */
 #include "neutronyieldstatisticswindow.h"
@@ -2897,7 +2897,7 @@ void NeutronYieldStatisticsWindow::onParseChannelFinished(int detId, bool mergeO
     delete dealFile[detId - 1];
     dealFile[detId - 1] = parsed;
 
-    // 保存 909峰位演变图.xlsx
+    // 保存 909峰位演变数据.xlsx
     {
         ParseData *parsed = dealFile[detId - 1];
         const QVector<double> peakPos = parsed ? parsed->count909PeakPos() : QVector<double>();
@@ -2907,7 +2907,7 @@ void NeutronYieldStatisticsWindow::onParseChannelFinished(int detId, bool mergeO
         int channel = ui->spinBox_channelId->value();
 
         // 统一指定文件名，避免硬编码重复
-        const QString fileName = QStringLiteral("909峰位演变图.xlsx");
+        const QString fileName = QStringLiteral("909峰位演变数据.xlsx");
         QXlsx::Document xlsx;
 
         // 1. 优先尝试加载已存在的文件，不存在则自动新建空文档

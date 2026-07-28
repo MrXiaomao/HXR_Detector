@@ -262,6 +262,8 @@ private:
     QVector<quint8> mTemperatureTimeoutDetectors;
     //记录探测器是否正在测量
     QMap<quint8, bool> mDetectorMeasuring;
+    // 温度超时后重上线是否自动续测：能谱为 true，波形/粒子为 false
+    bool mAutoResumeOnReconnect = true;
     // 探测器数据管理
     QHash<int, DetectorData> m_detectorData;  // 只存储联网探测器的数据
     mutable QMutex mDetectorDataMutex;       // 保护 m_detectorData（解析线程写、主线程读/绘图）

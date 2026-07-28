@@ -180,6 +180,9 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
 
         // 记录探测器正在测量
         mDetectorMeasuring[index] = true;
+        // 波形/粒子测量期间下线再上线不自动续测；能谱保持自动续测
+        const auto workMode = commHelper->currentWorkMode();
+        mAutoResumeOnReconnect = (workMode == CommandAdapter::WorkMode::wmSpectrum);
 
         qInfo().nospace() << "谱仪[#" << index << "]测量已启动，准备接收数据";//开始实验，准备接收数据
     }, Qt::QueuedConnection);
@@ -1203,11 +1206,15 @@ void MainWindow::onDetectorOnline(quint8 index)
     //如果该探测器在温度超时报警列表中，则删除
     if (mTemperatureTimeoutDetectors.contains(index)){
         mTemperatureTimeoutDetectors.removeOne(index);
-        //如果该探测器正在测量，则重新开始测量
+        //如果该探测器正在测量，则重新开始测量（仅能谱；波形/粒子重上线不自动续测）
         if (mDetectorMeasuring[index]){
-            commHelper->startMeasure(QDateTime::currentDateTime(), CommandAdapter::MeasureMode::mmManual, CommandAdapter::WorkMode::wmSpectrum, index);
-            //打印日志
-            qInfo().nospace() << "谱仪[#" << index << "]自动重新开始测量";
+            if (mAutoResumeOnReconnect){
+                commHelper->startMeasure(QDateTime::currentDateTime(), CommandAdapter::MeasureMode::mmManual, CommandAdapter::WorkMode::wmSpectrum, index);
+                qInfo().nospace() << "谱仪[#" << index << "]自动重新开始测量";
+            } else {
+                mDetectorMeasuring[index] = false;
+                qInfo().nospace() << "谱仪[#" << index << "]波形/粒子测量期间下线后重上线，不自动继续测量";
+            }
         }
     }
 }
