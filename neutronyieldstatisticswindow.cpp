@@ -3544,7 +3544,10 @@ void NeutronYieldStatisticsWindow::writeCommonAnalysisParams(QXlsx::Document &xl
     xlsx.write(row, 1, QStringLiteral("开测时刻"));
     xlsx.write(row++, 2, ui->messureDateTime->dateTime().toString("yyyy-MM-dd HH:mm:ss"));
     xlsx.write(row, 1, QStringLiteral("通道号"));
-    xlsx.write(row++, 2, channel);
+    if (channel <= 0)
+        xlsx.write(row++, 2, QStringLiteral("全部通道"));
+    else
+        xlsx.write(row++, 2, channel);
     xlsx.write(row, 1, QStringLiteral("解析时间起点/min"));
     xlsx.write(row++, 2, ui->spinBox_timeStart->value());
     xlsx.write(row, 1, QStringLiteral("解析时间终点/min"));
@@ -3587,8 +3590,18 @@ bool NeutronYieldStatisticsWindow::exportResultTableXlsx(const QString &filePath
 bool NeutronYieldStatisticsWindow::exportPeakEvolutionXlsx(const QString &filePath) const
 {
     QXlsx::Document xlsx;
-    bool hasSheet = false;
+    const QString sheetName = QStringLiteral("909峰位演变");
+    if (!xlsx.sheetNames().isEmpty())
+        xlsx.renameSheet(xlsx.sheetNames().first(), sheetName);
+    else
+        xlsx.addSheet(sheetName);
+    xlsx.selectSheet(sheetName);
 
+    int row = 1;
+    writeCommonAnalysisParams(xlsx, row, 0);
+
+    bool hasData = false;
+    row++;
     for (int detId = 1; detId <= DET_NUM; ++detId) {
         ParseData *parsed = dealFile[detId - 1];
         if (!parsed)
@@ -3596,61 +3609,28 @@ bool NeutronYieldStatisticsWindow::exportPeakEvolutionXlsx(const QString &filePa
 
         const QVector<double> peakPos = parsed->count909PeakPos();
         const QVector<specStripData> countData = parsed->GetCount909Data();
-        if (peakPos.isEmpty() && countData.isEmpty())
+        if (peakPos.isEmpty() || countData.isEmpty())
             continue;
 
-        const QString sheetName = QStringLiteral("通道#") + QString::number(detId);
-        if (xlsx.sheetNames().contains(sheetName))
-            xlsx.deleteSheet(sheetName);
-        if (!hasSheet && !xlsx.sheetNames().isEmpty()) {
-            xlsx.renameSheet(xlsx.sheetNames().first(), sheetName);
-        } else {
-            xlsx.insertSheet(xlsx.sheetNames().size(), sheetName);
-        }
-        xlsx.selectSheet(sheetName);
-        hasSheet = true;
-
-        int row = 1;
-        int col = 1;
-        writeCommonAnalysisParams(xlsx, row, detId);
-
-        row++;
-        col = 1;
-        xlsx.write(row, col, QStringLiteral("时间(分钟)"));
-        xlsx.write(row + 1, col, QStringLiteral("峰位(道址)"));
-
-        col++;
         const int n = qMin(peakPos.size(), countData.size());
+        if (n <= 0)
+            continue;
+
+        hasData = true;
+        int col = 1;
+        xlsx.write(row, col, QStringLiteral("通道#%1_时间(分钟)").arg(detId));
+        xlsx.write(row + 1, col, QStringLiteral("通道#%1_峰位(道址)").arg(detId));
+        col++;
         for (int i = 0; i < n; ++i) {
             xlsx.write(row, col + i, countData.at(i).x);
             xlsx.write(row + 1, col + i, peakPos.at(i));
         }
-
         row += 3;
-        for (int i = 0; i < n; ++i) {
-            col = 1;
-            xlsx.write(row, col, QStringLiteral("时间(分钟)"));
-            xlsx.write(row + 1, col, QStringLiteral("能量(keV)"));
-            xlsx.write(row + 2, col, QStringLiteral("能谱计数"));
-            xlsx.write(row + 3, col, QStringLiteral("拟合曲线"));
-            xlsx.write(row + 4, col, QStringLiteral("残差(%)"));
-
-            col++;
-            xlsx.write(row, col, countData.at(i).x);
-            const QVector<specStripData> allSpec = parsed->GetStripData(i);
-            for (const auto &data : allSpec) {
-                xlsx.write(row + 1, col, data.x);
-                xlsx.write(row + 2, col, data.y);
-                xlsx.write(row + 3, col, data.fit_y);
-                xlsx.write(row + 4, col++, data.residual_rate);
-            }
-            row += 6;
-        }
     }
 
-    if (!hasSheet) {
-        xlsx.write(1, 1, QStringLiteral("无可用的909峰位演变数据"));
-    }
+    if (!hasData)
+        xlsx.write(row, 1, QStringLiteral("无可用的909峰位演变数据"));
+
     return xlsx.saveAs(filePath);
 }
 
@@ -3769,6 +3749,60 @@ bool NeutronYieldStatisticsWindow::exportCount909Xlsx(const QString &filePath) c
         xlsx.write(row, col++, QStringLiteral("残差(%)"));
         for (int i = 0; i < countData.size(); ++i)
             xlsx.write(row, col + i, countData.at(i).residual_rate);
+
+        {
+            double fitA = 0.0;
+            double fitR2 = 0.0;
+            if (parsed->count909DecayFit(&fitA, &fitR2)) {
+                row++;
+                col = 1;
+                xlsx.write(row, col++, QStringLiteral("计数率拟合公式"));
+                xlsx.write(row, col, QStringLiteral("y = a*exp(-ln(2)/(78.4*60)*t)，t 单位 min"));
+                row++;
+                col = 1;
+                xlsx.write(row, col++, QStringLiteral("a"));
+                xlsx.write(row, col, fitA);
+                row++;
+                col = 1;
+                xlsx.write(row, col++, QStringLiteral("R²"));
+                xlsx.write(row, col, fitR2);
+            }
+        }
+
+        // 各时段 909 段能谱（与 PeakChannel/计数图对应的剥谱结果）
+        const QVector<SpecStripFitInfo> &stripFits = parsed->specStripFitInfos();
+        row += 2;
+        for (int i = 0; i < countData.size(); ++i) {
+            col = 1;
+            xlsx.write(row, col, QStringLiteral("时间(分钟)"));
+            xlsx.write(row + 1, col, QStringLiteral("能量(keV)"));
+            xlsx.write(row + 2, col, QStringLiteral("能谱计数"));
+            xlsx.write(row + 3, col, QStringLiteral("拟合曲线"));
+            xlsx.write(row + 4, col, QStringLiteral("残差(%)"));
+
+            col++;
+            xlsx.write(row, col, countData.at(i).x);
+            const QVector<specStripData> allSpec = parsed->GetStripData(i);
+            for (const auto &data : allSpec) {
+                xlsx.write(row + 1, col, data.x);
+                xlsx.write(row + 2, col, data.y);
+                xlsx.write(row + 3, col, data.fit_y);
+                xlsx.write(row + 4, col++, data.residual_rate);
+            }
+            row += 6;
+
+            if (i < stripFits.size() && stripFits.at(i).model != SpecStripFitModel::None) {
+                const SpecStripFitInfo &info = stripFits.at(i);
+                col = 1;
+                xlsx.write(row, col++, QStringLiteral("能谱拟合公式"));
+                xlsx.write(row, col, info.formulaText());
+                row++;
+                col = 1;
+                xlsx.write(row, col++, QStringLiteral("R²"));
+                xlsx.write(row, col, info.r2);
+                row += 2;
+            }
+        }
     }
 
     if (!hasSheet) {
@@ -3831,7 +3865,8 @@ void NeutronYieldStatisticsWindow::on_bt_saveResult_clicked()
         QStringLiteral("909峰位演变数据.xlsx"),
         QStringLiteral("分时能谱.xlsx"),
         QStringLiteral("909全能峰计数.xlsx"),
-        QStringLiteral("中子产额空间分布.xlsx")
+        QStringLiteral("中子产额空间分布.xlsx"),
+        QStringLiteral("中子产额空间分布.png")
     };
 
     QStringList outputPaths;
@@ -3864,6 +3899,7 @@ void NeutronYieldStatisticsWindow::on_bt_saveResult_clicked()
     results.append({outputPaths.at(2), exportMultiSegmentXlsx(outputPaths.at(2))});
     results.append({outputPaths.at(3), exportCount909Xlsx(outputPaths.at(3))});
     results.append({outputPaths.at(4), exportYieldDisXlsx(outputPaths.at(4))});
+    results.append({outputPaths.at(5), w && w->exportToPng(outputPaths.at(5))});
 
     int okCount = 0;
     QStringList failed;
@@ -3879,7 +3915,7 @@ void NeutronYieldStatisticsWindow::on_bt_saveResult_clicked()
 
     if (failed.isEmpty()) {
         QMessageBox::information(this, tr("提示"),
-                                 tr("已成功保存 %1 个 Excel 文件到：\n%2").arg(okCount).arg(filePath));
+                                 tr("已成功保存 %1 个结果文件到：\n%2").arg(okCount).arg(filePath));
     } else {
         QMessageBox::warning(this, tr("提示"),
                              tr("成功 %1 个，失败 %2 个：\n%3")

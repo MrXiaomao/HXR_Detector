@@ -30,7 +30,7 @@ void CrasterParabolicHeatmapWidget::onCustomContextMenuRequested(const QPoint &p
         return;
 
     const QPixmap pix = grab();
-    if (pix.isNull() || !pix.save(path, "PNG")) {
+    if (pix.isNull() || !exportToPng(path)) {
         QMessageBox::warning(this, tr("提示"), tr("PNG 导出失败。"));
         return;
     }
@@ -40,6 +40,31 @@ void CrasterParabolicHeatmapWidget::onCustomContextMenuRequested(const QPoint &p
 void CrasterParabolicHeatmapWidget::setSensors(const std::vector<Sensor>& s) {
     sensors_ = s;
     shReady_ = false;
+}
+
+bool CrasterParabolicHeatmapWidget::exportToPng(const QString &filePath) const
+{
+    if (filePath.isEmpty())
+        return false;
+
+    auto *self = const_cast<CrasterParabolicHeatmapWidget *>(this);
+    const QSize oldSize = size();
+    const bool needTempSize = width() < 50 || height() < 50;
+    if (needTempSize) {
+        self->resize(1200, 650);
+        self->rebuild();
+    }
+
+    const QPixmap pix = self->grab();
+    if (needTempSize) {
+        self->resize(oldSize);
+        if (!oldSize.isEmpty())
+            self->rebuild();
+    }
+
+    if (pix.isNull() || pix.size().isEmpty())
+        return false;
+    return pix.save(filePath, "PNG");
 }
 
 void CrasterParabolicHeatmapWidget::setPower(double p) { idwPower_ = p; }

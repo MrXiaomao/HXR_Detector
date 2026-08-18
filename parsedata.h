@@ -41,6 +41,21 @@ struct specStripData{
     double residual_rate; //残差率
 };
 
+/** 单段 909 能谱剥谱拟合模型与参数（用于导出公式） */
+enum class SpecStripFitModel {
+    None = 0,
+    GaussPoly4 = 1,     // 单高斯 + 4 阶多项式，8 参数
+    TwoGaussPoly4 = 2   // 双高斯 + 4 阶多项式，11 参数
+};
+
+struct SpecStripFitInfo {
+    SpecStripFitModel model = SpecStripFitModel::None;
+    QVector<double> coeffs;
+    double r2 = 0.0;
+
+    QString formulaText() const;
+};
+
 enum paraseMode{
     offlineMode = 0,
     onlineMode = 1,
@@ -99,6 +114,12 @@ public:
     const QVector<double> &count909PeakPos() const { return mCount909PeakPos; }
 
     double GetInitialCount(){return mInitialCount;}
+
+    /** @brief 909 计数衰减拟合参数 a 与 R²（fit909data 成功后有效） */
+    bool count909DecayFit(double *a, double *r2) const;
+
+    /** @brief 各时段 909 能谱剥谱拟合信息，与 GetStripData(i) 下标一一对应 */
+    const QVector<SpecStripFitInfo> &specStripFitInfos() const { return mSpecStripFitInfos; }
 
     /**
      * @brief mergeSpecTime 提取目标时间段能谱数据，根据时间道宽合并能谱，用于离线分析
@@ -282,6 +303,9 @@ private:
     QVector<double> mCount909PeakPos; //909keV峰位道址
     QVector<double> mCount909FitCount; //909keV计数随时间变化的拟合曲线
     QVector<double> mCount909Residual; //残差
+    bool mHasCount909DecayFit = false;
+    double mCount909FitA = 0.0;
+    double mCount909FitR2 = 0.0;
     bool mHasLatestEnergyCalibration = false;
     double mLatestEnergyCalibration[2] = {1.0, 0.0};
     bool mHasLatestSigmas = false;
@@ -291,6 +315,7 @@ private:
     QVector<double> mSpecStripDataY; //拟合数据点y坐标
     QVector<double> mSpecStripDataFity;//拟合曲线y
     QVector<double> mSpecStripDataResidualRate; //残差
+    QVector<SpecStripFitInfo> mSpecStripFitInfos; // 与各剥谱分段一一对应
 
     paraseMode mParaseMode;
     int mShotTime = -1; //记录打靶起始时间，单位ms (FPGA内部时钟，仪器开始测量时为时钟为零)，必须在大靶前开始测量，这样才能找到计数率暴增点（打靶瞬间）

@@ -456,7 +456,7 @@ namespace CurveFit {
         return 1;
     }
 
-    bool fit_gauss_ploy4(QVector<QPointF> points, double* fit_c, QVector<double> &residual_rate, double r2Min)
+    bool fit_gauss_ploy4(QVector<QPointF> points, double* fit_c, QVector<double> &residual_rate, double r2Min, double *r2Out)
     {
         int paraNum = 8; //待拟合参数个数
         int num = points.size();
@@ -510,6 +510,8 @@ namespace CurveFit {
             for(int i=0;i<paraNum;i++){
                 fit_c[i] = c[i];
             }
+            if (r2Out)
+                *r2Out = rep.r2;
 
             //计算残差率
             double chi_square_sum = 0.0;
@@ -547,7 +549,7 @@ namespace CurveFit {
         return 1;
     }
 
-    bool fit_2gauss_ploy4(QVector<QPointF> points, double* fit_c, QVector<double> &residual_rate, double r2Min)
+    bool fit_2gauss_ploy4(QVector<QPointF> points, double* fit_c, QVector<double> &residual_rate, double r2Min, double *r2Out)
     {
         int paraNum = 11; //待拟合参数个数
         int num = points.size();
@@ -601,6 +603,8 @@ namespace CurveFit {
             for(int i=0;i<paraNum;i++){
                 fit_c[i] = c[i];
             }
+            if (r2Out)
+                *r2Out = rep.r2;
 
             //计算残差率
             double chi_square_sum = 0.0;
@@ -627,8 +631,7 @@ namespace CurveFit {
                     <<QString::number(fit_c[3], 'g', 9)<<","<<QString::number(fit_c[4], 'g', 9)<<","
                     <<QString::number(fit_c[5], 'g', 9)<<","<<QString::number(fit_c[6], 'g', 9)<<","
                     <<QString::number(fit_c[7], 'g', 9)<<","<<QString::number(fit_c[8], 'g', 9)<<","
-                    <<QString::number(fit_c[9], 'g', 9)<<","<<QString::number(fit_c[10], 'g', 9)<<","
-                    <<QString::number(fit_c[11], 'g', 9)
+                    <<QString::number(fit_c[9], 'g', 9)<<","<<QString::number(fit_c[10], 'g', 9)
                     <<"], iterationscount="<<rep.iterationscount
                     <<", r2="<<rep.r2
                     <<", terminationtype="<<rep.terminationtype
@@ -719,7 +722,7 @@ namespace CurveFit {
         return 1;
     }
 
-    bool fit_exp_decay(QVector<QPointF> points, double *fit_a, QVector<double> &residual_rate)
+    bool fit_exp_decay(QVector<QPointF> points, double *fit_a, QVector<double> &residual_rate, double *r2Out)
     {
         const int paraNum = 1;
         const int num = points.size();
@@ -756,6 +759,8 @@ namespace CurveFit {
             lsfitresults(state, c, rep);
 
             fit_a[0] = c[0];
+            if (r2Out)
+                *r2Out = rep.r2;
             residual_rate.clear();
             for (int i = 0; i < num; ++i) {
                 alglib::real_1d_array xData;

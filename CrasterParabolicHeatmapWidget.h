@@ -18,6 +18,9 @@ public:
     void setSensors(const std::vector<Sensor>& s);
     void rebuild();
 
+    /** 将当前热力图控件内容导出为 PNG */
+    bool exportToPng(const QString &filePath) const;
+
     // IDW（“平方插值”默认 power=2）
     void setPower(double p);
 

@@ -14,6 +14,29 @@
 
 #include "curveFit.h"
 #include <QDebug>
+#include <QStringList>
+
+QString SpecStripFitInfo::formulaText() const
+{
+    auto fmt = [](double v) { return QString::number(v, 'g', 12); };
+
+    if (model == SpecStripFitModel::GaussPoly4 && coeffs.size() >= 8) {
+        return QStringLiteral("y = c0*exp(-0.5*((x-c1)/c2)^2) + c3*x^4 + c4*x^3 + c5*x^2 + c6*x + c7; "
+                              "c0=%1, c1=%2, c2=%3, c3=%4, c4=%5, c5=%6, c6=%7, c7=%8")
+            .arg(fmt(coeffs[0]), fmt(coeffs[1]), fmt(coeffs[2]), fmt(coeffs[3]),
+                 fmt(coeffs[4]), fmt(coeffs[5]), fmt(coeffs[6]), fmt(coeffs[7]));
+    }
+    if (model == SpecStripFitModel::TwoGaussPoly4 && coeffs.size() >= 11) {
+        return QStringLiteral("y = c0*exp(-0.5*((x-c1)/c2)^2) + c3*exp(-0.5*((x-c4)/c5)^2) "
+                              "+ c6*x^4 + c7*x^3 + c8*x^2 + c9*x + c10; "
+                              "c0=%1, c1=%2, c2=%3, c3=%4, c4=%5, c5=%6, "
+                              "c6=%7, c7=%8, c8=%9, c9=%10, c10=%11")
+            .arg(fmt(coeffs[0]), fmt(coeffs[1]), fmt(coeffs[2]), fmt(coeffs[3]),
+                 fmt(coeffs[4]), fmt(coeffs[5]), fmt(coeffs[6]), fmt(coeffs[7]),
+                 fmt(coeffs[8]), fmt(coeffs[9]), fmt(coeffs[10]));
+    }
+    return QString();
+}
 
 namespace {
 
@@ -885,6 +908,7 @@ bool ParseData::SpecStripping(double *spectrum, double energy_scale[], QVector<d
     const QVector<double> savedInitial = init_c;
     alglib::real_1d_array c;
     QVector<double> residual_rate;
+    SpecStripFitInfo stripFitInfo;
 
     // 846keV能峰存在则采用双高斯拟合，不存在则采用单高斯拟合
     if (exitflag[0]) {
@@ -892,7 +916,8 @@ bool ParseData::SpecStripping(double *spectrum, double energy_scale[], QVector<d
         for (int i = 0; i < 11; ++i)
             p[i] = init_c[i];
 
-        if (!CurveFit::fit_2gauss_ploy4(fitPoints, p, residual_rate, mSpectrumFitR2Min))
+        double fitR2 = 0.0;
+        if (!CurveFit::fit_2gauss_ploy4(fitPoints, p, residual_rate, mSpectrumFitR2Min, &fitR2))
             return false;
         for (int i = 0; i < 11; ++i)
             init_c[i] = p[i];
@@ -910,13 +935,20 @@ bool ParseData::SpecStripping(double *spectrum, double energy_scale[], QVector<d
         }
         // 记录909keV峰位
         position909peak = p[4];
+
+        stripFitInfo.model = SpecStripFitModel::TwoGaussPoly4;
+        stripFitInfo.r2 = fitR2;
+        stripFitInfo.coeffs.resize(11);
+        for (int i = 0; i < 11; ++i)
+            stripFitInfo.coeffs[i] = p[i];
     } else {
         double p[8];
         // 跳过前三个参数，从第四个参数开始赋值
         for (int i = 0; i < 8; ++i)
             p[i] = init_c[i + 3];
 
-        if (!CurveFit::fit_gauss_ploy4(fitPoints, p, residual_rate, mSpectrumFitR2Min))
+        double fitR2 = 0.0;
+        if (!CurveFit::fit_gauss_ploy4(fitPoints, p, residual_rate, mSpectrumFitR2Min, &fitR2))
             return false;
         init_c[0] = savedInitial[0];
         init_c[1] = 846.0;
@@ -937,6 +969,12 @@ bool ParseData::SpecStripping(double *spectrum, double energy_scale[], QVector<d
         }
         // 记录909keV峰位
         position909peak = p[1];
+
+        stripFitInfo.model = SpecStripFitModel::GaussPoly4;
+        stripFitInfo.r2 = fitR2;
+        stripFitInfo.coeffs.resize(8);
+        for (int i = 0; i < 8; ++i)
+            stripFitInfo.coeffs[i] = p[i];
     }
 
     if (exitflag[0]) {
@@ -982,6 +1020,7 @@ bool ParseData::SpecStripping(double *spectrum, double energy_scale[], QVector<d
     mSpecStripDataY.append(fity);
     mSpecStripDataFity.append(fity_curve);
     mSpecStripDataResidualRate.append(residual_rate);
+    mSpecStripFitInfos.append(stripFitInfo);
 
     if (mSpecStripRightCh.isEmpty())
         mSpecStripRightCh.push_back(-1);
@@ -998,6 +1037,9 @@ bool ParseData::fit909data()
 {
     mCount909FitCount.clear();
     mCount909Residual.clear();
+    mHasCount909DecayFit = false;
+    mCount909FitA = 0.0;
+    mCount909FitR2 = 0.0;
     const int ch_count = mCount909Count.size();
     if (ch_count < 2)
         return false;
@@ -1016,7 +1058,8 @@ bool ParseData::fit909data()
 
     double fit_a = fity.first();
     QVector<double> residual_rate;
-    if (!CurveFit::fit_exp_decay(fitPoints, &fit_a, residual_rate))
+    double fitR2 = 0.0;
+    if (!CurveFit::fit_exp_decay(fitPoints, &fit_a, residual_rate, &fitR2))
         return false;
 
     QVector<double> fity_curve;
@@ -1034,6 +1077,9 @@ bool ParseData::fit909data()
     }
 
     mCount909FitCount = fity_curve;
+    mHasCount909DecayFit = true;
+    mCount909FitA = fit_a;
+    mCount909FitR2 = fitR2;
 
     const double t1 = log(2.0) / (78.4 * 60.0);
     const double timeBinMin = mTimeBinOnline / 60.0;
@@ -1080,6 +1126,17 @@ QVector<specStripData> ParseData::GetCount909Data()
     return pictureData;
 }
 
+bool ParseData::count909DecayFit(double *a, double *r2) const
+{
+    if (!mHasCount909DecayFit)
+        return false;
+    if (a)
+        *a = mCount909FitA;
+    if (r2)
+        *r2 = mCount909FitR2;
+    return true;
+}
+
 /**
  * @brief clearFitResult 清空拟合结果
  */
@@ -1093,6 +1150,9 @@ void ParseData::clearFitResult()
     mCount909PeakPos.clear(); //909keV峰位道址
     mCount909FitCount.clear(); //909keV计数随时间变化的拟合曲线
     mCount909Residual.clear(); //残差
+    mHasCount909DecayFit = false;
+    mCount909FitA = 0.0;
+    mCount909FitR2 = 0.0;
     mHasLatestEnergyCalibration = false;
     mLatestEnergyCalibration[0] = 1.0;
     mLatestEnergyCalibration[1] = 0.0;
@@ -1105,6 +1165,7 @@ void ParseData::clearFitResult()
     mSpecStripDataY.clear(); //拟合数据点y坐标
     mSpecStripDataFity.clear(); //拟合曲线y
     mSpecStripDataResidualRate.clear(); //残差
+    mSpecStripFitInfos.clear();
     mSpecStripRightCh.clear();
 }
 

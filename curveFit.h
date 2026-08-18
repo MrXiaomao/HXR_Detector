@@ -157,7 +157,7 @@ namespace CurveFit {
      * @return 拟合是否成功
      */
     bool fit_gauss_ploy4(QVector<QPointF> points, double* fit_c, QVector<double> &residual_rate,
-                         double r2Min = kDefaultSpectrumFitR2Min);
+                         double r2Min = kDefaultSpectrumFitR2Min, double *r2Out = nullptr);
 
     /**
      * @brief 双高斯+4阶多项式拟合
@@ -169,7 +169,7 @@ namespace CurveFit {
      * @return 拟合是否成功
      */
     bool fit_2gauss_ploy4(QVector<QPointF> points, double* fit_c, QVector<double> &residual_rate,
-                          double r2Min = kDefaultSpectrumFitR2Min);
+                          double r2Min = kDefaultSpectrumFitR2Min, double *r2Out = nullptr);
 
     /**
      * @brief 对909全能峰计数随时间变化曲线进行拟合
@@ -183,7 +183,9 @@ namespace CurveFit {
 
     /**
      * @brief 909 全能峰计数随时间指数衰减拟合 func = a*exp(-ln2/(78.4*60)*t)
+     * @param r2Out 可选，输出拟合优度 R²
      */
-    bool fit_exp_decay(QVector<QPointF> points, double *fit_a, QVector<double> &residual_rate);
+    bool fit_exp_decay(QVector<QPointF> points, double *fit_a, QVector<double> &residual_rate,
+                       double *r2Out = nullptr);
 }
 
