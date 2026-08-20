@@ -1,48 +1,29 @@
+/*
+ * @Author: MrPan
+ * @Date: 2025-12-29 22:08:10
+ * @LastEditors: Maoxiaoqing
+ * @LastEditTime: 2026-08-18 20:50:02
+ * @Description: 用于能量刻度，可进行线性拟合、二次函数拟合，能量刻度点的添加、删除、拟合等功能
+ */
 #include "energycalibration.h"
 #include "ui_energycalibration.h"
+#include "qcustomplot.h"
 #include "globalsettings.h"
-
-#include <QAbstractItemView>
-#include <QCoreApplication>
-#include <QDir>
-#include <QDoubleValidator>
-#include <QFile>
-#include <QFileInfo>
-#include <QHeaderView>
-#include <QLineEdit>
-#include <QMessageBox>
+#include "curveFit.h"
+// #include "ap.h"
+// #include "interpolation.h"
+// #include <math.h>
+// using namespace alglib;
 #include <QStyledItemDelegate>
-#include <QTableWidgetItem>
-#include <QTextStream>
-#include <cmath>
+#include <QLineEdit>
+#include <QDoubleValidator>
+#include <QComboBox>
 
-namespace {
-
-constexpr int kDetectorColumn = 0;
-constexpr int kKColumn = 1;
-constexpr int kBColumn = 2;
-constexpr int kSigma511Column = 3;
-constexpr int kSigma846Column = 4;
-constexpr int kSigma909Column = 5;
-
-struct CalibrationCsvRow {
-    int detector = 0;
-    double k = 1.0;
-    double b = 0.0;
-    double sigma511 = 5.0;
-    double sigma846 = 6.0;
-    double sigma909 = 7.0;
-};
-
-QString energyCalibrationCsvPath()
-{
-    return QDir(QCoreApplication::applicationDirPath()).filePath(ENERGY_CALIBRATION_CSV_FILE);
-}
-
-class EnergyValueDelegate : public QStyledItemDelegate
+// 表格浮点数输入委托：限制单元格仅允许输入浮点数
+class DoubleItemDelegate : public QStyledItemDelegate
 {
 public:
-    explicit EnergyValueDelegate(QObject *parent = nullptr)
+    explicit DoubleItemDelegate(QObject *parent = nullptr)
         : QStyledItemDelegate(parent)
     {
     }
@@ -52,276 +33,664 @@ public:
                           const QModelIndex &index) const override
     {
         Q_UNUSED(option);
+        Q_UNUSED(index);
 
         QLineEdit *editor = new QLineEdit(parent);
-        if (index.column() != kDetectorColumn) {
-            auto *validator = new QDoubleValidator(editor);
-            validator->setNotation(QDoubleValidator::ScientificNotation);
-            editor->setValidator(validator);
-        }
+        auto *validator = new QDoubleValidator(editor);
+        validator->setNotation(QDoubleValidator::StandardNotation);
+        editor->setValidator(validator);
         return editor;
     }
 };
 
-bool parseCsvLine(const QString &line, CalibrationCsvRow *row)
-{
-    const QStringList parts = line.split(',');
-    if (parts.size() < 3)
-        return false;
-
-    bool okDetector = false;
-    bool okK = false;
-    bool okB = false;
-    const int detectorValue = parts.at(0).trimmed().toInt(&okDetector);
-    const double kValue = parts.at(1).trimmed().toDouble(&okK);
-    const double bValue = parts.at(2).trimmed().toDouble(&okB);
-    if (!okDetector || !okK || !okB || detectorValue < 1 || detectorValue > DET_NUM)
-        return false;
-
-    CalibrationCsvRow parsed;
-    parsed.detector = detectorValue;
-    parsed.k = kValue;
-    parsed.b = bValue;
-
-    if (parts.size() >= 6) {
-        bool okSigma511 = false;
-        bool okSigma846 = false;
-        bool okSigma909 = false;
-        const double sigma511 = parts.at(3).trimmed().toDouble(&okSigma511);
-        const double sigma846 = parts.at(4).trimmed().toDouble(&okSigma846);
-        const double sigma909 = parts.at(5).trimmed().toDouble(&okSigma909);
-        if (okSigma511 && okSigma846 && okSigma909
-            && sigma511 > 0.0 && sigma846 > 0.0 && sigma909 > 0.0) {
-            parsed.sigma511 = sigma511;
-            parsed.sigma846 = sigma846;
-            parsed.sigma909 = sigma909;
-        }
-    }
-
-    *row = parsed;
-    return true;
-}
-
-void setNumericItem(QTableWidget *table, int row, int column, double value)
-{
-    auto *item = table->item(row, column);
-    if (!item) {
-        item = new QTableWidgetItem;
-        table->setItem(row, column, item);
-    }
-    item->setText(QString::number(value, 'g', 15));
-    item->setTextAlignment(Qt::AlignCenter);
-}
-
-} // namespace
-
-EnergyCalibration::EnergyCalibration(QWidget *parent)
-    : QWidget(parent)
-    , ui(new Ui::EnergyCalibration)
+EnergyCalibration::EnergyCalibration(QWidget *parent) :
+    QWidget(parent),
+    ui(new Ui::EnergyCalibration),
+    saveStatus(false),
+    datafit(false),
+    fitType(0),
+    detButtonGroup(nullptr)
 {
     ui->setupUi(this);
+
+    initCustomPlot();
+
     initUI();
-    loadCalibration();
+
 }
 
 EnergyCalibration::~EnergyCalibration()
 {
+    // 保存勾选的通道号
+    GlobalSettings settings(DEVICE_CONFIG_FILE);
+    settings.beginGroup("EnCalibration");
+    int detChannel = 0;
+    for (int i=0; i<DET_NUM; ++i){
+        if (detRadioButtons[i]->isChecked())
+            detChannel = i+1;
+    }
+    settings.setValue("CheckedDetChannel", detChannel);
+    settings.endGroup();
+    
+    // 清理按钮组
+    if (detButtonGroup)
+    {
+        delete detButtonGroup;
+        detButtonGroup = nullptr;
+    }
     delete ui;
+}
+
+void EnergyCalibration::initCustomPlot()
+{
+    // 创建绘图区域
+    customPlot = new QCustomPlot(ui->widget_plot);
+    customPlot->setObjectName("customPlot");
+    customPlot->setLocale(QLocale(QLocale::Chinese, QLocale::China));
+    ui->widget_plot->layout()->addWidget(customPlot);
+
+    // 设置选择容忍度，即鼠标点击点到数据点的距离
+    //customPlot->setSelectionTolerance(5);
+    // 设置全局抗锯齿
+    customPlot->setAntialiasedElements(QCP::aeAll);
+    //customPlot->setNotAntialiasedElements(QCP::aeAll);
+    // 图例名称隐藏
+    customPlot->legend->setVisible(false);
+    // 图例名称显示位置
+    customPlot->axisRect()->insetLayout()->setInsetAlignment(0, Qt::AlignTop|Qt::AlignRight);
+    // 设置边界
+    customPlot->setContentsMargins(0, 0, 0, 0);
+    // 设置标签倾斜角度，避免显示不下
+    customPlot->xAxis->setTickLabelRotation(-45);
+    // 背景色
+    customPlot->setBackground(QBrush(Qt::white));
+    // 图像画布边界
+    customPlot->axisRect()->setMinimumMargins(QMargins(0, 0, 0, 0));
+    // 坐标背景色
+    customPlot->axisRect()->setBackground(Qt::white);
+    // 允许拖拽，缩放
+    customPlot->setInteractions(QCP::iRangeDrag | QCP::iRangeZoom | QCP::iSelectPlottables);
+    // 允许轴自适应大小
+    //customPlot->graph(0)->rescaleValueAxis(true);
+    //    customPlot->xAxis->rescale(true);
+    //    customPlot->yAxis->rescale(true);
+
+        // 设置刻度范围
+    //    QSharedPointer<QCPAxisTickerFixed> axisTickerFixed(new QCPAxisTickerFixed);
+    //    axisTickerFixed->setTickStep(256);
+    //    axisTickerFixed->setScaleStrategy(QCPAxisTickerFixed::ssNone);
+    //    customPlot->xAxis->setTicker(axisTickerFixed);
+    //    customPlot->xAxis->setRange(0, 2048);
+    //    customPlot->yAxis->setRange(0, 100);
+    //    customPlot->yAxis->ticker()->setTickCount(5);
+    //    customPlot->xAxis->ticker()->setTickCount(8);
+    // 设置刻度可见
+    customPlot->xAxis->setTicks(true);
+    customPlot->xAxis2->setTicks(false);
+    customPlot->yAxis->setTicks(true);
+    customPlot->yAxis2->setTicks(false);
+    // 设置轴线可见
+    customPlot->xAxis->setVisible(true);
+    customPlot->xAxis2->setVisible(true);
+    customPlot->yAxis->setVisible(true);
+    customPlot->yAxis2->setVisible(true);
+    //customPlot->axisRect()->setupFullAxesBox();//四边安装轴并显示
+    // 设置刻度标签可见
+    customPlot->xAxis->setTickLabels(true);
+    customPlot->xAxis2->setTickLabels(false);
+    customPlot->yAxis->setTickLabels(true);
+    customPlot->yAxis2->setTickLabels(false);
+    // 设置子刻度可见
+    customPlot->xAxis->setSubTicks(true);
+    customPlot->xAxis2->setSubTicks(false);
+    customPlot->yAxis->setSubTicks(true);
+    customPlot->yAxis2->setSubTicks(false);
+    //设置轴标签名称
+    customPlot->xAxis->setLabel(QObject::tr("道址"));
+    customPlot->yAxis->setLabel(QObject::tr("能量/keV"));
+    // 设置网格线颜色
+    customPlot->xAxis->grid()->setPen(QPen(QColor(180, 180, 180, 128), 1, Qt::PenStyle::DashLine));
+    customPlot->yAxis->grid()->setPen(QPen(QColor(180, 180, 180, 128), 1, Qt::PenStyle::DashLine));
+    customPlot->xAxis->grid()->setSubGridPen(QPen(QColor(50, 50, 50, 128), 1, Qt::DotLine));
+    customPlot->yAxis->grid()->setSubGridPen(QPen(QColor(50, 50, 50, 128), 1, Qt::DotLine));
+    customPlot->xAxis->grid()->setZeroLinePen(QPen(QColor(50, 50, 50, 100), 1, Qt::SolidLine));
+    customPlot->yAxis->grid()->setZeroLinePen(QPen(QColor(50, 50, 50, 100), 1, Qt::SolidLine));
+    // 设置网格线是否可见
+    customPlot->xAxis->grid()->setVisible(false);
+    customPlot->yAxis->grid()->setVisible(false);
+    // 设置子网格线是否可见
+    customPlot->xAxis->grid()->setSubGridVisible(false);
+    customPlot->yAxis->grid()->setSubGridVisible(false);
+
+    // 文本元素随窗口变动而变动
+    fixedTextTtem = new QCPItemText(customPlot);
+    fixedTextTtem->setColor(Qt::black);
+    fixedTextTtem->position->setType(QCPItemPosition::ptAbsolute);
+    fixedTextTtem->setPositionAlignment(Qt::AlignTop | Qt::AlignLeft);
+    fixedTextTtem->setTextAlignment(Qt::AlignLeft);
+    fixedTextTtem->setFont(QFont(font().family(), 12));
+    fixedTextTtem->setPadding(QMargins(8, 0, 0, 0));
+    fixedTextTtem->position->setCoords(20.0, 20.0);
+    fixedTextTtem->setText("");
+
+    // 添加散点图
+    QCPGraph *curGraphDot = customPlot->addGraph(customPlot->xAxis, customPlot->yAxis);
+    curGraphDot->setPen(QPen(Qt::black));
+    curGraphDot->setLineStyle(QCPGraph::lsNone);// 取消线性图，改为散点图
+    curGraphDot->setScatterStyle(QCPScatterStyle(QCPScatterStyle::ssDisc, 5));
+
+    QCPGraph *curGraphCurve = customPlot->addGraph(customPlot->xAxis, customPlot->yAxis);
+    curGraphCurve->setPen(QPen(Qt::blue, 2, Qt::PenStyle::SolidLine));
+    curGraphCurve->setLineStyle(QCPGraph::lsLine);
+
+    connect(customPlot, &QCustomPlot::afterLayout, this, [=](){
+        fixedTextTtem->position->setCoords(customPlot->axisRect()->topLeft().x(), customPlot->axisRect()->topLeft().y());
+    });
+    // 图形刷新
+    customPlot->replot();
 }
 
 void EnergyCalibration::initUI()
 {
-    ui->tableWidget->setColumnCount(6);
-    ui->tableWidget->setRowCount(DET_NUM);
-    ui->tableWidget->setHorizontalHeaderLabels(QStringList() << tr("探测器编号") << tr("k值") << tr("b值") << tr("sigma511") << tr("sigma846") << tr("sigma909"));
-    ui->tableWidget->verticalHeader()->setVisible(false);
-    ui->tableWidget->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
-    ui->tableWidget->setSelectionBehavior(QAbstractItemView::SelectItems);
-    ui->tableWidget->setEditTriggers(QAbstractItemView::DoubleClicked
-                                     | QAbstractItemView::SelectedClicked
-                                     | QAbstractItemView::EditKeyPressed);
-    ui->tableWidget->setItemDelegate(new EnergyValueDelegate(ui->tableWidget));
-
-    for (int row = 0; row < DET_NUM; ++row) {
-        auto *detectorItem = new QTableWidgetItem(QString::number(row + 1));
-        detectorItem->setFlags(detectorItem->flags() & ~Qt::ItemIsEditable);
-        detectorItem->setTextAlignment(Qt::AlignCenter);
-        ui->tableWidget->setItem(row, kDetectorColumn, detectorItem);
-        setNumericItem(ui->tableWidget, row, kKColumn, 1.0);
-        setNumericItem(ui->tableWidget, row, kBColumn, 0.0);
-        setNumericItem(ui->tableWidget, row, kSigma511Column, 5.0);
-        setNumericItem(ui->tableWidget, row, kSigma846Column, 6.0);
-        setNumericItem(ui->tableWidget, row, kSigma909Column, 7.0);
+    // 清空单选按钮列表
+    detRadioButtons.clear();
+    
+    // 创建按钮组（如果不存在）
+    if (!detButtonGroup)
+    {
+        detButtonGroup = new QButtonGroup(this);
+        detButtonGroup->setExclusive(true); // 确保互斥
     }
 
-    ui->plainTextEdit_log->setReadOnly(true);
-    ui->plainTextEdit_log->setPlainText(tr("能量刻度参数文件：%1").arg(energyCalibrationCsvPath()));
-}
-
-void EnergyCalibration::loadCalibration()
-{
-    QFile file(energyCalibrationCsvPath());
-    bool loadedFromCsv = false;
-    if (file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        QTextStream in(&file);
-        in.setCodec("UTF-8");
-        while (!in.atEnd()) {
-            const QString line = in.readLine().trimmed();
-            if (line.isEmpty())
-                continue;
-
-            CalibrationCsvRow row;
-            if (!parseCsvLine(line, &row))
-                continue;
-
-            setNumericItem(ui->tableWidget, row.detector - 1, kKColumn, row.k);
-            setNumericItem(ui->tableWidget, row.detector - 1, kBColumn, row.b);
-            setNumericItem(ui->tableWidget, row.detector - 1, kSigma511Column, row.sigma511);
-            setNumericItem(ui->tableWidget, row.detector - 1, kSigma846Column, row.sigma846);
-            setNumericItem(ui->tableWidget, row.detector - 1, kSigma909Column, row.sigma909);
-            loadedFromCsv = true;
-        }
-        file.close();
+    // 设置表格列数为1（用于放置单选按钮）
+    ui->tableWidget_det->setColumnCount(1);
+    // 设置列标题（可选）
+    ui->tableWidget_det->setHorizontalHeaderLabels(QStringList() << "选择");
+    // 设置列宽自适应
+    ui->tableWidget_det->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    
+    // 确保表格有DET_NUM行（UI文件中已定义，但为了安全起见检查一下）
+    if (ui->tableWidget_det->rowCount() < DET_NUM)
+    {
+        ui->tableWidget_det->setRowCount(DET_NUM);
     }
 
-    if (loadedFromCsv) {
-        ui->plainTextEdit_log->appendPlainText(tr("已读取能量刻度 CSV 文件。"));
-        return;
+    // 初始化tableWidget_det表格，DET_NUM行，每行设置一个单选按钮，用于选择是否使用该探测器进行能量刻度
+    for (int i=0; i<DET_NUM; ++i){
+        //单选按钮
+        QRadioButton *radioButton = new QRadioButton(ui->tableWidget_det);
+        radioButton->setChecked(false);
+        radioButton->setText(tr("谱仪#%0").arg(i+1));
+        // 将单选按钮添加到第i行，第0列
+        ui->tableWidget_det->setCellWidget(i, 0, radioButton);
+        
+        // 将单选按钮添加到按钮组，ID为i+1（通道号）
+        detButtonGroup->addButton(radioButton, i+1);
+        
+        // 存储单选按钮指针并连接信号槽
+        detRadioButtons.append(radioButton);
+        connect(radioButton, &QRadioButton::toggled, this, &EnergyCalibration::on_detRadioButton_toggled);
     }
 
+    // 读取上一次勾选的通道号，并勾选
     GlobalSettings settings(DEVICE_CONFIG_FILE);
     settings.beginGroup("EnCalibration");
-    bool loadedFromOldConfig = false;
-    for (int detector = 1; detector <= DET_NUM; ++detector) {
-        const QString detectorGroup = QString("Detector%1").arg(detector);
-        if (!settings.contains(QString("%1/c0").arg(detectorGroup))
-            || !settings.contains(QString("%1/c1").arg(detectorGroup))) {
-            continue;
-        }
 
-        settings.beginGroup(detectorGroup);
-        const int type = settings.value("type", 1).toInt();
-        if (type == 1) {
-            setNumericItem(ui->tableWidget, detector - 1, kKColumn, settings.value("c0", 1.0).toDouble());
-            setNumericItem(ui->tableWidget, detector - 1, kBColumn, settings.value("c1", 0.0).toDouble());
-            loadedFromOldConfig = true;
-        }
-        settings.endGroup();
-    }
-    settings.endGroup();
+    // 所有通道共用的多道道数
+    const int spectrumLength = settings.value("SpectrumLength", 8192).toInt();
+    const int lengthIndex = ui->comboBox_spectrumLength->findText(QString::number(spectrumLength));
+    ui->comboBox_spectrumLength->setCurrentIndex(
+        lengthIndex >= 0 ? lengthIndex : ui->comboBox_spectrumLength->findText(QStringLiteral("8192")));
+    ui->doubleSpinBox_x->setMaximum(ui->comboBox_spectrumLength->currentText().toDouble());
+    connect(ui->comboBox_spectrumLength, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int) {
+        ui->doubleSpinBox_x->setMaximum(ui->comboBox_spectrumLength->currentText().toDouble());
+    });
 
-    if (loadedFromOldConfig) {
-        ui->plainTextEdit_log->appendPlainText(tr("未找到 CSV 文件，已从旧 device_config.ini 读取已有线性参数。"));
-    } else {
-        ui->plainTextEdit_log->appendPlainText(tr("未找到已有能量刻度参数，默认使用 k=1、b=0。"));
+    //读取当前勾选的通道号，并获取刻度数据
+    int detChannel = settings.value("CheckedDetChannel", 0).toInt();
+    if (detChannel > 0 && detChannel <= detRadioButtons.size()){
+        detRadioButtons[detChannel-1]->setChecked(true);
+        // 选中表格行（可选，用于高亮显示）
+        ui->tableWidget_det->selectRow(detChannel-1);
     }
+
+    // 读取当前通道的拟合数据
+    if (detChannel > 0){
+        if (settings.contains(QString("EnCalibration/Detector%1/pointsX").arg(detChannel)) == true)
+        {
+            settings.beginGroup(QString("EnCalibration/Detector%1").arg(detChannel));
+            QVector<double> points_X = settings.GetDoubleVector("pointsX");
+            QVector<double> points_Y = settings.GetDoubleVector("pointsY");
+
+            // 拟合数据点表格赋值
+            int count = points_X.size();
+            for (int i=0; i<count; ++i){
+                int row = ui->tableWidget->rowCount();
+                ui->tableWidget->insertRow(row);
+                ui->tableWidget->setItem(row, 0, new QTableWidgetItem(QString("%1").arg(points_X[i])));
+                ui->tableWidget->setItem(row, 1, new QTableWidgetItem(QString("%1").arg(points_Y[i])));
+            }
+            
+            //拟合参数赋值
+            fitType = settings.value("type", 0).toInt();
+            if (fitType == 1){
+                //控件赋值
+                ui->btnFit1->setChecked(true);
+                ui->btnFit2->setChecked(false);
+                //拟合参数赋值
+                C[0] = settings.value("c0", 0.0).toDouble();
+                C[1] = settings.value("c1", 0.0).toDouble();
+
+                saveStatus = true;
+                datafit = true;
+                //绘制散点与拟合曲线
+                drawScatterAndFitCurve(points_X, points_Y, fitType);
+            } else if (fitType == 2){
+                //控件赋值
+                ui->btnFit1->setChecked(false);
+                ui->btnFit2->setChecked(true);
+                //拟合参数赋值
+                C[0] = settings.value("c0", 0.0).toDouble();
+                C[1] = settings.value("c1", 0.0).toDouble();
+                C[2] = settings.value("c2", 0.0).toDouble();
+
+                saveStatus = true;
+                datafit = true;
+                //绘制散点与拟合曲线
+                drawScatterAndFitCurve(points_X, points_Y, fitType);
+            }
+            settings.endGroup();
+            settings.endGroup();
+        }
+    }
+
+    // 将右侧拟合点表格的单元格输入限制为浮点数
+    ui->tableWidget->setItemDelegate(new DoubleItemDelegate(ui->tableWidget));
+    
 }
 
-bool EnergyCalibration::readRowValue(int row, int column, double *value, QString *errorText) const
+void EnergyCalibration::on_pushButton_add_clicked()
 {
-    const QTableWidgetItem *item = ui->tableWidget->item(row, column);
-    QString columnName;
-    if (column == kKColumn)
-        columnName = tr("k值");
-    else if (column == kBColumn)
-        columnName = tr("b值");
-    else if (column == kSigma511Column)
-        columnName = tr("sigma511");
-    else if (column == kSigma846Column)
-        columnName = tr("sigma846");
-    else if (column == kSigma909Column)
-        columnName = tr("sigma909");
-    else
-        columnName = tr("数值");
-    if (!item || item->text().trimmed().isEmpty()) {
-        *errorText = tr("第 %1 行 %2 不能为空。").arg(row + 1).arg(columnName);
-        return false;
-    }
-
-    bool ok = false;
-    const double parsedValue = item->text().trimmed().toDouble(&ok);
-    if (!ok || !std::isfinite(parsedValue)) {
-        *errorText = tr("第 %1 行 %2 不是合法数字。").arg(row + 1).arg(columnName);
-        return false;
-    }
-
-    if (column == kKColumn && qFuzzyIsNull(parsedValue)) {
-        *errorText = tr("第 %1 行 k值不能为 0。").arg(row + 1);
-        return false;
-    }
-
-    if ((column == kSigma511Column || column == kSigma846Column || column == kSigma909Column)
-        && parsedValue <= 0.0) {
-        *errorText = tr("第 %1 行 %2 必须大于 0。").arg(row + 1).arg(columnName);
-        return false;
-    }
-
-    *value = parsedValue;
-    return true;
+    // 添加
+    int row = ui->tableWidget->rowCount();
+    ui->tableWidget->insertRow(row);
+    ui->tableWidget->setItem(row, 0, new QTableWidgetItem(QString("%1").arg(ui->doubleSpinBox_x->value())));
+    ui->tableWidget->setItem(row, 1, new QTableWidgetItem(QString("%1").arg(ui->doubleSpinBox_y->value())));
 }
 
-bool EnergyCalibration::saveCalibration()
+void EnergyCalibration::on_pushButton_del_clicked()
 {
-    QDir dir;
-    const QFileInfo csvInfo(energyCalibrationCsvPath());
-    if (!dir.mkpath(csvInfo.absolutePath())) {
-        QMessageBox::warning(this, tr("提示"), tr("创建 CSV 目录失败：%1").arg(csvInfo.absolutePath()));
-        return false;
-    }
-
-    QVector<CalibrationCsvRow> values;
-    values.reserve(DET_NUM);
-    for (int row = 0; row < DET_NUM; ++row) {
-        CalibrationCsvRow value;
-        value.detector = row + 1;
-        QString errorText;
-        if (!readRowValue(row, kKColumn, &value.k, &errorText)
-            || !readRowValue(row, kBColumn, &value.b, &errorText)
-            || !readRowValue(row, kSigma511Column, &value.sigma511, &errorText)
-            || !readRowValue(row, kSigma846Column, &value.sigma846, &errorText)
-            || !readRowValue(row, kSigma909Column, &value.sigma909, &errorText)) {
-            QMessageBox::warning(this, tr("输入错误"), errorText);
-            int errorColumn = kKColumn;
-            if (errorText.contains(QStringLiteral("b")))
-                errorColumn = kBColumn;
-            else if (errorText.contains(QStringLiteral("sigma511")))
-                errorColumn = kSigma511Column;
-            else if (errorText.contains(QStringLiteral("sigma846")))
-                errorColumn = kSigma846Column;
-            else if (errorText.contains(QStringLiteral("sigma909")))
-                errorColumn = kSigma909Column;
-            ui->tableWidget->setCurrentCell(row, errorColumn);
-            return false;
-        }
-        values.push_back(value);
-    }
-
-    QFile file(energyCalibrationCsvPath());
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
-        QMessageBox::warning(this, tr("提示"), tr("保存 CSV 文件失败：%1").arg(file.errorString()));
-        return false;
-    }
-
-    QTextStream out(&file);
-    out.setCodec("UTF-8");
-    out << "Detector,K,B,Sigma511,Sigma846,Sigma909\n";
-    for (int row = 0; row < values.size(); ++row) {
-        out << values[row].detector << ','
-            << QString::number(values[row].k, 'g', 15) << ','
-            << QString::number(values[row].b, 'g', 15) << ','
-            << QString::number(values[row].sigma511, 'g', 15) << ','
-            << QString::number(values[row].sigma846, 'g', 15) << ','
-            << QString::number(values[row].sigma909, 'g', 15) << '\n';
-    }
-    file.close();
-    return true;
-}
-
-void EnergyCalibration::on_bt_SaveFit_clicked()
-{
-    if (!saveCalibration())
+    // 删除
+    QList<QTableWidgetItem*> selItems = ui->tableWidget->selectedItems();
+    if (selItems.count() <= 0)
         return;
 
-    ui->plainTextEdit_log->appendPlainText(tr("能量刻度参数已保存：%1").arg(energyCalibrationCsvPath()));
-    QMessageBox::information(this, tr("提示"), tr("能量刻度参数保存成功。"));
+    QTableWidgetItem* selItem = selItems[0];
+    int row = selItem->row();
+    ui->tableWidget->removeRow(row);
 }
+
+void EnergyCalibration::on_pushButton_fit_clicked()
+{
+    points.clear();
+    datafit = false;
+
+    for (int i= 0; i<ui->tableWidget->rowCount(); ++i){
+        double x, y;
+        x = ui->tableWidget->item(i, 0)->text().toDouble();
+        y = ui->tableWidget->item(i, 1)->text().toDouble();
+        points.push_back(QPointF(x, y));
+    }
+
+    // 检查数据点数量
+    if(points.size() < 2)
+    {
+        ui->plainTextEdit_log->appendPlainText("拟合失败：数据点不足，至少需要2个数据点才能进行拟合\n\n");
+        return;
+    }
+
+    if(ui->btnFit1->isChecked())
+    {
+        //第一个拟合函数
+        calculate(1);
+    }
+    else if(ui->btnFit2->isChecked())
+    {
+        //第二个拟合函数
+        if(points.size() < 3)
+        {
+            ui->plainTextEdit_log->appendPlainText("拟合失败：二次函数拟合至少需要3个数据点\n\n");
+            return;
+        }
+        calculate(2);
+    }
+}
+
+void EnergyCalibration::calculate(int no)
+{
+    //线性拟合 y=ax+b
+    if(no == 1)
+    {
+        double R2 = 0.0;
+        double fit_c[2] = {1.0, 1.0};
+        alglib::lsfitreport rep;
+        if(CurveFit::fit_linear(points, fit_c, &R2, &rep))
+        {
+            C[0] = fit_c[0];
+            C[1] = fit_c[1];
+            datafit = true;
+            saveStatus = false;
+            fitType = 1;
+
+            if (C[1] > 0)
+                fixedTextTtem->setText(QString("y = %1 * x + %2 \nR² = %3").arg(C[0]).arg(C[1]).arg(R2));
+            else
+                fixedTextTtem->setText(QString("y = %1 * x - %2 \nR² = %3").arg(C[0]).arg(qAbs(C[1])).arg(R2));
+            
+            // 更新plainTextEdit_log
+            QString logText = QString("========== 拟合信息 ==========\n");
+            logText += QString("拟合类型: 线性拟合 (y = ax + b)\n");
+            logText += QString("拟合参数:\n");
+            logText += QString("  a = %1\n").arg(C[0], 0, 'g', 10);
+            logText += QString("  b = %1\n").arg(C[1], 0, 'g', 10);
+            logText += QString("决定系数 R² = %1\n").arg(R2, 0, 'g', 10);
+            logText += QString("迭代次数: %1\n").arg(rep.iterationscount);
+            // logText += QString("终止类型: %1\n").arg(rep.terminationtype);
+            logText += QString("数据点数: %1\n").arg(points.size());
+            logText += QString("=============================\n\n");
+            ui->plainTextEdit_log->setPlainText(logText);
+        }
+        else
+        {
+            ui->plainTextEdit_log->setPlainText("拟合失败：线性拟合计算错误\n\n");
+        }
+    }
+    else if(no == 2) //二次函数拟合 y=ax^2+bx+c
+    {
+        double R2 = 0.0;
+        double fit_c[3] = {1.0, 1.0, 1.0};
+        alglib::lsfitreport rep;
+        if(CurveFit::fit_poly_2terms(points, fit_c, &R2, &rep))
+        {
+            C[0] = fit_c[0];
+            C[1] = fit_c[1];
+            C[2] = fit_c[2];
+            datafit = true;
+            saveStatus = false;
+            fitType = 2;
+
+            fixedTextTtem->setText(QString("y = %1 * x² + %2 * x + %3\nR² = %4").arg(C[0]).arg(C[1]).arg(C[2]).arg(R2));
+            
+            // 更新plainTextEdit_log
+            QString logText = QString("========== 拟合信息 ==========\n");
+            logText += QString("拟合类型: 二次函数拟合 (y = ax² + bx + c)\n");
+            logText += QString("拟合参数:\n");
+            logText += QString("  a = %1\n").arg(C[0], 0, 'g', 10);
+            logText += QString("  b = %1\n").arg(C[1], 0, 'g', 10);
+            logText += QString("  c = %1\n").arg(C[2], 0, 'g', 10);
+            logText += QString("决定系数 R² = %1\n").arg(R2, 0, 'g', 10);
+            logText += QString("迭代次数: %1\n").arg(rep.iterationscount);
+            // logText += QString("终止类型: %1\n").arg(rep.terminationtype);
+            logText += QString("数据点数: %1\n").arg(points.size());
+            logText += QString("=============================\n\n");
+            ui->plainTextEdit_log->setPlainText(logText);
+        }
+        else
+        {
+            ui->plainTextEdit_log->setPlainText("拟合失败：二次函数拟合计算错误\n\n");
+        }
+    }
+
+    //绘制待拟合点
+    {
+        QVector<double> keys, values;        
+        for (int i = 0; i < points.size(); i++)
+        {
+            double x = points[i].x(), y = points[i].y();
+            keys << x;
+            values << y;
+        }
+
+        customPlot->graph(0)->setData(keys, values);
+    }
+
+    //绘制拟合曲线
+    double maxx = ui->comboBox_spectrumLength->currentText().toDouble();
+    if (maxx <= 0.0)
+        maxx = 8192.0;
+    if(datafit)
+    {
+        QVector<double> keys, values;
+        
+        double nx, ny;
+        for (nx = 0.0; nx <= maxx; nx += 0.1)
+        {
+            if(ui->btnFit1->isChecked())
+            {
+                alglib::real_1d_array c;
+                c.setcontent(2, C);
+                alglib::real_1d_array xData;
+                xData.setlength(1);
+                xData[0] = nx;
+                CurveFit::function_linear(c, xData, ny, NULL);
+            }
+            else
+            {
+                //计算y值
+                alglib::real_1d_array c;
+                c.setcontent(3, C);
+                alglib::real_1d_array xData;
+                xData.setlength(1);
+                xData[0] = nx;
+                CurveFit::function_poly_2terms(c, xData, ny, NULL);
+            }
+
+            keys << nx;
+            values << ny;
+        }
+
+        customPlot->graph(1)->setData(keys, values);
+    }
+
+    customPlot->xAxis->rescale(true);
+    customPlot->yAxis->rescale(true);
+    
+    //X轴和Y轴两端各保留5%的空间
+    double SPANX = (customPlot->xAxis->range().upper - customPlot->xAxis->range().lower) * 0.05;
+    double SPANY = (customPlot->yAxis->range().upper - customPlot->yAxis->range().lower) * 0.05;
+    customPlot->xAxis->setRange(customPlot->xAxis->range().lower - SPANX, customPlot->xAxis->range().upper + SPANX);
+    customPlot->yAxis->setRange(customPlot->yAxis->range().lower - SPANY, customPlot->yAxis->range().upper + SPANY);
+    customPlot->replot();
+}
+
+void EnergyCalibration::on_btn_clearTable_clicked()
+{
+    ui->tableWidget->clearContents();
+    ui->tableWidget->setRowCount(0);
+}
+
+//绘制散点和拟合曲线
+void EnergyCalibration::drawScatterAndFitCurve(QVector<double> points_X, QVector<double> points_Y, int fitType)
+{
+    // Implementation of drawing scatter and fit curve
+    points.clear();
+    int count = points_X.size();
+    for (int i = 0; i < count; ++i) {
+        points.push_back(QPointF(points_X[i], points_Y[i]));
+    }
+    calculate(fitType);
+}
+
+//保存参数
+void EnergyCalibration::on_bt_SaveFit_clicked()
+{
+    if(saveStatus)
+    {
+        QMessageBox::information(this, "提示", "已保存过拟合结果，请勿重复保存");
+        return;
+    }
+    
+    // 查找当前勾选的探测器通道号
+    int detChannel = 0;
+    for (int i = 0; i < detRadioButtons.size(); ++i)
+    {
+        if (detRadioButtons[i]->isChecked())
+        {
+            detChannel = i + 1;
+            break;
+        }
+    }
+    
+    if (detChannel == 0)
+    {
+        QMessageBox::warning(this, "提示", "请先选择一个探测器通道");
+        return;
+    }
+    
+    // 检查是否已经拟合
+    if (!datafit)
+    {
+        QMessageBox::warning(this, "提示", "请先进行拟合操作");
+        return;
+    }
+    
+    saveStatus = true;
+    GlobalSettings settings(DEVICE_CONFIG_FILE);
+
+    // 先清空该通道对应的子组
+    settings.beginGroup("EnCalibration");
+    settings.setValue("SpectrumLength", ui->comboBox_spectrumLength->currentText().toInt());
+    QString channelGroupName = QString("Detector%1").arg(detChannel);
+    settings.beginGroup(channelGroupName);
+    settings.remove("");  // 删除该子组内的所有键
+    settings.endGroup();  // 退出子组，回到EnCalibration组
+    
+    // 重新进入该通道的子组并保存数据
+    settings.beginGroup(channelGroupName);
+    
+    //保存刻度的数据点
+    QVector<double> points_X, points_Y;
+    for (int i = 0; i < points.size(); i++)
+    {
+        double x = points[i].x(), y = points[i].y();
+        points_X.push_back(x);
+        points_Y.push_back(y);
+    }
+    
+    settings.setDoubleVector("pointsX", points_X);
+    settings.setDoubleVector("pointsY", points_Y);
+    
+    //保存拟合参数
+    if(fitType == 1)
+    {
+        settings.setValue("type", 1);
+        settings.setValue("c0", C[0]);
+        settings.setValue("c1", C[1]);
+    }
+    else
+    {
+        settings.setValue("type", 2);
+        settings.setValue("c0", C[0]);
+        settings.setValue("c1", C[1]);
+        settings.setValue("c2", C[2]);
+    }
+    
+    settings.endGroup();  // 退出子组，回到EnCalibration组
+    
+    // 更新当前选中的通道号
+    settings.setValue("CheckedDetChannel", detChannel);
+    
+    settings.endGroup();  // 退出EnCalibration组
+
+    // 提示保存成功
+    QMessageBox::information(this, "提示", QString("能量刻度参数已保存到谱仪#%1").arg(detChannel));
+}
+
+void EnergyCalibration::on_detRadioButton_toggled(bool checked)
+{
+    // 如果当前单选按钮被选中
+    if (checked)
+    {
+        // 获取发送信号的单选按钮
+        QRadioButton *senderRadioButton = qobject_cast<QRadioButton*>(sender());
+        if (senderRadioButton)
+        {
+            // 获取选中的通道号
+            int detChannel = detButtonGroup->id(senderRadioButton);
+            if (detChannel > 0)
+            {
+                // 选中表格行（可选，用于高亮显示）
+                ui->tableWidget_det->selectRow(detChannel - 1);
+                
+                // 加载该通道的拟合数据（如果存在）
+                GlobalSettings settings(DEVICE_CONFIG_FILE);
+                settings.beginGroup("EnCalibration");
+                
+                if (settings.contains(QString("Detector%1/pointsX").arg(detChannel)))
+                {
+                    settings.beginGroup(QString("Detector%1").arg(detChannel));
+                    QVector<double> points_X = settings.GetDoubleVector("pointsX");
+                    QVector<double> points_Y = settings.GetDoubleVector("pointsY");
+                    
+                    // 清空当前表格
+                    ui->tableWidget->clearContents();
+                    ui->tableWidget->setRowCount(0);
+                    
+                    // 填充数据点
+                    int count = points_X.size();
+                    for (int i=0; i<count; ++i){
+                        int row = ui->tableWidget->rowCount();
+                        ui->tableWidget->insertRow(row);
+                        ui->tableWidget->setItem(row, 0, new QTableWidgetItem(QString("%1").arg(points_X[i])));
+                        ui->tableWidget->setItem(row, 1, new QTableWidgetItem(QString("%1").arg(points_Y[i])));
+                    }
+                    
+                    // 读取拟合参数并绘制
+                    fitType = settings.value("type", 0).toInt();
+                    if (fitType == 1){
+                        ui->btnFit1->setChecked(true);
+                        ui->btnFit2->setChecked(false);
+                        C[0] = settings.value("c0", 0.0).toDouble();
+                        C[1] = settings.value("c1", 0.0).toDouble();
+                        saveStatus = true;
+                        datafit = true;
+                        drawScatterAndFitCurve(points_X, points_Y, fitType);
+                    } else if (fitType == 2){
+                        ui->btnFit1->setChecked(false);
+                        ui->btnFit2->setChecked(true);
+                        C[0] = settings.value("c0", 0.0).toDouble();
+                        C[1] = settings.value("c1", 0.0).toDouble();
+                        C[2] = settings.value("c2", 0.0).toDouble();
+                        saveStatus = true;
+                        datafit = true;
+                        drawScatterAndFitCurve(points_X, points_Y, fitType);
+                    }
+                    
+                    settings.endGroup();
+                }
+                else
+                {
+                    // 如果没有保存的数据，清空表格和图形
+                    ui->tableWidget->clearContents();
+                    ui->tableWidget->setRowCount(0);
+                    saveStatus = false;
+                    datafit = false;
+
+                    // 清空图形数据
+                    customPlot->graph(0)->data()->clear();
+                    customPlot->graph(1)->data()->clear();
+                    // 清空图例
+                    fixedTextTtem->setText("");
+                    customPlot->replot();
+
+                    // 清空日志
+                    ui->plainTextEdit_log->clear();
+                }
+                
+                settings.endGroup();
+            }
+        }
+    }
+}
+
