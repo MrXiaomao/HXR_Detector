@@ -18,6 +18,7 @@
 #include <QLineEdit>
 #include <QDoubleValidator>
 #include <QComboBox>
+#include <cmath>
 
 // 表格浮点数输入委托：限制单元格仅允许输入浮点数
 class DoubleItemDelegate : public QStyledItemDelegate
@@ -558,17 +559,32 @@ void EnergyCalibration::on_bt_SaveFit_clicked()
     saveStatus = true;
     GlobalSettings settings(DEVICE_CONFIG_FILE);
 
-    // 先清空该通道对应的子组
     settings.beginGroup("EnCalibration");
     settings.setValue("SpectrumLength", ui->comboBox_spectrumLength->currentText().toInt());
     QString channelGroupName = QString("Detector%1").arg(detChannel);
-    settings.beginGroup(channelGroupName);
-    settings.remove("");  // 删除该子组内的所有键
-    settings.endGroup();  // 退出子组，回到EnCalibration组
-    
+
+    // 保留该通道已有的 sigma（中子产额导出写入），避免界面保存时被清空
+    double keepSigma[3] = {0.0, 0.0, 0.0};
+    bool hasKeepSigma = false;
+    {
+        settings.beginGroup(channelGroupName);
+        const double sigma511 = settings.value("sigma511", 0.0).toDouble();
+        const double sigma846 = settings.value("sigma846", 0.0).toDouble();
+        const double sigma909 = settings.value("sigma909", 0.0).toDouble();
+        if (std::isfinite(sigma511) && std::isfinite(sigma846) && std::isfinite(sigma909)
+            && sigma511 > 0.0 && sigma846 > 0.0 && sigma909 > 0.0) {
+            keepSigma[0] = sigma511;
+            keepSigma[1] = sigma846;
+            keepSigma[2] = sigma909;
+            hasKeepSigma = true;
+        }
+        settings.remove("");  // 删除该子组内的所有键
+        settings.endGroup();  // 退出子组，回到EnCalibration组
+    }
+
     // 重新进入该通道的子组并保存数据
     settings.beginGroup(channelGroupName);
-    
+
     //保存刻度的数据点
     QVector<double> points_X, points_Y;
     for (int i = 0; i < points.size(); i++)
@@ -577,10 +593,10 @@ void EnergyCalibration::on_bt_SaveFit_clicked()
         points_X.push_back(x);
         points_Y.push_back(y);
     }
-    
+
     settings.setDoubleVector("pointsX", points_X);
     settings.setDoubleVector("pointsY", points_Y);
-    
+
     //保存拟合参数
     if(fitType == 1)
     {
@@ -595,12 +611,18 @@ void EnergyCalibration::on_bt_SaveFit_clicked()
         settings.setValue("c1", C[1]);
         settings.setValue("c2", C[2]);
     }
-    
+
+    if (hasKeepSigma) {
+        settings.setValue("sigma511", keepSigma[0]);
+        settings.setValue("sigma846", keepSigma[1]);
+        settings.setValue("sigma909", keepSigma[2]);
+    }
+
     settings.endGroup();  // 退出子组，回到EnCalibration组
-    
+
     // 更新当前选中的通道号
     settings.setValue("CheckedDetChannel", detChannel);
-    
+
     settings.endGroup();  // 退出EnCalibration组
 
     // 提示保存成功

@@ -8,6 +8,7 @@
 #include "neutronyieldstatisticswindow.h"
 #include "ui_neutronyieldstatisticswindow.h"
 #include "globalsettings.h"
+#include "energycalibrationstore.h"
 
 #include <QButtonGroup>
 #include <QCoreApplication>
@@ -37,6 +38,8 @@
 #include <QListWidget>
 #include <QPushButton>
 #include <QSet>
+#include <QTableWidget>
+#include <QTableWidgetItem>
 #include <QTextStream>
 #include <QVBoxLayout>
 #include <QPainter>
@@ -62,50 +65,126 @@ QSet<int> allEnergyCalibrationDetectors()
     return detectors;
 }
 
-struct EnergyCalibrationCsvRow {
-    double k = 1.0;
-    double b = 0.0;
-    double sigma511 = 5.0;
-    double sigma846 = 6.0;
-    double sigma909 = 7.0;
+struct EnergyCalCompareRow {
+    int detectorId = 0;
+    bool hasOld = false;
+    bool hasOldSigma = false;
+    double oldK = 0.0;
+    double oldB = 0.0;
+    double oldSigma[3] = {5.0, 6.0, 7.0};
+    bool hasNew = false;
+    double newK = 0.0;
+    double newB = 0.0;
+    double newSigma[3] = {5.0, 6.0, 7.0};
 };
 
-// 弹出谱仪勾选框，供导入/导出能量刻度时选择目标谱仪。
+QString formatCalValue(bool ok, double value)
+{
+    return ok ? QString::number(value, 'g', 6) : QStringLiteral("-");
+}
+
+// 弹出谱仪对比表，供导出能量刻度时选择目标谱仪（展示原有与最新 k/b/sigma）。
 QSet<int> selectEnergyCalibrationDetectors(QWidget *parent,
                                            const QString &title,
-                                           const QString &labelText)
+                                           const QString &labelText,
+                                           const QVector<EnergyCalCompareRow> &rows)
 {
     QDialog dialog(parent);
     dialog.setWindowTitle(title);
-    dialog.resize(320, 520);
+    dialog.resize(1100, 560);
 
     auto *layout = new QVBoxLayout(&dialog);
     auto *label = new QLabel(labelText, &dialog);
     layout->addWidget(label);
 
-    auto *listWidget = new QListWidget(&dialog);
-    for (int detId = 1; detId <= DET_NUM; ++detId) {
-        auto *item = new QListWidgetItem(QObject::tr("谱仪 #%1").arg(detId), listWidget);
-        item->setData(Qt::UserRole, detId);
-        item->setFlags(item->flags() | Qt::ItemIsUserCheckable);
-        item->setCheckState(Qt::Checked);
+    enum Col {
+        ColCheck = 0,
+        ColDet,
+        ColOldK,
+        ColOldB,
+        ColOldS511,
+        ColOldS846,
+        ColOldS909,
+        ColNewK,
+        ColNewB,
+        ColNewS511,
+        ColNewS846,
+        ColNewS909,
+        ColCount
+    };
+
+    auto *table = new QTableWidget(rows.size(), ColCount, &dialog);
+    table->setHorizontalHeaderLabels({
+        QObject::tr("导出"),
+        QObject::tr("谱仪"),
+        QObject::tr("原K"),
+        QObject::tr("原B"),
+        QObject::tr("原σ511"),
+        QObject::tr("原σ846"),
+        QObject::tr("原σ909"),
+        QObject::tr("新K"),
+        QObject::tr("新B"),
+        QObject::tr("新σ511"),
+        QObject::tr("新σ846"),
+        QObject::tr("新σ909")
+    });
+    table->verticalHeader()->setVisible(false);
+    table->setSelectionBehavior(QAbstractItemView::SelectRows);
+    table->setSelectionMode(QAbstractItemView::SingleSelection);
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    table->horizontalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+    table->horizontalHeader()->setStretchLastSection(true);
+
+    for (int row = 0; row < rows.size(); ++row) {
+        const EnergyCalCompareRow &data = rows.at(row);
+
+        auto *checkItem = new QTableWidgetItem;
+        checkItem->setFlags(Qt::ItemIsUserCheckable | Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+        checkItem->setData(Qt::UserRole, data.detectorId);
+        checkItem->setCheckState(data.hasNew ? Qt::Checked : Qt::Unchecked);
+        if (!data.hasNew)
+            checkItem->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+        table->setItem(row, ColCheck, checkItem);
+
+        auto makeTextItem = [](const QString &text) {
+            auto *item = new QTableWidgetItem(text);
+            item->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+            item->setTextAlignment(Qt::AlignCenter);
+            return item;
+        };
+
+        table->setItem(row, ColDet, makeTextItem(QObject::tr("#%1").arg(data.detectorId)));
+        table->setItem(row, ColOldK, makeTextItem(formatCalValue(data.hasOld, data.oldK)));
+        table->setItem(row, ColOldB, makeTextItem(formatCalValue(data.hasOld, data.oldB)));
+        table->setItem(row, ColOldS511, makeTextItem(formatCalValue(data.hasOldSigma, data.oldSigma[0])));
+        table->setItem(row, ColOldS846, makeTextItem(formatCalValue(data.hasOldSigma, data.oldSigma[1])));
+        table->setItem(row, ColOldS909, makeTextItem(formatCalValue(data.hasOldSigma, data.oldSigma[2])));
+        table->setItem(row, ColNewK, makeTextItem(formatCalValue(data.hasNew, data.newK)));
+        table->setItem(row, ColNewB, makeTextItem(formatCalValue(data.hasNew, data.newB)));
+        table->setItem(row, ColNewS511, makeTextItem(formatCalValue(data.hasNew, data.newSigma[0])));
+        table->setItem(row, ColNewS846, makeTextItem(formatCalValue(data.hasNew, data.newSigma[1])));
+        table->setItem(row, ColNewS909, makeTextItem(formatCalValue(data.hasNew, data.newSigma[2])));
     }
-    layout->addWidget(listWidget);
+    layout->addWidget(table);
 
     auto *selectLayout = new QHBoxLayout;
-    auto *selectAllButton = new QPushButton(QObject::tr("全选"), &dialog);
+    auto *selectAllButton = new QPushButton(QObject::tr("全选可导出"), &dialog);
     auto *clearButton = new QPushButton(QObject::tr("清空"), &dialog);
     selectLayout->addWidget(selectAllButton);
     selectLayout->addWidget(clearButton);
     selectLayout->addStretch();
     layout->addLayout(selectLayout);
 
-    auto setAllChecked = [listWidget](Qt::CheckState state) {
-        for (int i = 0; i < listWidget->count(); ++i)
-            listWidget->item(i)->setCheckState(state);
+    auto setCheckableRows = [table, &rows](Qt::CheckState state) {
+        for (int row = 0; row < table->rowCount(); ++row) {
+            if (row >= rows.size() || !rows.at(row).hasNew)
+                continue;
+            if (QTableWidgetItem *item = table->item(row, 0))
+                item->setCheckState(state);
+        }
     };
-    QObject::connect(selectAllButton, &QPushButton::clicked, &dialog, [=]() { setAllChecked(Qt::Checked); });
-    QObject::connect(clearButton, &QPushButton::clicked, &dialog, [=]() { setAllChecked(Qt::Unchecked); });
+    QObject::connect(selectAllButton, &QPushButton::clicked, &dialog, [=]() { setCheckableRows(Qt::Checked); });
+    QObject::connect(clearButton, &QPushButton::clicked, &dialog, [=]() { setCheckableRows(Qt::Unchecked); });
 
     auto *buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
     QObject::connect(buttonBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
@@ -116,10 +195,11 @@ QSet<int> selectEnergyCalibrationDetectors(QWidget *parent,
     if (dialog.exec() != QDialog::Accepted)
         return selectedDetectors;
 
-    for (int i = 0; i < listWidget->count(); ++i) {
-        const QListWidgetItem *item = listWidget->item(i);
-        if (item->checkState() == Qt::Checked)
-            selectedDetectors.insert(item->data(Qt::UserRole).toInt());
+    for (int row = 0; row < table->rowCount(); ++row) {
+        const QTableWidgetItem *item = table->item(row, ColCheck);
+        if (!item || item->checkState() != Qt::Checked)
+            continue;
+        selectedDetectors.insert(item->data(Qt::UserRole).toInt());
     }
     return selectedDetectors;
 }
@@ -173,112 +253,6 @@ void ensureNeutronYieldConfigExists()
     settings.sync();
 }
 
-// 统一生成能量刻度 CSV 的运行时路径。
-QString energyCalibrationCsvFilePath()
-{
-    return QDir(QCoreApplication::applicationDirPath()).filePath(ENERGY_CALIBRATION_CSV_FILE);
-}
-
-// 写 CSV 时保留足够精度，避免 K/B 多次读写后明显漂移。
-QString formatCalibrationValue(double value)
-{
-    return QString::number(value, 'g', 17);
-}
-
-// 将指定谱仪的最新 K/B 和 sigma 写回 CSV，保留其它谱仪已有记录。
-bool writeEnergyCalibrationCsvValue(int detectorId, double k, double b, const double sigma[3], QString *errorText)
-{
-    if (detectorId < 1 || detectorId > DET_NUM || !std::isfinite(k) || !std::isfinite(b) || qFuzzyIsNull(k)
-        || !sigma || !std::isfinite(sigma[0]) || !std::isfinite(sigma[1]) || !std::isfinite(sigma[2])
-        || sigma[0] <= 0.0 || sigma[1] <= 0.0 || sigma[2] <= 0.0) {
-        if (errorText)
-            *errorText = QObject::tr("能量刻度参数无效");
-        return false;
-    }
-
-    QMap<int, EnergyCalibrationCsvRow> calibrationRows;
-    const QString csvPath = energyCalibrationCsvFilePath();
-    QFile inFile(csvPath);
-    if (inFile.exists() && inFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        QTextStream in(&inFile);
-        in.setCodec("UTF-8");
-        while (!in.atEnd()) {
-            const QString line = in.readLine().trimmed();
-            if (line.isEmpty())
-                continue;
-
-            const QStringList parts = line.split(',');
-            if (parts.size() < 3)
-                continue;
-
-            bool okDetector = false;
-            const int rowDetectorId = parts.at(0).trimmed().toInt(&okDetector);
-            if (!okDetector || rowDetectorId < 1 || rowDetectorId > DET_NUM)
-                continue;
-
-            bool okK = false;
-            bool okB = false;
-            const double rowK = parts.at(1).trimmed().toDouble(&okK);
-            const double rowB = parts.at(2).trimmed().toDouble(&okB);
-            if (okK && okB && !qFuzzyIsNull(rowK)) {
-                EnergyCalibrationCsvRow row;
-                row.k = rowK;
-                row.b = rowB;
-                if (parts.size() >= 6) {
-                    bool okSigma511 = false;
-                    bool okSigma846 = false;
-                    bool okSigma909 = false;
-                    const double sigma511 = parts.at(3).trimmed().toDouble(&okSigma511);
-                    const double sigma846 = parts.at(4).trimmed().toDouble(&okSigma846);
-                    const double sigma909 = parts.at(5).trimmed().toDouble(&okSigma909);
-                    if (okSigma511 && okSigma846 && okSigma909
-                        && sigma511 > 0.0 && sigma846 > 0.0 && sigma909 > 0.0) {
-                        row.sigma511 = sigma511;
-                        row.sigma846 = sigma846;
-                        row.sigma909 = sigma909;
-                    }
-                }
-                calibrationRows.insert(rowDetectorId, row);
-            }
-        }
-        inFile.close();
-    } else if (inFile.exists()) {
-        if (errorText)
-            *errorText = QObject::tr("打开能量刻度 CSV 文件失败：%1").arg(csvPath);
-        return false;
-    }
-
-    calibrationRows.insert(detectorId, EnergyCalibrationCsvRow{k, b, sigma[0], sigma[1], sigma[2]});
-
-    QDir dir(QFileInfo(csvPath).absolutePath());
-    if (!dir.exists() && !dir.mkpath(QStringLiteral("."))) {
-        if (errorText)
-            *errorText = QObject::tr("创建能量刻度目录失败：%1").arg(dir.absolutePath());
-        return false;
-    }
-
-    QFile outFile(csvPath);
-    if (!outFile.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
-        if (errorText)
-            *errorText = QObject::tr("写入能量刻度 CSV 文件失败：%1").arg(csvPath);
-        return false;
-    }
-
-    QTextStream out(&outFile);
-    out.setCodec("UTF-8");
-    out << "Detector,K,B,Sigma511,Sigma846,Sigma909\n";
-    for (auto it = calibrationRows.constBegin(); it != calibrationRows.constEnd(); ++it) {
-        out << it.key() << ","
-            << formatCalibrationValue(it.value().k) << ","
-            << formatCalibrationValue(it.value().b) << ","
-            << formatCalibrationValue(it.value().sigma511) << ","
-            << formatCalibrationValue(it.value().sigma846) << ","
-            << formatCalibrationValue(it.value().sigma909) << "\n";
-    }
-    outFile.close();
-    return true;
-}
-
 // 将 E = kx + b 反算为 511/909 keV 初始道址并同步到内存表。
 bool updateInitialCalibrationFromEnergyScale(int detectorId, double k, double b)
 {
@@ -288,122 +262,6 @@ bool updateInitialCalibrationFromEnergyScale(int detectorId, double k, double b)
     const double ch511 = (511.0 - b) / k;
     const double ch909 = (909.0 - b) / k;
     return ParseData::setInitialCalibrationChannels(detectorId, ch511, ch909);
-}
-
-// 从 CSV 导入初始能量刻度；导入前先恢复默认表，未命中谱仪继续使用默认道址。
-bool importInitialEnergyCalibrationFromCsv(const QSet<int> &selectedDetectors,
-                                           int *importedCountOut,
-                                           int *skippedCountOut,
-                                           QStringList *messagesOut)
-{
-    if (importedCountOut)
-        *importedCountOut = 0;
-    if (skippedCountOut)
-        *skippedCountOut = 0;
-
-    if (selectedDetectors.isEmpty())
-        return false;
-
-    ParseData::resetInitialCalibrationChannels();
-    ParseData::resetInitialSigmas();
-
-    const QString csvPath = energyCalibrationCsvFilePath();
-    QFile file(csvPath);
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
-        if (messagesOut)
-            messagesOut->append(QObject::tr("打开能量刻度 CSV 文件失败：%1").arg(csvPath));
-        return false;
-    }
-
-    int importedCount = 0;
-    int skippedCount = 0;
-    QSet<int> importedDetectors;
-    QTextStream in(&file);
-    in.setCodec("UTF-8");
-    while (!in.atEnd()) {
-        const QString line = in.readLine().trimmed();
-        if (line.isEmpty())
-            continue;
-
-        const QStringList parts = line.split(',');
-        if (parts.size() < 3) {
-            ++skippedCount;
-            continue;
-        }
-
-        bool okDetector = false;
-        const int detectorId = parts.at(0).trimmed().toInt(&okDetector);
-        if (!okDetector)
-            continue;
-        if (!selectedDetectors.contains(detectorId))
-            continue;
-
-        bool okK = false;
-        bool okB = false;
-        const double k = parts.at(1).trimmed().toDouble(&okK);
-        const double b = parts.at(2).trimmed().toDouble(&okB);
-        if (!okK || !okB || qFuzzyIsNull(k)) {
-            ++skippedCount;
-            if (messagesOut)
-                messagesOut->append(QObject::tr("谱仪%1能量刻度参数无效，继续使用默认初始道址").arg(detectorId));
-            continue;
-        }
-
-        const double ch511 = (511.0 - b) / k;
-        const double ch909 = (909.0 - b) / k;
-        if (!std::isfinite(ch511) || !std::isfinite(ch909)
-            || !ParseData::setInitialCalibrationChannels(detectorId, ch511, ch909)) {
-            ++skippedCount;
-            if (messagesOut)
-                messagesOut->append(QObject::tr("谱仪%1能量刻度换算失败，继续使用默认初始道址").arg(detectorId));
-            continue;
-        }
-
-        double sigma[3] = {5.0, 6.0, 7.0};
-        if (parts.size() >= 6) {
-            bool okSigma511 = false;
-            bool okSigma846 = false;
-            bool okSigma909 = false;
-            const double sigma511 = parts.at(3).trimmed().toDouble(&okSigma511);
-            const double sigma846 = parts.at(4).trimmed().toDouble(&okSigma846);
-            const double sigma909 = parts.at(5).trimmed().toDouble(&okSigma909);
-            if (okSigma511 && okSigma846 && okSigma909
-                && sigma511 > 0.0 && sigma846 > 0.0 && sigma909 > 0.0) {
-                sigma[0] = sigma511;
-                sigma[1] = sigma846;
-                sigma[2] = sigma909;
-            }
-        }
-        if (!ParseData::setInitialSigmas(detectorId, sigma[0], sigma[1], sigma[2])) {
-            ++skippedCount;
-            if (messagesOut)
-                messagesOut->append(QObject::tr("谱仪%1 sigma 参数无效，继续使用默认 sigma").arg(detectorId));
-            continue;
-        }
-
-        ++importedCount;
-        importedDetectors.insert(detectorId);
-        if (messagesOut) {
-            messagesOut->append(QObject::tr("谱仪%1导入初始能量刻度：511keV=%2道，909keV=%3道")
-                                    .arg(detectorId)
-                                    .arg(ch511, 0, 'f', 3)
-                                    .arg(ch909, 0, 'f', 3));
-        }
-    }
-    file.close();
-
-    for (int detectorId : selectedDetectors) {
-        if (!importedDetectors.contains(detectorId) && messagesOut) {
-            messagesOut->append(QObject::tr("谱仪%1未在 CSV 中读取到有效能量刻度，继续使用默认初始道址")
-                                    .arg(detectorId));
-        }
-    }
-
-    if (importedCountOut)
-        *importedCountOut = importedCount;
-    if (skippedCountOut)
-        *skippedCountOut = skippedCount;
-    return importedCount > 0;
 }
 
 const QList<QColor> &spectrumSlotColors()
@@ -607,19 +465,19 @@ NeutronYieldStatisticsWindow::NeutronYieldStatisticsWindow(bool isDarkTheme, QWi
     // 使用函数指针语法连接信号和槽，确保连接成功
     connect(this, &NeutronYieldStatisticsWindow::sigSuccess, this, &NeutronYieldStatisticsWindow::slotSuccess, Qt::QueuedConnection);
 
-    // 界面打开后自动导入 CSV 初始刻度，避免用户每次手动导入。
+    // 界面打开后自动从 device_config.ini 导入初始刻度，避免用户每次手动导入。
     QTimer::singleShot(0, this, [this]() {
         int importedCount = 0;
         int skippedCount = 0;
-        if (importInitialEnergyCalibrationFromCsv(allEnergyCalibrationDetectors(),
-                                                  &importedCount,
-                                                  &skippedCount,
-                                                  nullptr)) {
-            emit reporWriteLog(tr("已自动导入 CSV 初始能量刻度：%1 个谱仪已更新，%2 行跳过。")
+        if (EnergyCalibrationStore::importInitialFromDeviceConfig(allEnergyCalibrationDetectors(),
+                                                                  &importedCount,
+                                                                  &skippedCount,
+                                                                  nullptr)) {
+            emit reporWriteLog(tr("已自动导入 device_config.ini 初始能量刻度：%1 个谱仪已更新，%2 个跳过。")
                                    .arg(importedCount)
                                    .arg(skippedCount));
         } else {
-            emit reporWriteLog(tr("未自动导入 CSV 初始能量刻度，继续使用程序默认初始道址。"), QtWarningMsg);
+            emit reporWriteLog(tr("未自动导入 device_config.ini 初始能量刻度，继续使用程序默认初始道址。"), QtWarningMsg);
         }
     });
 
@@ -2924,11 +2782,11 @@ void NeutronYieldStatisticsWindow::onParseChannelFinished(int detId, bool mergeO
     if (fitOk) {
         double energyK = 0.0;
         double energyB = 0.0;
-        // 解析成功后只缓存最新 K/B；是否写入 CSV 由“导出能量刻度”按钮决定。
+        // 解析成功后只缓存最新 K/B；是否写入 device_config.ini 由“导出能量刻度”按钮决定。
         if (dealFile[detId - 1]->latestEnergyCalibration(&energyK, &energyB)) {
             double sigma[3] = {5.0, 6.0, 7.0};
             const bool hasSigma = dealFile[detId - 1]->latestSigmas(sigma);
-            emit reporWriteLog(tr("谱仪%1解析成功，已生成最新能量刻度：K=%2，B=%3，可点击“导出能量刻度”写入 CSV。")
+            emit reporWriteLog(tr("谱仪%1解析成功，已生成最新能量刻度：K=%2，B=%3，可点击“导出能量刻度”写入 device_config.ini。")
                                    .arg(detId)
                                    .arg(energyK, 0, 'g', 12)
                                    .arg(energyB, 0, 'g', 12));
@@ -3934,10 +3792,40 @@ void NeutronYieldStatisticsWindow::on_pushButton_insertEC_clicked()
         return;
     }
 
+    QVector<EnergyCalCompareRow> compareRows;
+    compareRows.reserve(DET_NUM);
+    for (int detectorId = 1; detectorId <= DET_NUM; ++detectorId) {
+        EnergyCalCompareRow row;
+        row.detectorId = detectorId;
+
+        EnergyCalibrationStore::DetectorRecord oldRec;
+        if (EnergyCalibrationStore::loadDetector(detectorId, &oldRec) && oldRec.type == 1
+            && std::isfinite(oldRec.c0) && std::isfinite(oldRec.c1) && !qFuzzyIsNull(oldRec.c0)) {
+            row.hasOld = true;
+            row.oldK = oldRec.c0;
+            row.oldB = oldRec.c1;
+            if (oldRec.hasSigma) {
+                row.hasOldSigma = true;
+                row.oldSigma[0] = oldRec.sigma511;
+                row.oldSigma[1] = oldRec.sigma846;
+                row.oldSigma[2] = oldRec.sigma909;
+            }
+        }
+
+        if (mDealSucess.value(detectorId, false) && dealFile[detectorId - 1]
+            && dealFile[detectorId - 1]->latestEnergyCalibration(&row.newK, &row.newB)
+            && dealFile[detectorId - 1]->latestSigmas(row.newSigma)) {
+            row.hasNew = true;
+        }
+
+        compareRows.push_back(row);
+    }
+
     const QSet<int> selectedDetectors = selectEnergyCalibrationDetectors(
         this,
         tr("选择导出能量刻度的谱仪"),
-        tr("请选择本次需要将最新解析能量刻度写入 CSV 的谱仪编号："));
+        tr("请对比原有与最新能量刻度后勾选需要写入 device_config.ini 的谱仪："),
+        compareRows);
     if (selectedDetectors.isEmpty()) {
         emit reporWriteLog(tr("未选择需要导出能量刻度的谱仪，已取消导出。"), QtInfoMsg);
         return;
@@ -3962,6 +3850,14 @@ void NeutronYieldStatisticsWindow::on_pushButton_insertEC_clicked()
             continue;
         }
 
+        QVector<double> pointsX;
+        QVector<double> pointsY;
+        if (!dealFile[detectorId - 1]->latestEnergyCalibrationPoints(&pointsX, &pointsY)) {
+            ++skippedCount;
+            emit reporWriteLog(tr("谱仪%1没有可导出的能量刻度拟合点，已跳过。").arg(detectorId), QtWarningMsg);
+            continue;
+        }
+
         double sigma[3] = {5.0, 6.0, 7.0};
         if (!dealFile[detectorId - 1]->latestSigmas(sigma)) {
             ++skippedCount;
@@ -3969,27 +3865,27 @@ void NeutronYieldStatisticsWindow::on_pushButton_insertEC_clicked()
             continue;
         }
 
-        QString csvError;
-        if (!writeEnergyCalibrationCsvValue(detectorId, energyK, energyB, sigma, &csvError)) {
+        QString writeError;
+        if (!EnergyCalibrationStore::saveLinearDetector(detectorId, pointsX, pointsY, energyK, energyB, sigma, &writeError)) {
             ++skippedCount;
-            emit reporWriteLog(tr("谱仪%1导出能量刻度失败：%2").arg(detectorId).arg(csvError), QtWarningMsg);
+            emit reporWriteLog(tr("谱仪%1导出能量刻度失败：%2").arg(detectorId).arg(writeError), QtWarningMsg);
             continue;
         }
 
         if (!updateInitialCalibrationFromEnergyScale(detectorId, energyK, energyB)) {
             ++skippedCount;
-            emit reporWriteLog(tr("谱仪%1已写入 CSV，但同步当前初始能量刻度失败。").arg(detectorId), QtWarningMsg);
+            emit reporWriteLog(tr("谱仪%1已写入 device_config.ini，但同步当前初始能量刻度失败。").arg(detectorId), QtWarningMsg);
             continue;
         }
 
         if (!ParseData::setInitialSigmas(detectorId, sigma[0], sigma[1], sigma[2])) {
             ++skippedCount;
-            emit reporWriteLog(tr("谱仪%1已写入 CSV，但同步当前初始 sigma 失败。").arg(detectorId), QtWarningMsg);
+            emit reporWriteLog(tr("谱仪%1已写入 device_config.ini，但同步当前初始 sigma 失败。").arg(detectorId), QtWarningMsg);
             continue;
         }
 
         ++exportedCount;
-        emit reporWriteLog(tr("谱仪%1已导出能量刻度：K=%2，B=%3，sigma=[%4,%5,%6]")
+        emit reporWriteLog(tr("谱仪%1已导出能量刻度到 device_config.ini：K=%2，B=%3，sigma=[%4,%5,%6]")
                                .arg(detectorId)
                                .arg(energyK, 0, 'g', 12)
                                .arg(energyB, 0, 'g', 12)
@@ -3999,10 +3895,10 @@ void NeutronYieldStatisticsWindow::on_pushButton_insertEC_clicked()
     }
 
     QMessageBox::information(this, tr("提示"),
-                             tr("能量刻度导出完成：%1 个谱仪已写入 CSV，%2 个谱仪跳过。")
+                             tr("能量刻度导出完成：%1 个谱仪已写入 device_config.ini，%2 个谱仪跳过。")
                                  .arg(exportedCount)
                                  .arg(skippedCount));
-    emit reporWriteLog(tr("能量刻度导出完成：%1 个谱仪已写入 CSV，%2 个谱仪跳过。")
+    emit reporWriteLog(tr("能量刻度导出完成：%1 个谱仪已写入 device_config.ini，%2 个谱仪跳过。")
                            .arg(exportedCount)
                            .arg(skippedCount));
 }

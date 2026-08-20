@@ -103,6 +103,9 @@ public:
     /** @brief 读取最近一次成功剥谱分段得到的能量刻度 E = kx + b */
     bool latestEnergyCalibration(double *k, double *b) const;
 
+    /** @brief 读取最近一次成功能量刻度所用的拟合数据点（道址, keV） */
+    bool latestEnergyCalibrationPoints(QVector<double> *pointsX, QVector<double> *pointsY) const;
+
     /** @brief 读取最近一次成功解析得到的 511/846/909 keV 峰 sigma */
     bool latestSigmas(double sigma[3]) const;
 
@@ -308,6 +311,8 @@ private:
     double mCount909FitR2 = 0.0;
     bool mHasLatestEnergyCalibration = false;
     double mLatestEnergyCalibration[2] = {1.0, 0.0};
+    QVector<double> mLatestEnergyCalibrationPointsX;
+    QVector<double> mLatestEnergyCalibrationPointsY;
     bool mHasLatestSigmas = false;
     double mLatestSigmas[3] = {5.0, 6.0, 7.0};
 

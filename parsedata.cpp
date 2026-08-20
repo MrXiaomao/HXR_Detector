@@ -90,7 +90,7 @@ struct DetectorSigma {
     double sigma909;
 };
 
-/** 与 MATLAB Data_Analysis_Main.m V1.1 各探测器 CH 表一致（1~29）；30~32 等待 CSV 导入 */
+/** 与 MATLAB Data_Analysis_Main.m V1.1 各探测器 CH 表一致（1~29）；30~32 等待 device_config.ini 导入 */
 constexpr std::array<DetectorCalChannel, DET_NUM> kDefaultDetectorChTable = {{
     {373, 659}, {325, 573}, {296, 525}, {374, 662}, {301, 533},
     {343, 614}, {383, 677}, {298, 533}, {434, 762}, {328, 584},
@@ -108,7 +108,7 @@ std::array<DetectorSigma, DET_NUM> makeDefaultDetectorSigmaTable()
     return table;
 }
 
-// 当前运行实际使用的初始寻峰道址表，可由 CSV 导入或解析结果更新。
+// 当前运行实际使用的初始寻峰道址表，可由 device_config.ini 导入或解析结果更新。
 std::array<DetectorCalChannel, kDefaultDetectorChTable.size()> kDetectorChTable = kDefaultDetectorChTable;
 const std::array<DetectorSigma, DET_NUM> kDefaultDetectorSigmaTable = makeDefaultDetectorSigmaTable();
 std::array<DetectorSigma, DET_NUM> kDetectorSigmaTable = kDefaultDetectorSigmaTable;
@@ -229,6 +229,20 @@ bool ParseData::latestEnergyCalibration(double *k, double *b) const
         *k = mLatestEnergyCalibration[0];
     if (b)
         *b = mLatestEnergyCalibration[1];
+    return true;
+}
+
+bool ParseData::latestEnergyCalibrationPoints(QVector<double> *pointsX, QVector<double> *pointsY) const
+{
+    if (!mHasLatestEnergyCalibration
+        || mLatestEnergyCalibrationPointsX.isEmpty()
+        || mLatestEnergyCalibrationPointsX.size() != mLatestEnergyCalibrationPointsY.size())
+        return false;
+
+    if (pointsX)
+        *pointsX = mLatestEnergyCalibrationPointsX;
+    if (pointsY)
+        *pointsY = mLatestEnergyCalibrationPointsY;
     return true;
 }
 
@@ -484,9 +498,15 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
         mCount909Time.push_back(spec.currentTime * 1.0 / 60000.0);
         mCount909Count.push_back(peakCount);
         mCount909PeakPos.push_back(peakPos);
-        // 保留最近一次成功剥谱得到的能量刻度，供界面手动导出到 CSV。
+        // 保留最近一次成功剥谱得到的能量刻度，供界面手动导出到 device_config.ini。
         mLatestEnergyCalibration[0] = newEnergyScal[0];
         mLatestEnergyCalibration[1] = newEnergyScal[1];
+        mLatestEnergyCalibrationPointsX.clear();
+        mLatestEnergyCalibrationPointsY.clear();
+        for (const QPointF &pt : enFitPoints) {
+            mLatestEnergyCalibrationPointsX.push_back(pt.x());
+            mLatestEnergyCalibrationPointsY.push_back(pt.y());
+        }
         mHasLatestEnergyCalibration = true;
         // 511/909 来自寻峰，846 若没有明显峰则按 sigma = a + bE 线性模型估算。
         const double sigma511 = std::abs(peakPar0[0].c2);
@@ -1156,6 +1176,8 @@ void ParseData::clearFitResult()
     mHasLatestEnergyCalibration = false;
     mLatestEnergyCalibration[0] = 1.0;
     mLatestEnergyCalibration[1] = 0.0;
+    mLatestEnergyCalibrationPointsX.clear();
+    mLatestEnergyCalibrationPointsY.clear();
     mHasLatestSigmas = false;
     mLatestSigmas[0] = 5.0;
     mLatestSigmas[1] = 6.0;

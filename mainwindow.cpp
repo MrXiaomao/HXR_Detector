@@ -20,51 +20,11 @@
 #include <QComboBox>
 #include <QSignalBlocker>
 #include "energycalibration.h"
+#include "energycalibrationstore.h"
 #include "qcustomplothelper.h"
 #include <array>
 #include <cstring>
 #include <QMetaObject>
-
-namespace {
-
-bool readEnergyCalibrationCsv(int detectorId, double *k, double *b)
-{
-    QFile file(QDir(QCoreApplication::applicationDirPath()).filePath(ENERGY_CALIBRATION_CSV_FILE));
-    if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
-        return false;
-
-    QTextStream in(&file);
-    in.setCodec("UTF-8");
-    while (!in.atEnd()) {
-        const QString line = in.readLine().trimmed();
-        if (line.isEmpty())
-            continue;
-
-        const QStringList parts = line.split(',');
-        if (parts.size() < 3)
-            continue;
-
-        bool okDetector = false;
-        const int csvDetectorId = parts.at(0).trimmed().toInt(&okDetector);
-        if (!okDetector || csvDetectorId != detectorId)
-            continue;
-
-        bool okK = false;
-        bool okB = false;
-        const double csvK = parts.at(1).trimmed().toDouble(&okK);
-        const double csvB = parts.at(2).trimmed().toDouble(&okB);
-        if (!okK || !okB || qFuzzyIsNull(csvK))
-            return false;
-
-        *k = csvK;
-        *b = csvB;
-        return true;
-    }
-
-    return false;
-}
-
-} // namespace
 
 MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
     : QMainWindow(parent)
@@ -3249,56 +3209,34 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
         m_spectrumPlotSettings[detectorId-1].xMin = detParameter->spectrumPlotEnMin;
         m_spectrumPlotSettings[detectorId-1].xMax = detParameter->spectrumPlotEnMax;
 
-        // 读取能量刻度系数
-        // 判断是否勾选能量刻度
-        GlobalSettings settings(DEVICE_CONFIG_FILE);
-        settings.beginGroup("EnCalibration");
+        // 读取能量刻度系数（仅 device_config.ini）
         int fitType = 1;
-        double csvK = 0.0;
-        double csvB = 0.0;
-        if (readEnergyCalibrationCsv(detectorId, &csvK, &csvB))
+        EnergyCalibrationStore::DetectorRecord calibRec;
+        if (EnergyCalibrationStore::loadDetector(detectorId, &calibRec))
         {
-            xMin = csvB;
-            xMax = csvK * multiCh + csvB;
-
-            m_spectrumPlotSettings[detectorId-1].fitType = 1;
-            m_spectrumPlotSettings[detectorId-1].c0 = csvK;
-            m_spectrumPlotSettings[detectorId-1].c1 = csvB;
-        }
-        else if (settings.contains(QString("Detector%1/pointsX").arg(detectorId)) == true)
-        {
-            settings.beginGroup(QString("Detector%1").arg(detectorId));
-            //拟合参数赋值
-            fitType = settings.value("type", 1).toInt();
+            fitType = calibRec.type;
             if (fitType == 1){
-                //拟合参数赋值
-                double k = settings.value("c0", 0.0).toDouble();
-                double b = settings.value("c1", 0.0).toDouble();
+                const double k = calibRec.c0;
+                const double b = calibRec.c1;
                 xMin = b;
                 xMax = k*multiCh + b;
 
-                //更新m_spectrumPlotSettings
                 m_spectrumPlotSettings[detectorId-1].c0 = k;
                 m_spectrumPlotSettings[detectorId-1].c1 = b;
             } else if (fitType == 2){
-                //拟合参数赋值
-                double a = settings.value("c0", 0.0).toDouble();
-                double b = settings.value("c1", 0.0).toDouble();
-                double c = settings.value("c2", 0.0).toDouble();
+                const double a = calibRec.c0;
+                const double b = calibRec.c1;
+                const double c = calibRec.c2;
                 xMin = c;
                 xMax = a*multiCh*multiCh + b*multiCh + c;
 
-                //更新m_spectrumPlotSettings
                 m_spectrumPlotSettings[detectorId-1].c0 = a;
                 m_spectrumPlotSettings[detectorId-1].c1 = b;
                 m_spectrumPlotSettings[detectorId-1].c2 = c;
             }
 
             m_spectrumPlotSettings[detectorId-1].fitType = fitType;
-            settings.endGroup();
         }
-
-        settings.endGroup();
 
         //获取图表数据
         QCPGraph* graph = getGraph(detectorId, true);

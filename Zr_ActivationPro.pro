@@ -22,6 +22,7 @@ SOURCES += \
     dataprocessor.cpp \
     detsettingwindow.cpp \
     energycalibration.cpp \
+    energycalibrationstore.cpp \
     crashhandler.cpp \
     detparamlogger.cpp \
     useractionlogger.cpp \
@@ -57,6 +58,7 @@ HEADERS += \
     dataprocessor.h \
     detsettingwindow.h \
     energycalibration.h \
+    energycalibrationstore.h \
     localsettingwindow.h \
     neutronyieldcalibration.h \
     neutronyieldstatisticswindow.h \
