@@ -6,6 +6,7 @@
 #include <QDateTime>
 #include <QThread>
 #include <QDebug>
+#include <QDir>
 
 namespace {
 
@@ -547,11 +548,17 @@ void HDF5Settings::createH5Spectrum(QString filePath, const QString& startTime, 
                 H5::DataSet shotTimeDataset = cfgGroup.createDataSet("ShotTime", strType, scalarSpace);
                 shotTimeDataset.write(shotTimeStr, strType);
             }
+
+            qInfo().noquote() << QStringLiteral("已创建H5能谱文件：%1")
+                                     .arg(QDir::toNativeSeparators(QFileInfo(filePath).absoluteFilePath()));
         } catch (H5::FileIException& error) {
+            qWarning().noquote() << QStringLiteral("创建H5能谱文件失败：%1").arg(filePath);
             QMessageBox::warning(nullptr, "打开配置文件", "H5能谱数据文件打开失败，文件被占用！");
         } catch (H5::DataSetIException& error) {
+            qWarning().noquote() << QStringLiteral("创建H5能谱文件失败：%1").arg(filePath);
             QMessageBox::warning(nullptr, "打开配置文件", "H5能谱数据文件打开失败，数据集已损坏！");
         } catch (H5::DataSpaceIException& error) {
+            qWarning().noquote() << QStringLiteral("创建H5能谱文件失败：%1").arg(filePath);
             QMessageBox::warning(nullptr, "打开配置文件", "H5能谱数据文件打开失败，数据空间已损坏！");
         }
     }
@@ -732,10 +739,15 @@ QString HDF5Settings::createChannelH5Spectrum(quint8 index, QString filePath, co
 
         ch.dataset = createSpecDataSet(ch.file, index);
 
-        qInfo().nospace() << "谱仪[#" << index << "]掉线重测，新建独立 H5：" << uniquePath;
+        qInfo().noquote() << QStringLiteral("谱仪[#%1]已创建H5能谱文件：%2")
+                                 .arg(index)
+                                 .arg(QDir::toNativeSeparators(QFileInfo(uniquePath).absoluteFilePath()));
         return uniquePath;
     } catch (H5::Exception &e) {
-        qWarning() << "创建通道独立 H5 失败:" << e.getCDetailMsg() << uniquePath;
+        qWarning().noquote() << QStringLiteral("谱仪[#%1]创建H5能谱文件失败：%2（%3）")
+                                    .arg(index)
+                                    .arg(uniquePath)
+                                    .arg(QString::fromLocal8Bit(e.getCDetailMsg()));
         auto it = mChannelSpectrumH5.find(index);
         if (it != mChannelSpectrumH5.end()) {
             if (it->file) {

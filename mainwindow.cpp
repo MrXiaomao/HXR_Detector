@@ -2956,6 +2956,14 @@ void MainWindow::logMeasureStartInfo()
         msg += QStringLiteral(" 时长:%1秒").arg(ui->spinBox_measureTime->value());
     }
     qInfo().noquote() << msg;
+
+    QString shotDir = ui->lineEdit_filePath->text().trimmed();
+    if (shotDir.isEmpty())
+        shotDir = QStringLiteral("./cache");
+    const QString shotNumStr = ui->lineEdit_shotNum->text().trimmed();
+    const QString savePath = QDir(shotDir).filePath(shotNumStr);
+    qInfo().noquote() << QStringLiteral("测量数据存储目录：%1")
+                             .arg(QDir::toNativeSeparators(QFileInfo(savePath).absoluteFilePath()));
 }
 
 void MainWindow::startMeasure()
@@ -3209,14 +3217,19 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
         m_spectrumPlotSettings[detectorId-1].xMin = detParameter->spectrumPlotEnMin;
         m_spectrumPlotSettings[detectorId-1].xMax = detParameter->spectrumPlotEnMax;
 
-        // 读取能量刻度系数（仅 device_config.ini）
+        // 读取能量刻度系数（仅 device_config.ini），并按刻度道数/显示道数缩放
         int fitType = 1;
         EnergyCalibrationStore::DetectorRecord calibRec;
         if (EnergyCalibrationStore::loadDetector(detectorId, &calibRec))
         {
+            const int N_cal = EnergyCalibrationStore::readSpectrumLength(8192);
+            const int N_disp = (multiCh > 0) ? multiCh : 8192;
+            const double r = static_cast<double>(N_cal) / static_cast<double>(N_disp);
+
             fitType = calibRec.type;
             if (fitType == 1){
-                const double k = calibRec.c0;
+                // E = k_cal * ch_cal + b；ch_cal = ch_disp * (N_cal/N_disp)
+                const double k = calibRec.c0 * r;
                 const double b = calibRec.c1;
                 xMin = b;
                 xMax = k*multiCh + b;
@@ -3224,8 +3237,9 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
                 m_spectrumPlotSettings[detectorId-1].c0 = k;
                 m_spectrumPlotSettings[detectorId-1].c1 = b;
             } else if (fitType == 2){
-                const double a = calibRec.c0;
-                const double b = calibRec.c1;
+                // E = a*x^2+b*x+c，x 按 r 缩放：a'=a*r^2, b'=b*r, c'=c
+                const double a = calibRec.c0 * r * r;
+                const double b = calibRec.c1 * r;
                 const double c = calibRec.c2;
                 xMin = c;
                 xMax = a*multiCh*multiCh + b*multiCh + c;

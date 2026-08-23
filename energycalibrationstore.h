@@ -25,6 +25,9 @@ struct DetectorRecord {
 bool loadDetector(int detectorId, DetectorRecord *out);
 bool readLinearKb(int detectorId, double *k, double *b);
 
+/** 能量刻度拟合所用的多道道数（EnCalibration/SpectrumLength），默认 8192。 */
+int readSpectrumLength(int defaultLength = 8192);
+
 /** 写入线性刻度点、k/b 与 sigma；不修改 SpectrumLength。 */
 bool saveLinearDetector(int detectorId,
                         const QVector<double> &pointsX,
