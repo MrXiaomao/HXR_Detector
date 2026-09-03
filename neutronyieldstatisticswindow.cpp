@@ -837,6 +837,8 @@ void NeutronYieldStatisticsWindow::initUi()
             updateAllPeakChannelPlot();
         }
     });
+    ui->radioButton_spectrum->setChecked(true);
+    ui->stackedWidget->setCurrentIndex(0);
 
     //恢复页面布局
     {

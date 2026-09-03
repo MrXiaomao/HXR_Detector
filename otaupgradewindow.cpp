@@ -303,14 +303,14 @@ void OTAUpgradeWindow::on_pushButton_ok_clicked()
         QByteArray sectorData = QByteArray::fromHex("12 34 00 0F CA 11 00 00 00 00 AB CD");
         sectorData[9] = sectorCount & 0xFF;
         if (!commHelper->sendOTAUpgradeData(index, sectorData)) {
-            emit sigWriteLog(tr("谱仪[#%1]发送扇区数失败！").arg(index), QtCriticalMsg);
+            emit sigWriteLog(tr("谱仪[#%1]发送扇区数失败！（原因：设备未连接或通信写入失败）").arg(index), QtCriticalMsg);
             continue;
         }
 
         QByteArray addrData = QByteArray::fromHex("12 34 00 0F CA 10 00 00 00 00 AB CD");
         addrData[7] = (ui->comboBox_partition->currentIndex() == 0) ? 0x00 : 0x08;
         if (!commHelper->sendOTAUpgradeData(index, addrData)) {
-            emit sigWriteLog(tr("谱仪[#%1]发送更新地址失败！").arg(index), QtCriticalMsg);
+            emit sigWriteLog(tr("谱仪[#%1]发送更新地址失败！（原因：设备未连接或通信写入失败）").arg(index), QtCriticalMsg);
             continue;
         }
 
@@ -395,10 +395,25 @@ void OTAUpgradeWindow::startNextTask()
     auto currentTask = m_taskQueue[m_currentTaskIndex];
     int index = currentTask.first;
     QString partition = currentTask.second;
-    QString filePath = m_rpdFiles[index];
+    QString filePath = m_rpdFiles.value(index);
 
-    emit sigWriteLog(tr("=== 开始执行任务%1：谱仪[#%2]（分区：%3） ===")
-                    .arg(m_currentTaskIndex + 1).arg(index).arg(partition));
+    QString detectorName = (index == 0) ? QStringLiteral("[时钟同步模块]")
+                                        : QStringLiteral("谱仪[#%1]").arg(index);
+
+    emit sigWriteLog(tr("=== 开始执行任务%1：%2（分区：%3） ===")
+                    .arg(m_currentTaskIndex + 1).arg(detectorName).arg(partition));
+
+    if (filePath.isEmpty() || !QFileInfo::exists(filePath)) {
+        emit sigWriteLog(tr("%1升级失败：未找到对应的升级文件（期望文件名格式：%2_xxx.rpd）")
+                         .arg(detectorName).arg(index), QtCriticalMsg);
+        m_runningTasks--;
+        m_currentTaskIndex++;
+        if (m_runningTasks == 0)
+            emit sigUpgradeFinished();
+        else
+            startNextTask();
+        return;
+    }
 
     // 1. 发送更新数据包和更新地址（原业务逻辑保留）
     QByteArray sectorData = QByteArray::fromHex("12 34 00 0F CA 11 00 00 00 00 AB CD");
@@ -407,14 +422,14 @@ void OTAUpgradeWindow::startNextTask()
     sectorData[9] = sectorCount & 0xFF;
 
     if (!commHelper->sendOTAUpgradeData(index, sectorData)) {
-        if (index == 0){
-            emit sigWriteLog(tr("时钟同步模块发送更新数据包失败，跳过该任务").arg(index), QtCriticalMsg);
-        }
-        else{
-            emit sigWriteLog(tr("谱仪[#%1]发送更新数据包失败，跳过该任务").arg(index), QtCriticalMsg);
-        }
+        emit sigWriteLog(tr("%1发送更新数据包失败，跳过该任务（原因：设备未连接或通信写入失败）")
+                         .arg(detectorName), QtCriticalMsg);
+        m_runningTasks--;
         m_currentTaskIndex++;
-        startNextTask(); // 直接执行下一个任务
+        if (m_runningTasks == 0)
+            emit sigUpgradeFinished();
+        else
+            startNextTask(); // 直接执行下一个任务
         return;
     }
     QThread::msleep(1000); // 子线程休眠，不阻塞主线程
@@ -422,9 +437,14 @@ void OTAUpgradeWindow::startNextTask()
     QByteArray addrData = QByteArray::fromHex("12 34 00 0F CA 10 00 00 00 00 AB CD");
     addrData[7] = (ui->comboBox_partition->currentIndex() == 0) ? 0x00 : 0x80;
     if (!commHelper->sendOTAUpgradeData(index, addrData)) {
-        emit sigWriteLog(tr("谱仪[#%1]发送更新地址失败，跳过该任务").arg(index), QtCriticalMsg);
+        emit sigWriteLog(tr("%1发送更新地址失败，跳过该任务（原因：设备未连接或通信写入失败）")
+                         .arg(detectorName), QtCriticalMsg);
+        m_runningTasks--;
         m_currentTaskIndex++;
-        startNextTask();
+        if (m_runningTasks == 0)
+            emit sigUpgradeFinished();
+        else
+            startNextTask();
         return;
     }
     QThread::msleep(1000); // 子线程休眠，不阻塞主线程
@@ -501,10 +521,10 @@ void OTAUpgradeWindow::on_pushButton_switch_clicked()
 
         if (!commHelper->sendOTAUpgradeData(index, data)){
             if (index == 0){
-                emit sigWriteLog(tr("[时间同步触发模块]程序切换失败！！！"), QtCriticalMsg);
+                emit sigWriteLog(tr("[时间同步触发模块]程序切换失败！！！（原因：设备未连接或通信写入失败）"), QtCriticalMsg);
             }
             else{
-                emit sigWriteLog(tr("谱仪[#%1]程序切换失败！！！").arg(index).arg(selectedPartition), QtCriticalMsg);
+                emit sigWriteLog(tr("谱仪[#%1]程序切换失败！！！（原因：设备未连接或通信写入失败）").arg(index), QtCriticalMsg);
             }
 
             continue;
@@ -514,15 +534,24 @@ void OTAUpgradeWindow::on_pushButton_switch_clicked()
             emit sigWriteLog(tr("[时间同步触发模块]程序切换成功！！！"));
         }
         else{
-            emit sigWriteLog(tr("谱仪[#%1]程序切换成功！！！").arg(index).arg(selectedPartition));
+            emit sigWriteLog(tr("谱仪[#%1]程序切换成功！！！").arg(index));
         }
     }
 }
 
 void OTAUpgradeWindow::asyncSendOTAData(int index, const QString& filePath, const QString& selectedPartition)
 {
+    QString detectorName;
+    if (index == 0){
+        detectorName = QStringLiteral("[时钟同步模块]");
+    } else {
+        detectorName = QStringLiteral("谱仪[#%1]").arg(index);
+    }
+
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly)) {
+        emit sigWriteLog(tr("%1[%2]升级失败：无法打开升级文件\"%3\"（原因：%4）")
+                         .arg(detectorName, selectedPartition, filePath, file.errorString()), QtCriticalMsg);
         emit sigSendFinished(index, selectedPartition, false);
         return;
     }
@@ -530,6 +559,7 @@ void OTAUpgradeWindow::asyncSendOTAData(int index, const QString& filePath, cons
     qint64 fileSize = QFileInfo(filePath).size();
     int sendCount = qCeil((double)fileSize / 256);
     bool sendSuccess = true;
+    QString failReason;
 
     m_currentFileSize = fileSize;
     m_returnDataSize = 0;
@@ -539,6 +569,8 @@ void OTAUpgradeWindow::asyncSendOTAData(int index, const QString& filePath, cons
     QDateTime now = QDateTime::currentDateTime();
     mFileUpgrade = new QFile(QString("./logs/%1_%2_snd.rpd").arg(index).arg(now.toString("yyyy-MM-dd-HHmmsss")));
     if (!mFileUpgrade->open(QIODevice::WriteOnly)){
+        emit sigWriteLog(tr("%1发送日志文件创建失败：%2（不影响升级流程）")
+                         .arg(detectorName, mFileUpgrade->errorString()), QtWarningMsg);
         mFileUpgrade->deleteLater();
         mFileUpgrade = nullptr;
     }
@@ -546,6 +578,8 @@ void OTAUpgradeWindow::asyncSendOTAData(int index, const QString& filePath, cons
     mAckUpgradePkg.clear();
     mFileUpgradeAck = new QFile(QString("./logs/%1_%2_rcv.rpd").arg(index).arg(now.toString("yyyy-MM-dd-HHmmsss")));
     if (!mFileUpgradeAck->open(QIODevice::WriteOnly)){
+        emit sigWriteLog(tr("%1接收日志文件创建失败：%2（不影响升级流程）")
+                         .arg(detectorName, mFileUpgradeAck->errorString()), QtWarningMsg);
         mFileUpgradeAck->deleteLater();
         mFileUpgradeAck = nullptr;
     }
@@ -553,24 +587,21 @@ void OTAUpgradeWindow::asyncSendOTAData(int index, const QString& filePath, cons
     mOTAUpgradePkg = file.readAll();
     file.seek(0);
 
-    QString detectorName;
-    if (index == 0){
-        detectorName = QStringLiteral("[时钟同步模块]");
-    } else {
-        detectorName = QStringLiteral("谱仪[#%1]").arg(index);
-    }
-
     for (int i = 0; i < sendCount && sendSuccess; ++i) {
         // 发送进度信号（主线程更新UI）
         emit sigSendProgress(index, selectedPartition, i + 1, sendCount);
 
         QByteArray buf = file.read(256);
         if (buf.size() < 256 && i != sendCount - 1) {
+            failReason = tr("读取升级文件数据包不完整（包序号：%1/%2，期望256字节，实际%3字节）")
+                             .arg(i + 1).arg(sendCount).arg(buf.size());
             sendSuccess = false;
             break;
         }
 
         if (!commHelper->sendOTAUpgradeData(index, buf)) {
+            failReason = tr("发送升级数据包失败（包序号：%1/%2，原因：设备未连接或通信写入失败）")
+                             .arg(i + 1).arg(sendCount);
             sendSuccess = false;
             break;
         }
@@ -585,6 +616,7 @@ void OTAUpgradeWindow::asyncSendOTAData(int index, const QString& filePath, cons
     file.close();
     if (!sendSuccess)
     {
+        emit sigWriteLog(tr("%1[%2]升级失败：%3").arg(detectorName, selectedPartition, failReason), QtCriticalMsg);
         emit sigSendFinished(index, selectedPartition, sendSuccess);
     }
     else{
@@ -594,7 +626,7 @@ void OTAUpgradeWindow::asyncSendOTAData(int index, const QString& filePath, cons
         */
         mRecvTimeoutTimer.start();
         QFuture<bool> future = QtConcurrent::run([&] {
-            while (mRecvTimeoutTimer.elapsed() < 5000) { // 最长等待60秒
+            while (mRecvTimeoutTimer.elapsed() < 5000) { // 最长等待5秒
                 QThread::msleep(10); // 每10ms检查一次
             }
 
@@ -653,27 +685,43 @@ void OTAUpgradeWindow::asyncSendOTAData(int index, const QString& filePath, cons
                     mFileUpgradeAck->write(mAckUpgradePkg);
                 }
 
-                upgradeSuccess = (mOTAUpgradePkg == mAckUpgradePkg);
+                // 仅比较发送长度部分，避免多收字节导致误判
+                QByteArray ackCompare = mAckUpgradePkg.left(mOTAUpgradePkg.size());
+                upgradeSuccess = (mOTAUpgradePkg == ackCompare);
+                if (!upgradeSuccess) {
+                    int mismatchOffset = -1;
+                    for (int i = 0; i < mOTAUpgradePkg.size(); ++i) {
+                        if (mOTAUpgradePkg.at(i) != ackCompare.at(i)) {
+                            mismatchOffset = i;
+                            break;
+                        }
+                    }
+                    emit sigWriteLog(tr("%1[%2]升级失败：返回数据内容校验不一致（发送%3字节，接收%4字节，首个差异偏移：%5）")
+                                     .arg(detectorName, selectedPartition)
+                                     .arg(mOTAUpgradePkg.size())
+                                     .arg(mAckUpgradePkg.size())
+                                     .arg(mismatchOffset), QtCriticalMsg);
+                }
             }
             else{
-                emit sigWriteLog(tr("%1[%2]返回数据大小不一致！").arg(detectorName, selectedPartition));
+                emit sigWriteLog(tr("%1[%2]升级失败：返回数据大小不足（发送%3字节，接收%4字节，可能原因：等待超时或通信中断）")
+                                 .arg(detectorName, selectedPartition)
+                                 .arg(mOTAUpgradePkg.size())
+                                 .arg(mAckUpgradePkg.size()), QtCriticalMsg);
             }
 
             if (upgradeSuccess)
             {
                 emit sigWriteLog(tr("%1[%2]升级成功！").arg(detectorName, selectedPartition));
             }
-            else
-            {
-                emit sigWriteLog(tr("%1[%2]升级失败！！！").arg(detectorName, selectedPartition), QtCriticalMsg);
-            }
 
             // 发送结束指令之后，探测器会返回原升级包内容，所以字节校对需要发送指令之前判断
-            emit sigSendFinished(index, selectedPartition, sendSuccess);
+            emit sigSendFinished(index, selectedPartition, upgradeSuccess);
             return true;
         });
 
         bool result = future.result(); // 阻塞等待结果
+        Q_UNUSED(result);
     }
 
     if (mFileUpgrade)
@@ -717,10 +765,16 @@ void OTAUpgradeWindow::slotSendFinished(int index, const QString& partition, boo
 
         if (commHelper->sendOTAUpgradeData(index, finishData)) {
         } else {
-            emit sigWriteLog(tr("谱仪[#%1][%2]发送完成指令失败！").arg(index).arg(partition), QtCriticalMsg);
+            QString detectorName = (index == 0) ? QStringLiteral("[时钟同步模块]")
+                                                : QStringLiteral("谱仪[#%1]").arg(index);
+            emit sigWriteLog(tr("%1[%2]发送完成指令失败！（原因：设备未连接或通信写入失败）")
+                             .arg(detectorName).arg(partition), QtCriticalMsg);
         }
     } else {
-        emit sigWriteLog(tr("谱仪[#%1][%2]更新失败！").arg(index).arg(partition), QtCriticalMsg);
+        // 具体失败原因已在 asyncSendOTAData 中打印，此处仅做汇总提示
+        QString detectorName = (index == 0) ? QStringLiteral("[时钟同步模块]")
+                                            : QStringLiteral("谱仪[#%1]").arg(index);
+        emit sigWriteLog(tr("%1[%2]更新失败（详见上方失败原因）").arg(detectorName).arg(partition), QtCriticalMsg);
     }
 
     // 按钮状态
