@@ -2,23 +2,370 @@
 #include <QPainter>
 #include <QMenu>
 #include <QAction>
+#include <QActionGroup>
+#include <QWidgetAction>
 #include <QFileDialog>
 #include <QMessageBox>
+#include <QWheelEvent>
+#include <QMouseEvent>
+#include <QFrame>
+#include <QHBoxLayout>
+#include <QVBoxLayout>
+#include <QLabel>
+#include <QSlider>
+#include <QSpinBox>
+#include <QToolButton>
+#include <QResizeEvent>
+#include <cmath>
 #include <algorithm>
 
 CrasterParabolicHeatmapWidget::CrasterParabolicHeatmapWidget(QWidget* parent)
     : QWidget(parent) {
     setMinimumSize(400, 220);
+    setMouseTracking(true);
+    setFocusPolicy(Qt::ClickFocus);
     setContextMenuPolicy(Qt::CustomContextMenu);
     connect(this, &QWidget::customContextMenuRequested,
             this, &CrasterParabolicHeatmapWidget::onCustomContextMenuRequested);
+    setupZoomBar();
+}
+
+void CrasterParabolicHeatmapWidget::setupZoomBar()
+{
+    zoomBar_ = new QFrame(this);
+    zoomBar_->setObjectName(QStringLiteral("zoomBar"));
+    zoomBar_->setFrameShape(QFrame::NoFrame);
+    zoomBar_->setStyleSheet(
+        QStringLiteral(
+            "QFrame#zoomBar { background: rgba(245,245,245,230); border: 1px solid #c0c0c0; border-radius: 3px; }"
+            "QToolButton { border: none; padding: 0 4px; }"
+            "QToolButton:hover { background: #e0e0e0; border-radius: 2px; }"
+            "QToolButton#btnZoomPercent { padding: 0 6px; min-width: 52px; }"
+            "QToolButton#btnZoomPercent::menu-indicator { width: 10px; }"));
+
+    // 百分比下拉（类似 WPS：固定档位 + 自定义百分比）
+    btnZoomPercent_ = new QToolButton(zoomBar_);
+    btnZoomPercent_->setObjectName(QStringLiteral("btnZoomPercent"));
+    btnZoomPercent_->setText(QStringLiteral("100%"));
+    btnZoomPercent_->setToolTip(tr("显示比例"));
+    btnZoomPercent_->setPopupMode(QToolButton::InstantPopup);
+    btnZoomPercent_->setAutoRaise(true);
+
+    zoomMenu_ = new QMenu(btnZoomPercent_);
+    zoomMenu_->setTitle(tr("显示比例"));
+
+    auto *titleAct = zoomMenu_->addSection(tr("显示比例"));
+    Q_UNUSED(titleAct);
+
+    zoomPresetGroup_ = new QActionGroup(zoomMenu_);
+    zoomPresetGroup_->setExclusive(false); // 自定义百分比时允许全部不勾选
+
+    const int presets[] = {500, 400, 300, 200, 150, 100, 75, 50, 25};
+    for (int p : presets) {
+        QAction *act = zoomMenu_->addAction(QStringLiteral("%1%").arg(p));
+        act->setCheckable(true);
+        act->setData(p);
+        zoomPresetGroup_->addAction(act);
+        if (p == 100)
+            act->setChecked(true);
+    }
+
+    zoomMenu_->addSeparator();
+    QAction *fitAct = zoomMenu_->addAction(tr("适合窗口"));
+    fitAct->setData(-1); // 复位视图
+    fitAct->setCheckable(false);
+
+    zoomMenu_->addSeparator();
+
+    // 自定义百分比输入区
+    auto *percentWidget = new QWidget(zoomMenu_);
+    auto *percentLay = new QHBoxLayout(percentWidget);
+    percentLay->setContentsMargins(10, 4, 10, 6);
+    percentLay->setSpacing(6);
+    auto *percentLabel = new QLabel(tr("百分比:"), percentWidget);
+    zoomSpin_ = new QSpinBox(percentWidget);
+    zoomSpin_->setRange(int(kMinScale_ * 100), int(kMaxScale_ * 100));
+    zoomSpin_->setSuffix(QStringLiteral(" %"));
+    zoomSpin_->setSingleStep(5);
+    zoomSpin_->setValue(100);
+    zoomSpin_->setFixedWidth(90);
+    percentLay->addWidget(percentLabel);
+    percentLay->addWidget(zoomSpin_);
+    percentLay->addStretch();
+
+    auto *spinAction = new QWidgetAction(zoomMenu_);
+    spinAction->setDefaultWidget(percentWidget);
+    zoomMenu_->addAction(spinAction);
+
+    btnZoomPercent_->setMenu(zoomMenu_);
+
+    btnZoomOut_ = new QToolButton(zoomBar_);
+    btnZoomOut_->setText(QStringLiteral("−"));
+    btnZoomOut_->setToolTip(tr("缩小"));
+    btnZoomOut_->setAutoRaise(true);
+    btnZoomOut_->setFixedSize(22, 22);
+
+    zoomSlider_ = new QSlider(Qt::Horizontal, zoomBar_);
+    zoomSlider_->setRange(int(kMinScale_ * 100), int(kMaxScale_ * 100)); // 10% ~ 500%
+    zoomSlider_->setSingleStep(10);
+    zoomSlider_->setPageStep(25);
+    zoomSlider_->setValue(100);
+    zoomSlider_->setFixedWidth(120);
+    zoomSlider_->setToolTip(tr("缩放"));
+
+    btnZoomIn_ = new QToolButton(zoomBar_);
+    btnZoomIn_->setText(QStringLiteral("+"));
+    btnZoomIn_->setToolTip(tr("放大"));
+    btnZoomIn_->setAutoRaise(true);
+    btnZoomIn_->setFixedSize(22, 22);
+
+    // 布局：百分比下拉 | − | 滑条 | +（贴近 WPS）
+    auto *lay = new QHBoxLayout(zoomBar_);
+    lay->setContentsMargins(4, 2, 6, 2);
+    lay->setSpacing(2);
+    lay->addWidget(btnZoomPercent_);
+    lay->addWidget(btnZoomOut_);
+    lay->addWidget(zoomSlider_);
+    lay->addWidget(btnZoomIn_);
+
+    connect(zoomSlider_, &QSlider::valueChanged,
+            this, &CrasterParabolicHeatmapWidget::onZoomSliderChanged);
+    connect(btnZoomIn_, &QToolButton::clicked,
+            this, &CrasterParabolicHeatmapWidget::onZoomInClicked);
+    connect(btnZoomOut_, &QToolButton::clicked,
+            this, &CrasterParabolicHeatmapWidget::onZoomOutClicked);
+    connect(zoomPresetGroup_, &QActionGroup::triggered,
+            this, &CrasterParabolicHeatmapWidget::onZoomPresetTriggered);
+    connect(fitAct, &QAction::triggered, this, [this]() { resetView(); });
+    connect(zoomSpin_, &QSpinBox::editingFinished,
+            this, &CrasterParabolicHeatmapWidget::onZoomSpinEditingFinished);
+    // 微调百分比时实时生效，菜单保持打开（贴近 WPS）
+    connect(zoomSpin_, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int v) {
+        if (syncingZoomUi_)
+            return;
+        setViewScaleAt(v / 100.0, mapRect().center());
+    });
+    connect(zoomMenu_, &QMenu::aboutToShow,
+            this, &CrasterParabolicHeatmapWidget::onZoomMenuAboutToShow);
+
+    zoomBar_->adjustSize();
+    zoomBar_->raise();
+}
+
+void CrasterParabolicHeatmapWidget::layoutZoomBar()
+{
+    if (!zoomBar_)
+        return;
+    zoomBar_->adjustSize();
+    const int margin = 8;
+    const int x = width() - zoomBar_->width() - margin;
+    const int y = height() - zoomBar_->height() - margin;
+    zoomBar_->move(std::max(margin, x), std::max(margin, y));
+    zoomBar_->raise();
+}
+
+void CrasterParabolicHeatmapWidget::syncZoomUi()
+{
+    if (!zoomSlider_ || !btnZoomPercent_)
+        return;
+    syncingZoomUi_ = true;
+    const int percent = qRound(viewScale_ * 100.0);
+    zoomSlider_->setValue(percent);
+    btnZoomPercent_->setText(QStringLiteral("%1%").arg(percent));
+    if (zoomSpin_)
+        zoomSpin_->setValue(percent);
+
+    // 同步下拉勾选：仅当恰好命中固定档位时勾选
+    if (zoomPresetGroup_) {
+        bool matched = false;
+        const auto actions = zoomPresetGroup_->actions();
+        for (QAction *act : actions) {
+            const bool on = (act->data().toInt() == percent);
+            act->setChecked(on);
+            matched = matched || on;
+        }
+        if (!matched) {
+            for (QAction *act : actions)
+                act->setChecked(false);
+        }
+    }
+    syncingZoomUi_ = false;
+}
+
+void CrasterParabolicHeatmapWidget::onZoomMenuAboutToShow()
+{
+    syncZoomUi();
+}
+
+void CrasterParabolicHeatmapWidget::onZoomPresetTriggered(QAction *action)
+{
+    if (!action || syncingZoomUi_)
+        return;
+    const int percent = action->data().toInt();
+    if (percent <= 0)
+        return;
+
+    // 强制保持当前档位勾选（避免再次点击取消勾选）
+    if (zoomPresetGroup_) {
+        for (QAction *act : zoomPresetGroup_->actions())
+            act->setChecked(act == action);
+    }
+    setViewScaleAt(percent / 100.0, mapRect().center());
+}
+
+void CrasterParabolicHeatmapWidget::onZoomSpinEditingFinished()
+{
+    if (syncingZoomUi_ || !zoomSpin_)
+        return;
+    setViewScaleAt(zoomSpin_->value() / 100.0, mapRect().center());
+}
+
+void CrasterParabolicHeatmapWidget::onZoomSliderChanged(int percent)
+{
+    if (syncingZoomUi_)
+        return;
+    // 滑条缩放以地图中心为锚点
+    setViewScaleAt(percent / 100.0, mapRect().center());
+}
+
+void CrasterParabolicHeatmapWidget::onZoomInClicked()
+{
+    const double step = (viewScale_ < 1.0) ? 0.10 : 0.25;
+    setViewScaleAt(viewScale_ + step, mapRect().center());
+}
+
+void CrasterParabolicHeatmapWidget::onZoomOutClicked()
+{
+    const double step = (viewScale_ <= 1.0) ? 0.10 : 0.25;
+    setViewScaleAt(viewScale_ - step, mapRect().center());
+}
+
+void CrasterParabolicHeatmapWidget::resetView()
+{
+    viewScale_ = 1.0;
+    viewOffset_ = QPointF(0, 0);
+    syncZoomUi();
+    update();
+}
+
+void CrasterParabolicHeatmapWidget::setViewScaleAt(double newScale, const QPointF& anchorWidgetPos)
+{
+    newScale = std::clamp(newScale, kMinScale_, kMaxScale_);
+    if (std::abs(newScale - viewScale_) < 1e-9) {
+        syncZoomUi(); // 仍刷新 UI（如滑条与下拉勾选）
+        return;
+    }
+
+    const QRectF mapR = mapRect();
+    const QRectF base = heatDrawRect(mapR);
+    const QPointF c = base.center();
+
+    // display = c + viewOffset_ + v * viewScale_
+    // 锚点下内容向量 v 在缩放前后保持不变
+    const QPointF v = (anchorWidgetPos - c - viewOffset_) / viewScale_;
+    viewOffset_ = anchorWidgetPos - c - v * newScale;
+    viewScale_ = newScale;
+
+    syncZoomUi();
+    update();
+}
+
+QRectF CrasterParabolicHeatmapWidget::viewDrawRect(const QRectF& baseDrawR) const
+{
+    const QPointF c = baseDrawR.center();
+    const double w = baseDrawR.width() * viewScale_;
+    const double h = baseDrawR.height() * viewScale_;
+    return QRectF(c.x() - w * 0.5 + viewOffset_.x(),
+                  c.y() - h * 0.5 + viewOffset_.y(),
+                  w, h);
+}
+
+void CrasterParabolicHeatmapWidget::wheelEvent(QWheelEvent* e)
+{
+    if (!mapRect().contains(e->posF())) {
+        QWidget::wheelEvent(e);
+        return;
+    }
+
+    const QPoint numDegrees = e->angleDelta() / 8;
+    if (numDegrees.isNull()) {
+        e->ignore();
+        return;
+    }
+
+    // 向上滚放大，向下滚缩小；步进约 10%~15%
+    const double steps = numDegrees.y() / 15.0;
+    const double factor = std::pow(1.12, steps);
+    setViewScaleAt(viewScale_ * factor, e->posF());
+    e->accept();
+}
+
+void CrasterParabolicHeatmapWidget::mousePressEvent(QMouseEvent* e)
+{
+    if (e->button() == Qt::LeftButton && mapRect().contains(e->localPos())) {
+        panning_ = true;
+        lastPanPos_ = e->pos();
+        setCursor(Qt::ClosedHandCursor);
+        e->accept();
+        return;
+    }
+    QWidget::mousePressEvent(e);
+}
+
+void CrasterParabolicHeatmapWidget::mouseMoveEvent(QMouseEvent* e)
+{
+    if (panning_) {
+        const QPoint delta = e->pos() - lastPanPos_;
+        lastPanPos_ = e->pos();
+        viewOffset_ += delta;
+        update();
+        e->accept();
+        return;
+    }
+
+    if (mapRect().contains(e->localPos()))
+        setCursor(Qt::OpenHandCursor);
+    else
+        unsetCursor();
+
+    QWidget::mouseMoveEvent(e);
+}
+
+void CrasterParabolicHeatmapWidget::mouseReleaseEvent(QMouseEvent* e)
+{
+    if (e->button() == Qt::LeftButton && panning_) {
+        panning_ = false;
+        if (mapRect().contains(e->localPos()))
+            setCursor(Qt::OpenHandCursor);
+        else
+            unsetCursor();
+        e->accept();
+        return;
+    }
+    QWidget::mouseReleaseEvent(e);
+}
+
+void CrasterParabolicHeatmapWidget::mouseDoubleClickEvent(QMouseEvent* e)
+{
+    if (e->button() == Qt::LeftButton && mapRect().contains(e->localPos())) {
+        resetView();
+        e->accept();
+        return;
+    }
+    QWidget::mouseDoubleClickEvent(e);
 }
 
 void CrasterParabolicHeatmapWidget::onCustomContextMenuRequested(const QPoint &pos)
 {
     QMenu menu(this);
+    QAction *resetViewAct = menu.addAction(tr("复位视图（100%）"));
     QAction *exportPngAct = menu.addAction(tr("导出为 PNG…"));
-    if (menu.exec(mapToGlobal(pos)) != exportPngAct)
+    QAction *chosen = menu.exec(mapToGlobal(pos));
+    if (chosen == resetViewAct) {
+        resetView();
+        return;
+    }
+    if (chosen != exportPngAct)
         return;
 
     const QString path = QFileDialog::getSaveFileName(
@@ -132,7 +479,8 @@ QRectF CrasterParabolicHeatmapWidget::mapRect() const {
     const int textH = 18;
     const int gap = 6;
 
-    int bottomReserve = margin + barH + gap + textH + margin;
+    // 底部：色条 + 文字 + 缩放条
+    int bottomReserve = margin + barH + gap + textH + gap + kZoomBarH_ + margin;
     QRectF r(margin, margin, width() - 2*margin, height() - bottomReserve - margin);
     if (r.height() < 50) r.setHeight(50);
     if (r.width()  < 50) r.setWidth(50);
@@ -260,6 +608,7 @@ void CrasterParabolicHeatmapWidget::rebuild() {
 
 void CrasterParabolicHeatmapWidget::resizeEvent(QResizeEvent* e) {
     QWidget::resizeEvent(e);
+    layoutZoomBar();
     rebuild();
 }
 
@@ -352,8 +701,10 @@ void CrasterParabolicHeatmapWidget::drawColorbar(QPainter& p) const {
     const int textH = 18;
     const int gap = 6;
 
-    int y0 = height() - margin - textH - gap - barH;
-    QRect barRect(margin, y0, width() - 2*margin, barH);
+    // 色条在缩放条上方；右侧预留缩放条宽度，避免重叠
+    const int zoomReserve = zoomBar_ ? (zoomBar_->width() + 12) : 160;
+    int y0 = height() - margin - kZoomBarH_ - gap - textH - gap - barH;
+    QRect barRect(margin, y0, std::max(50, width() - 2*margin - zoomReserve), barH);
 
     QImage grad(barRect.width(), 1, QImage::Format_ARGB32);
     for (int x=0; x<barRect.width(); ++x) {
@@ -370,7 +721,7 @@ void CrasterParabolicHeatmapWidget::drawColorbar(QPainter& p) const {
     auto fmt = [](double v){ return QString::number(v, 'g', 4); };
     double mid = 0.5*(vmin_ + vmax_);
 
-    QRect textRect(margin, barRect.bottom() + gap, width() - 2*margin, textH);
+    QRect textRect(barRect.left(), barRect.bottom() + gap, barRect.width(), textH);
     p.setPen(Qt::black);
 
     p.drawText(QRect(textRect.left(), textRect.top(), textRect.width()/3, textRect.height()),
@@ -393,25 +744,25 @@ void CrasterParabolicHeatmapWidget::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, true);
 
-    // QRectF r = mapRect();
-    QRectF mapR  = mapRect();               // 仍然用于“地图区域布局”
-    QRectF drawR = heatDrawRect(mapR);      // 实际显示热力图/网格/边框/点的矩形
+    QRectF mapR  = mapRect();               // 可用于裁剪的地图区域
+    QRectF baseR = heatDrawRect(mapR);      // 100% 时的基准矩形
+    QRectF drawR = viewDrawRect(baseR);     // 应用缩放/平移后的显示矩形
 
-    // 1) 热力图（直接贴到 mapRect 像素位置）
-    // 1) 热力图：按 drawR 显示（允许等比缩放/或不缩放）
-    // 且裁剪到 mapR，避免盖到色条区域
+    // 1) 热力图：按 drawR 显示，裁剪到 mapR，避免盖到色条/缩放条
     if (!heatMap_.isNull()) {
         p.save();
         p.setClipRect(mapR, Qt::ReplaceClip);
-        p.drawImage(drawR, heatMap_);   // ⭐ 关键：用 drawR，而不是 heatMapRect_
+        p.drawImage(drawR, heatMap_);
         p.restore();
     }
 
-    // 2) 边框（真实轮廓）
+    // 2) 边框 / 探头点 / 经纬网同样裁剪到 mapR
+    p.save();
+    p.setClipRect(mapR, Qt::ReplaceClip);
+
     p.setPen(QPen(Qt::black, 2));
     drawBorder(p, drawR);
 
-    // 3) 探测器点
     p.setPen(QPen(Qt::black, 2));
     p.setBrush(Qt::white);
     for (auto &s: sensors_) {
@@ -423,11 +774,11 @@ void CrasterParabolicHeatmapWidget::paintEvent(QPaintEvent*) {
         p.drawEllipse(pt, 5, 5);
     }
 
-    // 4) 色条
-    drawColorbar(p);
-
-    // 5) 经纬网格（最后画 = 最上层）
     drawGraticule(p, drawR);
+    p.restore();
+
+    // 3) 色条（不受视图变换影响）
+    drawColorbar(p);
 }
 
 // -------------------- Spherical Harmonics (unchanged) --------------------

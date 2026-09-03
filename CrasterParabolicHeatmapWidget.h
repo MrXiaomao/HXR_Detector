@@ -4,9 +4,19 @@
 #include <QWidget>
 #include <QImage>
 #include <QPainterPath>
+#include <QPointF>
 #include <vector>
 #include <cmath>
 #include "spectypes.h"
+
+class QLabel;
+class QSlider;
+class QToolButton;
+class QFrame;
+class QMenu;
+class QSpinBox;
+class QAction;
+class QActionGroup;
 
 class CrasterParabolicHeatmapWidget : public QWidget {
     Q_OBJECT
@@ -29,12 +39,29 @@ public:
     void setSHOrder(int L);           // 建议 3 或 4
     void setSHLambda(double lambda);  // 建议 1e-6 ~ 1e-3
 
+    /** 复位视图（100% 缩放、无平移） */
+    void resetView();
+
+    /** 当前缩放倍率（1.0 = 100%） */
+    double viewScale() const { return viewScale_; }
+
 private slots:
     void onCustomContextMenuRequested(const QPoint &pos);
+    void onZoomSliderChanged(int percent);
+    void onZoomInClicked();
+    void onZoomOutClicked();
+    void onZoomPresetTriggered(QAction *action);
+    void onZoomSpinEditingFinished();
+    void onZoomMenuAboutToShow();
 
 protected:
     void paintEvent(QPaintEvent*) override;
     void resizeEvent(QResizeEvent* e) override;
+    void wheelEvent(QWheelEvent* e) override;
+    void mousePressEvent(QMouseEvent* e) override;
+    void mouseMoveEvent(QMouseEvent* e) override;
+    void mouseReleaseEvent(QMouseEvent* e) override;
+    void mouseDoubleClickEvent(QMouseEvent* e) override;
 
 private:
     std::vector<Sensor> sensors_;
@@ -51,6 +78,32 @@ private:
     double vmin_ = 0.0;
     double vmax_ = 1.0;
 
+    // ----- View transform (zoom / pan) -----
+    double viewScale_ = 1.0;          // 1.0 = 100%
+    QPointF viewOffset_;              // 平移（像素）
+    bool panning_ = false;
+    QPoint lastPanPos_;
+    static constexpr double kMinScale_ = 0.10;  // 10%
+    static constexpr double kMaxScale_ = 5.00;  // 500%
+
+    // Word 风格缩放条
+    QFrame *zoomBar_ = nullptr;
+    QToolButton *btnZoomPercent_ = nullptr;
+    QToolButton *btnZoomOut_ = nullptr;
+    QToolButton *btnZoomIn_ = nullptr;
+    QSlider *zoomSlider_ = nullptr;
+    QMenu *zoomMenu_ = nullptr;
+    QSpinBox *zoomSpin_ = nullptr;
+    QActionGroup *zoomPresetGroup_ = nullptr;
+    bool syncingZoomUi_ = false;
+
+    void setupZoomBar();
+    void layoutZoomBar();
+    void syncZoomUi();
+    /** 以锚点（控件坐标）为中心设置缩放 */
+    void setViewScaleAt(double newScale, const QPointF& anchorWidgetPos);
+    QRectF viewDrawRect(const QRectF& baseDrawR) const;
+
     // ----- Projection: PROJ crast constants -----
     static constexpr double XM_  = 0.97720502380583984317;
     static constexpr double RXM_ = 1.02332670794648848847;   // 1/XM
@@ -63,6 +116,9 @@ private:
     //图像尺寸
     static constexpr int HEAT_W = 1200;
     static constexpr int HEAT_H = 1000;
+
+    // 底部色条 + 缩放条预留高度
+    static constexpr int kZoomBarH_ = 28;
 
     // ----- math helpers -----
     static double deg2rad(double d);
