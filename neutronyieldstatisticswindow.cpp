@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-04-20 09:21:28
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-07-28 16:23:54
+ * @LastEditTime: 2026-09-03 11:27:45
  * @Description: 离线数据分析 中子产额分析
  */
 #include "neutronyieldstatisticswindow.h"
@@ -42,6 +42,7 @@
 #include <QTableWidgetItem>
 #include <QTextStream>
 #include <QVBoxLayout>
+#include <QSplitter>
 #include <QPainter>
 #include <math.h>
 #include <algorithm>
@@ -496,6 +497,14 @@ NeutronYieldStatisticsWindow::NeutronYieldStatisticsWindow(bool isDarkTheme, QWi
 
 NeutronYieldStatisticsWindow::~NeutronYieldStatisticsWindow()
 {
+    {
+        GlobalSettings settingsSystem;
+        if (QSplitter *splitterH1 = findChild<QSplitter*>(QStringLiteral("splitterH1")))
+            settingsSystem.setValue(QStringLiteral("Global/splitterH1/State"), splitterH1->saveState());
+        if (QSplitter *splitterFileList = findChild<QSplitter*>(QStringLiteral("splitterFileList")))
+            settingsSystem.setValue(QStringLiteral("Global/splitterFileList/State"), splitterFileList->saveState());
+    }
+
     if (mParseWorker)
         mParseWorker->requestCancel();
     if (mParseWorkerThread) {
@@ -569,6 +578,54 @@ void NeutronYieldStatisticsWindow::initUi()
         splitterH1->setCollapsible(2,false);
         ui->centralwidget->layout()->addWidget(splitterH1);
         ui->centralwidget->layout()->addWidget(ui->rightSidewidget);
+
+        // 右侧：按 .ui 顺序垂直可拖动分割
+        // group_fileInfo → analyticPara_groupBox → saveAs_groupBox → logGroupBox
+        ui->verticalLayout_4->removeWidget(ui->group_fileInfo);
+        ui->verticalLayout_4->removeWidget(ui->analyticPara_groupBox);
+        ui->verticalLayout_4->removeWidget(ui->saveAs_groupBox);
+        ui->verticalLayout_4->removeWidget(ui->logGroupBox);
+
+        QWidget *rightBottomPanel = new QWidget(this);
+        rightBottomPanel->setObjectName(QStringLiteral("rightBottomPanel"));
+        QVBoxLayout *rightBottomLayout = new QVBoxLayout(rightBottomPanel);
+        rightBottomLayout->setContentsMargins(0, 0, 0, 0);
+        rightBottomLayout->setSpacing(ui->verticalLayout_4->spacing());
+        rightBottomLayout->addWidget(ui->analyticPara_groupBox);
+        rightBottomLayout->addWidget(ui->saveAs_groupBox);
+        rightBottomLayout->addWidget(ui->logGroupBox, 1);
+
+        QSplitter *splitterFileList = new QSplitter(Qt::Vertical, this);
+        splitterFileList->setObjectName(QStringLiteral("splitterFileList"));
+        splitterFileList->setHandleWidth(4);
+        splitterFileList->addWidget(ui->group_fileInfo);
+        splitterFileList->addWidget(rightBottomPanel);
+        splitterFileList->setStretchFactor(0, 1);
+        splitterFileList->setStretchFactor(1, 2);
+        splitterFileList->setSizes(QList<int>() << 360 << 420);
+        splitterFileList->setCollapsible(0, false);
+        splitterFileList->setCollapsible(1, false);
+        ui->verticalLayout_4->addWidget(splitterFileList);
+
+        // 文件列表在「基本信息」内随高度伸展；时刻/模式控件垂直高度固定不压缩
+        ui->widget_fileListToolbar->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+        ui->widget_4->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+        ui->fusionDateTime->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        ui->messureDateTime->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+        ui->widget_shotTimeMode->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+        ui->radioButton_unifiedShotTime->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+        ui->radioButton_perChannelShotTime->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
+        ui->spinBox_channelId->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+
+        const int fileListIndex = ui->verticalLayout_6->indexOf(ui->tableWidget_fileList);
+        if (fileListIndex >= 0)
+            ui->verticalLayout_6->setStretch(fileListIndex, 1);
+        const int toolbarIndex = ui->verticalLayout_6->indexOf(ui->widget_fileListToolbar);
+        if (toolbarIndex >= 0)
+            ui->verticalLayout_6->setStretch(toolbarIndex, 0);
+        const int formIndex = ui->verticalLayout_6->indexOf(ui->widget_4);
+        if (formIndex >= 0)
+            ui->verticalLayout_6->setStretch(formIndex, 0);
     }
 
     // 左侧栏
@@ -808,6 +865,15 @@ void NeutronYieldStatisticsWindow::initUi()
             if (splitterV2)
             {
                 splitterV2->restoreState(settingsSystem.value("Global/splitterV2/State").toByteArray());
+            }
+        }
+
+        if (settingsSystem.contains(QStringLiteral("Global/splitterFileList/State"))){
+            QSplitter *splitterFileList = this->findChild<QSplitter*>(QStringLiteral("splitterFileList"));
+            if (splitterFileList)
+            {
+                splitterFileList->restoreState(
+                    settingsSystem.value(QStringLiteral("Global/splitterFileList/State")).toByteArray());
             }
         }
     }
@@ -2638,7 +2704,7 @@ void NeutronYieldStatisticsWindow::setParseBusy(bool busy)
     ui->action_startCalculate->setEnabled(!busy);
     ui->action_stopCalculate->setEnabled(busy);
     ui->pushButton_start->setEnabled(!busy);
-    ui->pushButton_insertEC->setEnabled(!busy);
+    ui->updateEnCalibration_bt->setEnabled(!busy);
     ui->action_open->setEnabled(!busy);
     ui->bt_addFiles->setEnabled(!busy);
     ui->bt_removeFile->setEnabled(!busy);
@@ -3784,8 +3850,8 @@ void NeutronYieldStatisticsWindow::on_bt_saveResult_clicked()
 }
 
 
-// pushButton_insertEC 当前作为“导出能量刻度”按钮使用，保留旧对象名以匹配 Qt 自动槽连接。
-void NeutronYieldStatisticsWindow::on_pushButton_insertEC_clicked()
+// updateEnCalibration_bt 当前作为“导出能量刻度”按钮使用，保留旧对象名以匹配 Qt 自动槽连接。
+void NeutronYieldStatisticsWindow::on_updateEnCalibration_bt_clicked()
 {
     if (mParseWorkerThread) {
         QMessageBox::information(this, tr("提示"), tr("正在解析中，不能导出能量刻度。"));

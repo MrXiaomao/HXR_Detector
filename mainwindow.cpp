@@ -19,6 +19,7 @@
 #include <QAbstractSpinBox>
 #include <QComboBox>
 #include <QSignalBlocker>
+#include <QSplitter>
 #include "energycalibration.h"
 #include "energycalibrationstore.h"
 #include "qcustomplothelper.h"
@@ -439,6 +440,30 @@ void MainWindow::initUi()
     splitterH1->setCollapsible(2,false);
     ui->centralwidget->layout()->addWidget(splitterH1);
     ui->centralwidget->layout()->addWidget(ui->rightSidewidget);
+
+    // 右侧实验参数：测量选项 / 运行日志 垂直可拖动分割
+    // 测量选项按内容高度；日志占满剩余纵向空间
+    {
+        ui->groupBox_4->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
+        ui->logGroupBox->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
+        ui->logGroupBox->setMinimumHeight(120);
+        ui->logGroupBox->setMaximumHeight(QWIDGETSIZE_MAX);
+
+        ui->verticalLayout_8->removeWidget(ui->groupBox_4);
+        ui->verticalLayout_8->removeWidget(ui->logGroupBox);
+
+        QSplitter *splitterV2 = new QSplitter(Qt::Vertical, this);
+        splitterV2->setObjectName(QStringLiteral("splitterV2"));
+        splitterV2->setHandleWidth(4);
+        splitterV2->addWidget(ui->groupBox_4);
+        splitterV2->addWidget(ui->logGroupBox);
+        splitterV2->setStretchFactor(0, 0);
+        splitterV2->setStretchFactor(1, 1);
+        splitterV2->setSizes(QList<int>() << 280 << 500);
+        splitterV2->setCollapsible(0, false);
+        splitterV2->setCollapsible(1, false);
+        ui->verticalLayout_8->addWidget(splitterV2);
+    }
 
     // 左侧栏
     QPushButton* detectorStatusButton = nullptr;

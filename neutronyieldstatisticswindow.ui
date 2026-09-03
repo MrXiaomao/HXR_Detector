@@ -705,11 +705,11 @@
            <number>0</number>
           </property>
           <item>
-           <widget class="QGroupBox" name="groupBox_2">
+           <widget class="QGroupBox" name="group_fileInfo">
             <property name="sizePolicy">
-             <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+             <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
               <horstretch>0</horstretch>
-              <verstretch>0</verstretch>
+              <verstretch>1</verstretch>
              </sizepolicy>
             </property>
             <property name="title">
@@ -778,21 +778,15 @@
              <item>
               <widget class="QTableWidget" name="tableWidget_fileList">
                <property name="sizePolicy">
-                <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
                  <horstretch>0</horstretch>
-                 <verstretch>0</verstretch>
+                 <verstretch>1</verstretch>
                 </sizepolicy>
                </property>
                <property name="minimumSize">
                 <size>
                  <width>0</width>
-                 <height>80</height>
-                </size>
-               </property>
-               <property name="maximumSize">
-                <size>
-                 <width>16777215</width>
-                 <height>100</height>
+                 <height>120</height>
                 </size>
                </property>
                <property name="editTriggers">
@@ -847,11 +841,11 @@
              </item>
              <item>
               <widget class="QWidget" name="widget_4" native="true">
-               <property name="minimumSize">
-                <size>
-                 <width>0</width>
-                 <height>30</height>
-                </size>
+               <property name="sizePolicy">
+                <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                 <horstretch>0</horstretch>
+                 <verstretch>0</verstretch>
+                </sizepolicy>
                </property>
                <layout class="QGridLayout" name="gridLayout_2">
                 <property name="leftMargin">
@@ -878,6 +872,12 @@
                 </item>
                 <item row="4" column="1">
                  <widget class="QSpinBox" name="spinBox_channelId">
+                  <property name="sizePolicy">
+                   <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                    <horstretch>0</horstretch>
+                    <verstretch>0</verstretch>
+                   </sizepolicy>
+                  </property>
                   <property name="minimum">
                    <number>1</number>
                   </property>
@@ -911,6 +911,12 @@
                 </item>
                 <item row="1" column="1">
                  <widget class="QDateTimeEdit" name="fusionDateTime">
+                  <property name="sizePolicy">
+                   <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                    <horstretch>0</horstretch>
+                    <verstretch>0</verstretch>
+                   </sizepolicy>
+                  </property>
                   <property name="displayFormat">
                    <string>yyyy/M/d H:mm:ss</string>
                   </property>
@@ -920,6 +926,12 @@
                  <widget class="QDateTimeEdit" name="messureDateTime">
                   <property name="enabled">
                    <bool>true</bool>
+                  </property>
+                  <property name="sizePolicy">
+                   <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                    <horstretch>0</horstretch>
+                    <verstretch>0</verstretch>
+                   </sizepolicy>
                   </property>
                   <property name="displayFormat">
                    <string>yyyy/M/d H:mm:ss</string>
@@ -938,6 +950,12 @@
                 </item>
                 <item row="3" column="1">
                  <widget class="QWidget" name="widget_shotTimeMode" native="true">
+                  <property name="sizePolicy">
+                   <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                    <horstretch>0</horstretch>
+                    <verstretch>0</verstretch>
+                   </sizepolicy>
+                  </property>
                   <layout class="QHBoxLayout" name="horizontalLayout_shotTimeMode">
                    <property name="leftMargin">
                     <number>0</number>
@@ -953,6 +971,12 @@
                    </property>
                    <item>
                     <widget class="QRadioButton" name="radioButton_unifiedShotTime">
+                     <property name="sizePolicy">
+                      <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                       <horstretch>0</horstretch>
+                       <verstretch>0</verstretch>
+                      </sizepolicy>
+                     </property>
                      <property name="text">
                       <string>统一打靶时刻</string>
                      </property>
@@ -963,6 +987,12 @@
                    </item>
                    <item>
                     <widget class="QRadioButton" name="radioButton_perChannelShotTime">
+                     <property name="sizePolicy">
+                      <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                       <horstretch>0</horstretch>
+                       <verstretch>0</verstretch>
+                      </sizepolicy>
+                     </property>
                      <property name="text">
                       <string>分通道打靶时刻</string>
                      </property>
@@ -978,7 +1008,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QGroupBox" name="groupBox_4">
+           <widget class="QGroupBox" name="analyticPara_groupBox">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
               <horstretch>0</horstretch>
@@ -989,26 +1019,16 @@
              <string>解析参数</string>
             </property>
             <layout class="QGridLayout" name="gridLayout_4">
-             <item row="0" column="1">
-              <widget class="QSpinBox" name="spinBox_timeStart">
+             <item row="1" column="1" rowspan="2">
+              <widget class="QSpinBox" name="spinBox_timeEnd">
                <property name="minimum">
-                <number>0</number>
+                <number>1</number>
                </property>
                <property name="maximum">
                 <number>99999999</number>
                </property>
                <property name="value">
-                <number>480</number>
-               </property>
-              </widget>
-             </item>
-             <item row="3" column="0">
-              <widget class="QLabel" name="label">
-               <property name="text">
-                <string>时间步长/min：</string>
-               </property>
-               <property name="alignment">
-                <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+                <number>9000</number>
                </property>
               </widget>
              </item>
@@ -1025,10 +1045,33 @@
                </property>
               </widget>
              </item>
+             <item row="0" column="1">
+              <widget class="QSpinBox" name="spinBox_timeStart">
+               <property name="minimum">
+                <number>0</number>
+               </property>
+               <property name="maximum">
+                <number>99999999</number>
+               </property>
+               <property name="value">
+                <number>480</number>
+               </property>
+              </widget>
+             </item>
              <item row="1" column="0" rowspan="2">
               <widget class="QLabel" name="label_8">
                <property name="text">
                 <string>解析时间终点/min：</string>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+               </property>
+              </widget>
+             </item>
+             <item row="5" column="0">
+              <widget class="QLabel" name="label_fitR2Min">
+               <property name="text">
+                <string>拟合优度下限 R²：</string>
                </property>
                <property name="alignment">
                 <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
@@ -1045,46 +1088,10 @@
                </property>
               </widget>
              </item>
-             <item row="4" column="1">
-              <widget class="QPushButton" name="pushButton_start">
-               <property name="enabled">
-                <bool>true</bool>
-               </property>
-               <property name="minimumSize">
-                <size>
-                 <width>100</width>
-                 <height>23</height>
-                </size>
-               </property>
+             <item row="3" column="0">
+              <widget class="QLabel" name="label">
                <property name="text">
-                <string>开始解析</string>
-               </property>
-               <property name="icon">
-                <iconset>
-                 <normaloff>:/resource/analyze.png</normaloff>:/resource/analyze.png</iconset>
-               </property>
-               <property name="checkable">
-                <bool>false</bool>
-               </property>
-              </widget>
-             </item>
-             <item row="1" column="1" rowspan="2">
-              <widget class="QSpinBox" name="spinBox_timeEnd">
-               <property name="minimum">
-                <number>1</number>
-               </property>
-               <property name="maximum">
-                <number>99999999</number>
-               </property>
-               <property name="value">
-                <number>9000</number>
-               </property>
-              </widget>
-             </item>
-             <item row="5" column="0">
-              <widget class="QLabel" name="label_fitR2Min">
-               <property name="text">
-                <string>拟合优度下限 R²：</string>
+                <string>时间步长/min：</string>
                </property>
                <property name="alignment">
                 <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
@@ -1110,10 +1117,26 @@
                </property>
               </widget>
              </item>
-             <item row="4" column="0">
-              <widget class="QPushButton" name="pushButton_insertEC">
+             <item row="6" column="1">
+              <widget class="QPushButton" name="pushButton_start">
+               <property name="enabled">
+                <bool>true</bool>
+               </property>
+               <property name="minimumSize">
+                <size>
+                 <width>100</width>
+                 <height>23</height>
+                </size>
+               </property>
                <property name="text">
-                <string>导出能量刻度</string>
+                <string>开始解析</string>
+               </property>
+               <property name="icon">
+                <iconset>
+                 <normaloff>:/resource/analyze.png</normaloff>:/resource/analyze.png</iconset>
+               </property>
+               <property name="checkable">
+                <bool>false</bool>
                </property>
               </widget>
              </item>
@@ -1121,7 +1144,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QGroupBox" name="groupBox">
+           <widget class="QGroupBox" name="saveAs_groupBox">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
               <horstretch>0</horstretch>
@@ -1132,7 +1155,33 @@
              <string>分析数据另存为</string>
             </property>
             <layout class="QGridLayout" name="gridLayout_5">
-             <item row="1" column="0">
+             <item row="4" column="0" colspan="2">
+              <spacer name="horizontalSpacer">
+               <property name="orientation">
+                <enum>Qt::Horizontal</enum>
+               </property>
+               <property name="sizeHint" stdset="0">
+                <size>
+                 <width>40</width>
+                 <height>20</height>
+                </size>
+               </property>
+              </spacer>
+             </item>
+             <item row="2" column="0">
+              <widget class="QLabel" name="label_24">
+               <property name="text">
+                <string>存储路径：</string>
+               </property>
+               <property name="alignment">
+                <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
+               </property>
+              </widget>
+             </item>
+             <item row="2" column="1" colspan="3">
+              <widget class="QLineEdit" name="lineEdit_savepath"/>
+             </item>
+             <item row="3" column="0">
               <widget class="QLabel" name="label_55">
                <property name="minimumSize">
                 <size>
@@ -1148,41 +1197,22 @@
                </property>
               </widget>
              </item>
-             <item row="0" column="0">
-              <widget class="QLabel" name="label_24">
-               <property name="text">
-                <string>存储路径：</string>
-               </property>
-               <property name="alignment">
-                <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
-               </property>
-              </widget>
-             </item>
-             <item row="2" column="2">
+             <item row="4" column="3">
               <widget class="QPushButton" name="bt_saveResult">
                <property name="text">
                 <string>保存数据</string>
                </property>
               </widget>
              </item>
-             <item row="1" column="1" colspan="2">
+             <item row="3" column="1" colspan="3">
               <widget class="QLineEdit" name="lineEdit_fileName"/>
              </item>
-             <item row="0" column="1" colspan="2">
-              <widget class="QLineEdit" name="lineEdit_savepath"/>
-             </item>
-             <item row="2" column="0" colspan="2">
-              <spacer name="horizontalSpacer">
-               <property name="orientation">
-                <enum>Qt::Horizontal</enum>
+             <item row="4" column="2">
+              <widget class="QPushButton" name="updateEnCalibration_bt">
+               <property name="text">
+                <string>更新能量刻度</string>
                </property>
-               <property name="sizeHint" stdset="0">
-                <size>
-                 <width>40</width>
-                 <height>20</height>
-                </size>
-               </property>
-              </spacer>
+              </widget>
              </item>
             </layout>
            </widget>
