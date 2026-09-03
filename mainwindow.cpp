@@ -445,18 +445,18 @@ void MainWindow::initUi()
     // 测量选项按内容高度；日志占满剩余纵向空间
     {
         ui->groupBox_4->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
-        ui->logGroupBox->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
-        ui->logGroupBox->setMinimumHeight(120);
-        ui->logGroupBox->setMaximumHeight(QWIDGETSIZE_MAX);
+        ui->gbLog->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Expanding);
+        ui->gbLog->setMinimumHeight(120);
+        ui->gbLog->setMaximumHeight(QWIDGETSIZE_MAX);
 
         ui->verticalLayout_8->removeWidget(ui->groupBox_4);
-        ui->verticalLayout_8->removeWidget(ui->logGroupBox);
+        ui->verticalLayout_8->removeWidget(ui->gbLog);
 
         QSplitter *splitterV2 = new QSplitter(Qt::Vertical, this);
         splitterV2->setObjectName(QStringLiteral("splitterV2"));
         splitterV2->setHandleWidth(4);
         splitterV2->addWidget(ui->groupBox_4);
-        splitterV2->addWidget(ui->logGroupBox);
+        splitterV2->addWidget(ui->gbLog);
         splitterV2->setStretchFactor(0, 0);
         splitterV2->setStretchFactor(1, 1);
         splitterV2->setSizes(QList<int>() << 280 << 500);

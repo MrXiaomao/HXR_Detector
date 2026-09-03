@@ -633,10 +633,10 @@ bool DetSettingWindow::setLonLat(int row, double lon, double lat)
     if (row < 0 || row >= ui->tableWidget->rowCount())
         return false;
 
-    // 范围校验（与你前面的规则一致）
-    if (lon < 0.0 || lon > 360.0)
+    // 范围校验（与 MollweideHeatmapWidget / Sensor 一致）
+    if (lon < -180.0 || lon > 180.0)
         return false;
-    if (lat < 0.0 || lat > 180.0)
+    if (lat < -90.0 || lat > 90.0)
         return false;
 
     ui->tableWidget->blockSignals(true); // 防止触发 itemChanged
@@ -888,13 +888,13 @@ void DetSettingWindow::on_tableWidget_itemChanged(QTableWidgetItem *item)
 
     if (!ok) return;
 
-    if (item->column() == 2 && (v < 0.0 || v > 360.0)) {
-        QMessageBox::warning(this, "错误", "经度范围必须是 0~360");
+    if (item->column() == 2 && (v < -180.0 || v > 180.0)) {
+        QMessageBox::warning(this, "错误", "经度范围必须是 -180~180");
         item->setText("0");
     }
 
-    if (item->column() == 3 && (v < 0.0 || v > 180.0)) {
-        QMessageBox::warning(this, "错误", "纬度范围必须是 0~180");
+    if (item->column() == 3 && (v < -90.0 || v > 90.0)) {
+        QMessageBox::warning(this, "错误", "纬度范围必须是 -90~90");
         item->setText("0");
     }
 }

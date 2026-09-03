@@ -2,7 +2,7 @@
  * @Author: MrPan
  * @Date: 2025-04-20 09:21:28
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-09-03 11:27:45
+ * @LastEditTime: 2026-09-03 19:53:37
  * @Description: 离线数据分析 中子产额分析
  */
 #include "neutronyieldstatisticswindow.h"
@@ -580,25 +580,25 @@ void NeutronYieldStatisticsWindow::initUi()
         ui->centralwidget->layout()->addWidget(ui->rightSidewidget);
 
         // 右侧：按 .ui 顺序垂直可拖动分割
-        // group_fileInfo → analyticPara_groupBox → saveAs_groupBox → logGroupBox
-        ui->verticalLayout_4->removeWidget(ui->group_fileInfo);
-        ui->verticalLayout_4->removeWidget(ui->analyticPara_groupBox);
-        ui->verticalLayout_4->removeWidget(ui->saveAs_groupBox);
-        ui->verticalLayout_4->removeWidget(ui->logGroupBox);
+        // gbFileInfo → gbAnalyticPara → gbSaveAs → gbLog
+        ui->verticalLayout_4->removeWidget(ui->gbFileInfo);
+        ui->verticalLayout_4->removeWidget(ui->gbAnalyticPara);
+        ui->verticalLayout_4->removeWidget(ui->gbSaveAs);
+        ui->verticalLayout_4->removeWidget(ui->gbLog);
 
         QWidget *rightBottomPanel = new QWidget(this);
         rightBottomPanel->setObjectName(QStringLiteral("rightBottomPanel"));
         QVBoxLayout *rightBottomLayout = new QVBoxLayout(rightBottomPanel);
         rightBottomLayout->setContentsMargins(0, 0, 0, 0);
         rightBottomLayout->setSpacing(ui->verticalLayout_4->spacing());
-        rightBottomLayout->addWidget(ui->analyticPara_groupBox);
-        rightBottomLayout->addWidget(ui->saveAs_groupBox);
-        rightBottomLayout->addWidget(ui->logGroupBox, 1);
+        rightBottomLayout->addWidget(ui->gbAnalyticPara);
+        rightBottomLayout->addWidget(ui->gbSaveAs);
+        rightBottomLayout->addWidget(ui->gbLog, 1);
 
         QSplitter *splitterFileList = new QSplitter(Qt::Vertical, this);
         splitterFileList->setObjectName(QStringLiteral("splitterFileList"));
         splitterFileList->setHandleWidth(4);
-        splitterFileList->addWidget(ui->group_fileInfo);
+        splitterFileList->addWidget(ui->gbFileInfo);
         splitterFileList->addWidget(rightBottomPanel);
         splitterFileList->setStretchFactor(0, 1);
         splitterFileList->setStretchFactor(1, 2);
@@ -731,7 +731,7 @@ void NeutronYieldStatisticsWindow::initUi()
             paramLayout->setStretch(2, 0);
             paramLayout->setStretch(3, 1);
         }
-        if (QVBoxLayout *logLayout = qobject_cast<QVBoxLayout*>(ui->logGroupBox->layout())) {
+        if (QVBoxLayout *logLayout = qobject_cast<QVBoxLayout*>(ui->gbLog->layout())) {
             logLayout->setStretch(0, 1);
             logLayout->setStretch(1, 0);
         }
@@ -748,51 +748,51 @@ void NeutronYieldStatisticsWindow::initUi()
         });
     }
     
-    ui->tableWidget->setEditTriggers(QAbstractItemView::DoubleClicked
+    ui->twResults->setEditTriggers(QAbstractItemView::DoubleClicked
                                      | QAbstractItemView::SelectedClicked
                                      | QAbstractItemView::EditKeyPressed);
-    ui->tableWidget->setSelectionMode(QAbstractItemView::SingleSelection);
-    ui->tableWidget->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    ui->twResults->setSelectionMode(QAbstractItemView::SingleSelection);
+    ui->twResults->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     {
-        QHeaderView *header = ui->tableWidget->horizontalHeader();
+        QHeaderView *header = ui->twResults->horizontalHeader();
         header->setSectionResizeMode(QHeaderView::Interactive);
         header->setStretchLastSection(false);
         header->setSectionResizeMode(0, QHeaderView::Fixed);
-        ui->tableWidget->setColumnWidth(0, 40);   // #
-        ui->tableWidget->setColumnWidth(1, 90);   // 中子产额
-        ui->tableWidget->setColumnWidth(2, 95);   // 不确定度(%)
-        ui->tableWidget->setColumnWidth(3, 60);   // 经度
-        ui->tableWidget->setColumnWidth(4, 60);   // 纬度
-        ui->tableWidget->setColumnWidth(5, 130);  // 初始计数(909keV)
-        ui->tableWidget->setColumnWidth(6, 70);   // 能谱个数
+        ui->twResults->setColumnWidth(0, 40);   // #
+        ui->twResults->setColumnWidth(1, 90);   // 中子产额
+        ui->twResults->setColumnWidth(2, 95);   // 不确定度(%)
+        ui->twResults->setColumnWidth(3, 60);   // 经度
+        ui->twResults->setColumnWidth(4, 60);   // 纬度
+        ui->twResults->setColumnWidth(5, 130);  // 初始计数(909keV)
+        ui->twResults->setColumnWidth(6, 70);   // 能谱个数
     }
 
-    ui->tableWidget->blockSignals(true);
-    for (int column = 0; column < ui->tableWidget->columnCount(); ++column) {
+    ui->twResults->blockSignals(true);
+    for (int column = 0; column < ui->twResults->columnCount(); ++column) {
         for (int row = 0; row < DET_NUM; ++row) {
             auto *item = new QTableWidgetItem("");
             applyDetectorTableItemFlags(item, column);
-            ui->tableWidget->setItem(row, column, item);
+            ui->twResults->setItem(row, column, item);
         }
     }
 
     for (int row = 0; row < DET_NUM; ++row) {
-        ui->tableWidget->setRowHeight(row, 25);
+        ui->twResults->setRowHeight(row, 25);
         auto *indexItem = new QTableWidgetItem(QString("#%1").arg(row + 1));
         applyDetectorTableItemFlags(indexItem, 0);
-        ui->tableWidget->setItem(row, 0, indexItem);
+        ui->twResults->setItem(row, 0, indexItem);
     }
     initDetectorTableSelectAllRow();
-    ui->tableWidget->blockSignals(false);
+    ui->twResults->blockSignals(false);
     // 表头 + 32 通道 + 全选行，并预留横向滚动条高度
     const int horizontalScrollBarSpace = 18;
-    ui->tableWidget->setFixedHeight((DET_NUM + 1 + 1) * 25 + horizontalScrollBarSpace);
+    ui->twResults->setFixedHeight((DET_NUM + 1 + 1) * 25 + horizontalScrollBarSpace);
     ui->leftStackedWidget->setMinimumWidth(200);
 
     initFileListTable();
 
-    // 连接表格选择变化信号（图表通道改由 spinBox_pictureDet 控制，不再联动 tableWidget 行选择）
-    // connect(ui->tableWidget, &QTableWidget::itemSelectionChanged, this, &NeutronYieldStatisticsWindow::on_tableWidget_selectionChanged);
+    // 连接表格选择变化信号（图表通道改由 spinBox_pictureDet 控制，不再联动 twResults 行选择）
+    // connect(ui->twResults, &QTableWidget::itemSelectionChanged, this, &NeutronYieldStatisticsWindow::on_twResults_selectionChanged);
 
     {
         QButtonGroup *shotTimeModeGroup = new QButtonGroup(this);
@@ -821,8 +821,8 @@ void NeutronYieldStatisticsWindow::initUi()
     initPeakChannelCustomPlot();
     initYieldCustomPlot();
 
-    connect(ui->tableWidget, &QTableWidget::itemChanged, this,
-            &NeutronYieldStatisticsWindow::on_tableWidget_itemChanged);
+    connect(ui->twResults, &QTableWidget::itemChanged, this,
+            &NeutronYieldStatisticsWindow::on_twResults_itemChanged);
 
     // 显示计数/能谱
     QButtonGroup *grp = new QButtonGroup(this);
@@ -1485,11 +1485,11 @@ void NeutronYieldStatisticsWindow::updateDetectorTableSpecCount(int detId)
             count += seg.rowCount;
     }
 
-    auto *specCountItem = ui->tableWidget->item(detId - 1, 6);
+    auto *specCountItem = ui->twResults->item(detId - 1, 6);
     if (!specCountItem) {
         specCountItem = new QTableWidgetItem;
         applyDetectorTableItemFlags(specCountItem, 6);
-        ui->tableWidget->setItem(detId - 1, 6, specCountItem);
+        ui->twResults->setItem(detId - 1, 6, specCountItem);
     }
     specCountItem->setText(count > 0 ? QString::number(count) : QString());
 }
@@ -1499,7 +1499,7 @@ void NeutronYieldStatisticsWindow::clearDetectorTableSpecCount(int detId)
     if (detId < 1 || detId > DET_NUM)
         return;
 
-    if (QTableWidgetItem *specCountItem = ui->tableWidget->item(detId - 1, 6))
+    if (QTableWidgetItem *specCountItem = ui->twResults->item(detId - 1, 6))
         specCountItem->setText(QString());
 }
 
@@ -1508,10 +1508,19 @@ void NeutronYieldStatisticsWindow::updatePictureForDetector(int detID)
     if (detID < 1 || detID > DET_NUM)
         return;
 
+    auto revertPictureDetSpinBox = [this]() {
+        if (ui->spinBox_pictureDet->value() == m_lastPictureDetId)
+            return;
+        const bool blocked = ui->spinBox_pictureDet->blockSignals(true);
+        ui->spinBox_pictureDet->setValue(m_lastPictureDetId);
+        ui->spinBox_pictureDet->blockSignals(blocked);
+    };
+
     if (!dealFile[detID - 1]) {
         if (!mDealSucess.value(detID, false)) {
             QMessageBox::information(this, tr("提示"), tr("谱仪%1不存在解析成功的数据！").arg(detID));
         }
+        revertPictureDetSpinBox();
         return;
     }
 
@@ -1524,8 +1533,11 @@ void NeutronYieldStatisticsWindow::updatePictureForDetector(int detID)
         if (!mDealSucess.value(detID, false)) {
             QMessageBox::information(this, tr("提示"), tr("谱仪%1不存在解析成功的数据！").arg(detID));
         }
+        revertPictureDetSpinBox();
         return;
     }
+
+    m_lastPictureDetId = detID;
 
     // 分段合并能谱：合并成功即可绘制，不依赖拟合结果
     if (hasMergeSpec) {
@@ -2143,27 +2155,27 @@ QCheckBox *NeutronYieldStatisticsWindow::peakChannelCurveCheckBox(int row) const
         return nullptr;
     if (row < 0 || row >= DET_NUM)
         return nullptr;
-    QWidget *cell = ui->tableWidget->cellWidget(row, mPeakChannelCurveColumn);
+    QWidget *cell = ui->twResults->cellWidget(row, mPeakChannelCurveColumn);
     return cell ? cell->findChild<QCheckBox*>() : nullptr;
 }
 
 void NeutronYieldStatisticsWindow::initDetectorTableSelectAllRow()
 {
-    if (ui->tableWidget->rowCount() <= kDetectorTableSelectAllRow)
-        ui->tableWidget->insertRow(kDetectorTableSelectAllRow);
+    if (ui->twResults->rowCount() <= kDetectorTableSelectAllRow)
+        ui->twResults->insertRow(kDetectorTableSelectAllRow);
 
-    ui->tableWidget->setRowHeight(kDetectorTableSelectAllRow, 25);
+    ui->twResults->setRowHeight(kDetectorTableSelectAllRow, 25);
 
     auto *indexItem = new QTableWidgetItem(tr("全选"));
     applyDetectorTableItemFlags(indexItem, 0);
     indexItem->setFlags(indexItem->flags() & ~Qt::ItemIsEditable);
-    ui->tableWidget->setItem(kDetectorTableSelectAllRow, 0, indexItem);
+    ui->twResults->setItem(kDetectorTableSelectAllRow, 0, indexItem);
 
-    for (int col = 1; col < ui->tableWidget->columnCount(); ++col) {
+    for (int col = 1; col < ui->twResults->columnCount(); ++col) {
         auto *item = new QTableWidgetItem;
         applyDetectorTableItemFlags(item, col);
         item->setFlags(item->flags() & ~Qt::ItemIsEditable);
-        ui->tableWidget->setItem(kDetectorTableSelectAllRow, col, item);
+        ui->twResults->setItem(kDetectorTableSelectAllRow, col, item);
     }
 }
 
@@ -2202,13 +2214,13 @@ void NeutronYieldStatisticsWindow::ensurePeakChannelCurveColumn()
     if (mPeakChannelCurveColumnReady)
         return;
 
-    const int col = ui->tableWidget->columnCount();
-    ui->tableWidget->insertColumn(col);
+    const int col = ui->twResults->columnCount();
+    ui->twResults->insertColumn(col);
     mPeakChannelCurveColumn = col;
 
     auto *header = new QTableWidgetItem(tr("曲线显示"));
-    ui->tableWidget->setHorizontalHeaderItem(col, header);
-    ui->tableWidget->setColumnWidth(col, 80);
+    ui->twResults->setHorizontalHeaderItem(col, header);
+    ui->twResults->setColumnWidth(col, 80);
 
     for (int row = 0; row < DET_NUM; ++row) {
         const int detId = row + 1;
@@ -2218,13 +2230,13 @@ void NeutronYieldStatisticsWindow::ensurePeakChannelCurveColumn()
         checkBox->setIcon(QIcon(peakChannelRoundPixmap(QSize(16, 16), peakChannelGraphColor(detId))));
         checkBox->setChecked(true);
 
-        auto *cellWidget = new QWidget(ui->tableWidget);
+        auto *cellWidget = new QWidget(ui->twResults);
         auto *cellLayout = new QHBoxLayout(cellWidget);
         cellLayout->setContentsMargins(4, 0, 0, 0);
         cellLayout->setSpacing(0);
         cellLayout->addWidget(checkBox, 0, Qt::AlignLeft | Qt::AlignVCenter);
         cellLayout->addStretch();
-        ui->tableWidget->setCellWidget(row, col, cellWidget);
+        ui->twResults->setCellWidget(row, col, cellWidget);
 
         connect(checkBox, &QCheckBox::stateChanged, this, [this](int) {
             if (!mUpdatingPeakChannelSelectAll)
@@ -2237,13 +2249,13 @@ void NeutronYieldStatisticsWindow::ensurePeakChannelCurveColumn()
     mCheckBoxPeakChannelSelectAll = new QCheckBox(tr("全选"));
     mCheckBoxPeakChannelSelectAll->setTristate(true);
     mCheckBoxPeakChannelSelectAll->setChecked(true);
-    auto *selectAllCell = new QWidget(ui->tableWidget);
+    auto *selectAllCell = new QWidget(ui->twResults);
     auto *selectAllLayout = new QHBoxLayout(selectAllCell);
     selectAllLayout->setContentsMargins(4, 0, 0, 0);
     selectAllLayout->setSpacing(0);
     selectAllLayout->addWidget(mCheckBoxPeakChannelSelectAll, 0, Qt::AlignLeft | Qt::AlignVCenter);
     selectAllLayout->addStretch();
-    ui->tableWidget->setCellWidget(kDetectorTableSelectAllRow, col, selectAllCell);
+    ui->twResults->setCellWidget(kDetectorTableSelectAllRow, col, selectAllCell);
     connect(mCheckBoxPeakChannelSelectAll, &QCheckBox::stateChanged, this, [this](int state) {
         if (mUpdatingPeakChannelSelectAll || state == Qt::PartiallyChecked)
             return;
@@ -2723,10 +2735,10 @@ void NeutronYieldStatisticsWindow::updateClearActionEnabled()
 
 void NeutronYieldStatisticsWindow::clearDetectorTableResults()
 {
-    ui->tableWidget->blockSignals(true);
+    ui->twResults->blockSignals(true);
     for (int row = 0; row < DET_NUM; ++row) {
         for (int col : {1, 2, 5, 6}) {
-            if (QTableWidgetItem *item = ui->tableWidget->item(row, col))
+            if (QTableWidgetItem *item = ui->twResults->item(row, col))
                 item->setText(QString());
         }
         if (mPeakChannelCurveColumnReady) {
@@ -2736,7 +2748,7 @@ void NeutronYieldStatisticsWindow::clearDetectorTableResults()
             }
         }
     }
-    ui->tableWidget->blockSignals(false);
+    ui->twResults->blockSignals(false);
     if (mPeakChannelCurveColumnReady)
         updatePeakChannelSelectAllState();
 }
@@ -2926,9 +2938,9 @@ void NeutronYieldStatisticsWindow::updateYieldSpatialDistributionForRow(int row)
         return;
 
     const int detID = row + 1;
-    QTableWidgetItem *yieldItem = ui->tableWidget->item(row, 1);
-    QTableWidgetItem *longitudeItem = ui->tableWidget->item(row, 3);
-    QTableWidgetItem *latitudeItem = ui->tableWidget->item(row, 4);
+    QTableWidgetItem *yieldItem = ui->twResults->item(row, 1);
+    QTableWidgetItem *longitudeItem = ui->twResults->item(row, 3);
+    QTableWidgetItem *latitudeItem = ui->twResults->item(row, 4);
 
     const double yield = yieldItem ? yieldItem->text().toDouble() : 0.0;
     const double longitude = longitudeItem ? longitudeItem->text().toDouble() : 0.0;
@@ -2938,7 +2950,7 @@ void NeutronYieldStatisticsWindow::updateYieldSpatialDistributionForRow(int row)
     slotUpdate_yieldDis(myield);
 }
 
-void NeutronYieldStatisticsWindow::on_tableWidget_itemChanged(QTableWidgetItem *item)
+void NeutronYieldStatisticsWindow::on_twResults_itemChanged(QTableWidgetItem *item)
 {
     if (!item)
         return;
@@ -2950,12 +2962,30 @@ void NeutronYieldStatisticsWindow::on_tableWidget_itemChanged(QTableWidgetItem *
     if (col != 3 && col != 4)
         return;
 
+    bool ok = false;
+    const double v = item->text().trimmed().toDouble(&ok);
+    if (!ok) {
+        ui->twResults->blockSignals(true);
+        item->setText(QStringLiteral("0"));
+        ui->twResults->blockSignals(false);
+    } else if (col == 3 && (v < -180.0 || v > 180.0)) {
+        QMessageBox::warning(this, tr("错误"), tr("经度范围必须是 -180~180"));
+        ui->twResults->blockSignals(true);
+        item->setText(QStringLiteral("0"));
+        ui->twResults->blockSignals(false);
+    } else if (col == 4 && (v < -90.0 || v > 90.0)) {
+        QMessageBox::warning(this, tr("错误"), tr("纬度范围必须是 -90~90"));
+        ui->twResults->blockSignals(true);
+        item->setText(QStringLiteral("0"));
+        ui->twResults->blockSignals(false);
+    }
+
     updateYieldSpatialDistributionForRow(item->row());
 }
 
-void NeutronYieldStatisticsWindow::on_tableWidget_selectionChanged()
+void NeutronYieldStatisticsWindow::on_twResults_selectionChanged()
 {
-    QList<QTableWidgetItem*> selectedItems = ui->tableWidget->selectedItems();
+    QList<QTableWidgetItem*> selectedItems = ui->twResults->selectedItems();
     if (selectedItems.isEmpty())
         return;
 
@@ -2982,7 +3012,7 @@ void NeutronYieldStatisticsWindow::slotSuccess(int detID)
     if (detID > 0 && detID <= DET_NUM) {
         auto *countItem = new QTableWidgetItem(QString::number(count909_N0));
         applyDetectorTableItemFlags(countItem, 5);
-        ui->tableWidget->setItem(detID-1, 5, countItem);
+        ui->twResults->setItem(detID-1, 5, countItem);
 
         //读取灵敏度标定数据，给出中子产额
         QSettings mSettings(neutronYieldConfigPath(), QSettings::IniFormat);
@@ -2995,7 +3025,7 @@ void NeutronYieldStatisticsWindow::slotSuccess(int detID)
 
         auto *yieldItem = new QTableWidgetItem(QString::number(yield));
         applyDetectorTableItemFlags(yieldItem, 1);
-        ui->tableWidget->setItem(detID-1, 1, yieldItem);
+        ui->twResults->setItem(detID-1, 1, yieldItem);
 
         const QVector<specStripData> fit909 = dealFile[detID - 1]->GetCount909Data();
         auto *uncItem = new QTableWidgetItem;
@@ -3004,7 +3034,7 @@ void NeutronYieldStatisticsWindow::slotSuccess(int detID)
             const double r2 = compute909FitR2(fit909);
             uncItem->setText(QString::number(mapFitQualityToUncertainty(r2), 'f', 2));
         }
-        ui->tableWidget->setItem(detID - 1, 2, uncItem);
+        ui->twResults->setItem(detID - 1, 2, uncItem);
 
         //从界面左侧表格读取探测器经纬度(这意味着用户可以离线分析中手动修改各个探测器的坐标位置）
         updateYieldSpatialDistributionForRow(detID - 1);
@@ -3429,33 +3459,33 @@ bool NeutronYieldStatisticsWindow::setLonLat(int row, double lon, double lat)
     if (row < 0 || row >= DET_NUM)
         return false;
 
-    // 范围校验（与你前面的规则一致）
-    if (lon < 0.0 || lon > 360.0)
+    // 范围校验（与 MollweideHeatmapWidget / Sensor 一致）
+    if (lon < -180.0 || lon > 180.0)
         return false;
-    if (lat < 0.0 || lat > 180.0)
+    if (lat < -90.0 || lat > 90.0)
         return false;
 
-    ui->tableWidget->blockSignals(true); // 防止触发 itemChanged
+    ui->twResults->blockSignals(true); // 防止触发 itemChanged
 
     // 经度（第四列）
-    QTableWidgetItem* lonItem = ui->tableWidget->item(row, 3);
+    QTableWidgetItem* lonItem = ui->twResults->item(row, 3);
     if (!lonItem) {
         lonItem = new QTableWidgetItem;
         applyDetectorTableItemFlags(lonItem, 3);
-        ui->tableWidget->setItem(row, 3, lonItem);
+        ui->twResults->setItem(row, 3, lonItem);
     }
     lonItem->setText(QString::number(lon, 'f', 2));
 
     // 纬度（第五列）
-    QTableWidgetItem* latItem = ui->tableWidget->item(row, 4);
+    QTableWidgetItem* latItem = ui->twResults->item(row, 4);
     if (!latItem) {
         latItem = new QTableWidgetItem;
         applyDetectorTableItemFlags(latItem, 4);
-        ui->tableWidget->setItem(row, 4, latItem);
+        ui->twResults->setItem(row, 4, latItem);
     }
     latItem->setText(QString::number(lat, 'f', 2));
 
-    ui->tableWidget->blockSignals(false);
+    ui->twResults->blockSignals(false);
     return true;
 }
 
@@ -3501,11 +3531,11 @@ bool NeutronYieldStatisticsWindow::exportResultTableXlsx(const QString &filePath
 
     int outRow = 2;
     for (int row = 0; row < DET_NUM; ++row) {
-        QTableWidgetItem *specCountItem = ui->tableWidget->item(row, 6);
+        QTableWidgetItem *specCountItem = ui->twResults->item(row, 6);
         if (!specCountItem || specCountItem->text().isEmpty())
             continue;
         for (int col = 0; col < 7; ++col) {
-            QTableWidgetItem *item = ui->tableWidget->item(row, col);
+            QTableWidgetItem *item = ui->twResults->item(row, col);
             xlsx.write(outRow, col + 1, item ? item->text() : QString());
         }
         ++outRow;

@@ -372,7 +372,7 @@ void CountRateStatisticsWindow::initUi()
             paramLayout->setStretch(2, 0);
             paramLayout->setStretch(3, 1);
         }
-        if (QVBoxLayout *logLayout = qobject_cast<QVBoxLayout*>(ui->logGroupBox->layout())) {
+        if (QVBoxLayout *logLayout = qobject_cast<QVBoxLayout*>(ui->gbLog->layout())) {
             logLayout->setStretch(0, 1);
             logLayout->setStretch(1, 0);
         }

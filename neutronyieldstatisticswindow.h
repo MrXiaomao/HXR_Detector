@@ -67,8 +67,8 @@ public:
     /**
      * @brief 设置经纬度
      * @param row 行号，从0开始计数
-     * @param lon 经度 0-360
-     * @param lat 纬度 0-180
+     * @param lon 经度 [-180, 180]
+     * @param lat 纬度 [-90, 90]
      * @return
      */
     bool setLonLat(int row, double lon, double lat);
@@ -148,9 +148,9 @@ private slots:
     void on_action_exit_triggered();
 
     // 选中行发生改变
-    void on_tableWidget_selectionChanged();
+    void on_twResults_selectionChanged();
 
-    void on_tableWidget_itemChanged(QTableWidgetItem *item);
+    void on_twResults_itemChanged(QTableWidgetItem *item);
 
     void on_bt_saveResult_clicked();
 
@@ -249,6 +249,7 @@ private:
     QMap<int, Sensor> myield; //存放各个通道中子产额。通道编号：1-DET_NUM，通道经纬度，通道的中子产额
     ParseData* dealFile[DET_NUM];
     QStringList mFilePaths; // 待解析的文件列表（按表格顺序）
+    int m_lastPictureDetId = 1; // 上次成功刷新分布图的通道号，与 spinBox_pictureDet 显示一致
 
     QProgressBar *mProgressBar = nullptr;
     NeutronYieldParseWorker *mParseWorker = nullptr;

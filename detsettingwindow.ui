@@ -446,12 +446,12 @@
         </column>
         <column>
          <property name="text">
-          <string>经度(0-360°)</string>
+          <string>经度(-180~180°)</string>
          </property>
         </column>
         <column>
          <property name="text">
-          <string>纬度(0-180°)</string>
+          <string>纬度(-90~90°)</string>
          </property>
         </column>
         <column>
@@ -479,7 +479,7 @@
       <item>
        <widget class="QLabel" name="label_9">
         <property name="text">
-         <string>注：经纬度表示谱仪探头放置在球体表面的经纬度，其中纬度从北极开始算起为0°，南极点为180°。</string>
+         <string>注：经纬度表示谱仪探头在球体表面的地理坐标。经度 -180°~180°，纬度 -90°（南极）~90°（北极），赤道为 0°。</string>
         </property>
         <property name="wordWrap">
          <bool>true</bool>

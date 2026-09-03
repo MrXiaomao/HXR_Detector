@@ -42,11 +42,11 @@ public:
             QDoubleValidator* validator = nullptr;
 
             if (index.column() == 2) {
-                // 第三列：经度 0~360
-                validator = new QDoubleValidator(0.0, 360.0, 6, editor);
+                // 第三列：经度 [-180, 180]（与 MollweideHeatmapWidget / Sensor 一致）
+                validator = new QDoubleValidator(-180.0, 180.0, 6, editor);
             } else {
-                // 第四列：纬度 0~180
-                validator = new QDoubleValidator(0.0, 180.0, 6, editor);
+                // 第四列：纬度 [-90, 90]
+                validator = new QDoubleValidator(-90.0, 90.0, 6, editor);
             }
 
             validator->setNotation(QDoubleValidator::StandardNotation);

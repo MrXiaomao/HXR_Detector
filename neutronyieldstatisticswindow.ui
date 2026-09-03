@@ -166,7 +166,7 @@
          </layout>
         </item>
         <item>
-         <widget class="QTableWidget" name="tableWidget">
+         <widget class="QTableWidget" name="twResults">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
             <horstretch>0</horstretch>
@@ -377,12 +377,12 @@
           </column>
           <column>
            <property name="text">
-            <string>经度</string>
+            <string>经度(-180~180°)</string>
            </property>
           </column>
           <column>
            <property name="text">
-            <string>纬度</string>
+            <string>纬度(-90~90°)</string>
            </property>
           </column>
           <column>
@@ -705,7 +705,7 @@
            <number>0</number>
           </property>
           <item>
-           <widget class="QGroupBox" name="group_fileInfo">
+           <widget class="QGroupBox" name="gbFileInfo">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
               <horstretch>0</horstretch>
@@ -1008,7 +1008,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QGroupBox" name="analyticPara_groupBox">
+           <widget class="QGroupBox" name="gbAnalyticPara">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
               <horstretch>0</horstretch>
@@ -1144,7 +1144,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QGroupBox" name="saveAs_groupBox">
+           <widget class="QGroupBox" name="gbSaveAs">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
               <horstretch>0</horstretch>
@@ -1218,7 +1218,7 @@
            </widget>
           </item>
           <item>
-           <widget class="QGroupBox" name="logGroupBox">
+           <widget class="QGroupBox" name="gbLog">
             <property name="sizePolicy">
              <sizepolicy hsizetype="Preferred" vsizetype="Expanding">
               <horstretch>0</horstretch>
