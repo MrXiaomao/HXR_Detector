@@ -692,6 +692,55 @@ void CrasterParabolicHeatmapWidget::drawGraticule(QPainter& p, const QRectF& r) 
         p.drawPath(path);
     }
 
+    // 十字交叉标注：经度标在赤道(lat=0)，纬度标在本初子午(lon=0)
+    p.setClipping(false);
+    QFont labelFont = p.font();
+    labelFont.setPointSizeF(std::max(8.0, labelFont.pointSizeF()));
+    p.setFont(labelFont);
+    const QFontMetrics fm(labelFont);
+
+    auto drawLabelAt = [&](double lonDeg, double latDeg, const QString &text, int alignFlags) {
+        double x = 0.0, y = 0.0;
+        forwardCraster(deg2rad(lonDeg), deg2rad(latDeg), x, y);
+        const QPointF pt = projToPixelInRect(x, y, r);
+        const QSize textSize = fm.size(0, text);
+        QRectF textRect(0, 0, textSize.width() + 4, textSize.height() + 2);
+        if (alignFlags & Qt::AlignLeft)
+            textRect.moveLeft(pt.x() + 3);
+        else if (alignFlags & Qt::AlignRight)
+            textRect.moveRight(pt.x() - 3);
+        else
+            textRect.moveCenter(QPointF(pt.x(), textRect.center().y()));
+        if (alignFlags & Qt::AlignTop)
+            textRect.moveTop(pt.y() + 2);
+        else if (alignFlags & Qt::AlignBottom)
+            textRect.moveBottom(pt.y() - 2);
+        else
+            textRect.moveCenter(QPointF(textRect.center().x(), pt.y()));
+
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(255, 255, 255, 180));
+        p.drawRoundedRect(textRect, 2, 2);
+        p.setPen(QColor(0, 0, 0, 230));
+        p.drawText(textRect, Qt::AlignCenter, text);
+    };
+
+    // 经度：各经线与赤道交点（±180° 只标一侧）
+    for (int lonDeg = -180; lonDeg < 180; lonDeg += lonStep) {
+        drawLabelAt(lonDeg, 0.0,
+                    QString::number(lonDeg) + QChar(0x00B0),
+                    Qt::AlignHCenter | Qt::AlignBottom);
+    }
+
+    // 纬度：各纬线与 0° 经线交点（跳过 0°，已由经度标注覆盖）
+    for (int latDeg = -90; latDeg <= 90; latDeg += latStep) {
+        if (latDeg == 0)
+            continue;
+        drawLabelAt(0.0, latDeg,
+                    QString::number(latDeg) + QChar(0x00B0),
+                    Qt::AlignLeft | Qt::AlignVCenter);
+    }
+
     p.restore();
 }
 
