@@ -1256,7 +1256,7 @@ void MainWindow::onDetectorOffline(quint8 index)
         QMutexLocker locker(&mDetectorDataMutex);
         auto it = m_detectorData.find(index);
         if (it != m_detectorData.end())
-            it->disconnectWallMs = QDateTime::currentMSecsSinceEpoch();
+            it->disconnectWallMs = commHelper->lastTempUpdateTime(index);// QDateTime::currentMSecsSinceEpoch();// 如果下线状态检测不实时，这个误差就出来了，应该已最后一次温度数据上传时间为准。
     }
 }
 

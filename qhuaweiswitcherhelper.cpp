@@ -195,7 +195,7 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
         }
         // 检测心跳响应（只要在等待心跳响应且响应包含 HUAWEI 提示符就认为是心跳响应）
         else if (mWaitingHeartbeatResponse &&
-                 (mRespondString.contains("[HUAWEI]") || mRespondString.contains("<HUAWEI>") || mRespondString.contains("UTC+08:00\r\n")))
+                 (mRespondString.contains("[HUAWEI]") || mRespondString.contains("<HUAWEI>") || mRespondString.contains("UTC+08:00\r\n")/*不同型号交换机，时间信息结尾有所不同*/ || mRespondString.contains("UTC\r\n")/*S5735S 8口*/))
         {
             // 收到心跳响应，重置标志
             mWaitingHeartbeatResponse = false;

@@ -210,6 +210,10 @@ public:
     /** 是否已配置并创建了交换机 helper */
     bool hasSwitchers() const;
 
+    qint64 lastTempUpdateTime(quint8 index) const{
+        return mTempUpdateTime.value(index, 0);
+    }
+
 private slots:
     //网口原始数据（解析线程）
     void onRawNetData_Thread(quint8 index, const QByteArray& data);
