@@ -1161,8 +1161,6 @@ void MainWindow::onSystemTimer()
         if (mCountRatePlotReady.exchange(false)) {
             ui->spectroMeter1_top->replot(QCustomPlot::rpQueuedReplot);
             ui->spectroMeter2_top->replot(QCustomPlot::rpQueuedReplot);
-
-            qDebug() << "图像刷新次数：" << m_plotRefreshCount.exchange(m_plotRefreshCount.load() + 1) ;
         }
         if (mSpectrumPlotReady.exchange(false)) {
             replotSpectrumBottom(ui->spectroMeter1_bottom, true);
@@ -2621,10 +2619,6 @@ void MainWindow::updateCountRatePlotData(int detectorId, double fpgaTime, double
         return;
 
     getGraph(detectorId, false)->addData(fpgaTime, countRate);
-    if (1==detectorId)
-        qDebug() << "#1数据更新次数：" << m_plotDataUpdateCount.exchange(m_plotDataUpdateCount.load() + 1) ;
-    if (2==detectorId)
-        qDebug() << "#2数据更新次数：" << m_plotDataUpdateCount2.exchange(m_plotDataUpdateCount2.load() + 1) ;
 
     if (customPlot->property("enableAutoScale").toBool()) {
         customPlot->rescaleAxes(true);
