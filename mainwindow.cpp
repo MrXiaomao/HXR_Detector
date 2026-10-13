@@ -1120,7 +1120,7 @@ void MainWindow::onSystemTimer()
         ui->edit_measureTime->setText(formatTimeString(mMeasureTimer->elapsed() / 1000));
     }
 
-    // 温度刷新一次，时钟刷新2次，
+    // 温度2s刷新一次
     if ((t++%2) == 0){
         ui->tableWidget_detector->setUpdatesEnabled(false);
         for (int row=0; row<=DET_NUM; ++row){
@@ -1156,11 +1156,13 @@ void MainWindow::onSystemTimer()
     if(t%10==0) flushTemperatureCache();
 
     // 能谱刷新需根据刷新时长来决定，最小1s刷新一次
-    if (commHelper->isMeasuring() && (t % m_specPlotRefreshTime) == 0){
+    if (commHelper->isMeasuring()/* && (t % m_specPlotRefreshTime) == 0*/){
         // 开始测量以后，有一段冷却时长，这段时间内可以不用刷新能谱
         if (mCountRatePlotReady.exchange(false)) {
             ui->spectroMeter1_top->replot(QCustomPlot::rpQueuedReplot);
             ui->spectroMeter2_top->replot(QCustomPlot::rpQueuedReplot);
+
+            qDebug() << "图像刷新次数：" << m_plotRefreshCount.exchange(m_plotRefreshCount.load() + 1) ;
         }
         if (mSpectrumPlotReady.exchange(false)) {
             replotSpectrumBottom(ui->spectroMeter1_bottom, true);
@@ -1903,7 +1905,7 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
             continue;
 
         quint8 index = row;
-        if (mOnlineDetectors.contains(index))
+        if (mOnlineDetectors.contains(index) && !m_selectedChannels.contains(index)/*且没有处于正在测量中*/)
             validIndexes.append(mi);
     }
 
@@ -1911,7 +1913,7 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
         QMessageBox::warning(
             this,
             tr("自定义通道测量——提示"),
-            tr("所选探测器通道未上线。")
+            tr("所选探测器通道为空/未上线/已处于测量中。")
             );
         return;
     }
@@ -2618,12 +2620,11 @@ void MainWindow::updateCountRatePlotData(int detectorId, double fpgaTime, double
     if (!customPlot)
         return;
 
-    static QElapsedTimer timer;
-    if (!timer.isValid()) {
-        timer.start();
-    }
-
     getGraph(detectorId, false)->addData(fpgaTime, countRate);
+    if (1==detectorId)
+        qDebug() << "#1数据更新次数：" << m_plotDataUpdateCount.exchange(m_plotDataUpdateCount.load() + 1) ;
+    if (2==detectorId)
+        qDebug() << "#2数据更新次数：" << m_plotDataUpdateCount2.exchange(m_plotDataUpdateCount2.load() + 1) ;
 
     if (customPlot->property("enableAutoScale").toBool()) {
         customPlot->rescaleAxes(true);

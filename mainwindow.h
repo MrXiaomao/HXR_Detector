@@ -339,6 +339,9 @@ private:
     void flushTemperatureCache();
 
     quint32 m_specPlotRefreshTime = 1; // 能谱刷新时长(s)
+    std::atomic<quint32> m_plotRefreshCount = 1;// 刷新次数
+    std::atomic<quint32> m_plotDataUpdateCount = 1;// 数据更新次数
+    std::atomic<quint32> m_plotDataUpdateCount2 = 1;// 数据更新次数
 
     // 日志内容查找功能相关
     QString mLastSearchText;  // 上次查找的文本

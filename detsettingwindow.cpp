@@ -311,9 +311,9 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
                 quint8 peak = (quint8)cachePool.at(8);
                 quint8 fall = (quint8)cachePool.at(9);
                 qInfo().noquote() << "上升沿=" << rise << "，平顶="<<peak<< "，下降沿="<<fall;
-                ui->spinBox_trapShapeRisePoint->setValue(rise);
-                ui->spinBox_trapShapePeakPoint->setValue(peak);
-                ui->spinBox_trapShapeFallPoint->setValue(fall);
+                // ui->spinBox_trapShapeRisePoint->setValue(rise);
+                // ui->spinBox_trapShapePeakPoint->setValue(peak);
+                // ui->spinBox_trapShapeFallPoint->setValue(fall);
 
                 if (queryMsg.isEmpty() && (rise != detParameter->trapShapeRisePoint || peak != detParameter->trapShapePeakPoint || fall != detParameter->trapShapeFallPoint)){
                     queryMsg = "上升沿、平顶、下降沿长度与本地设置不一致。";
@@ -508,9 +508,9 @@ void DetSettingWindow::logHardwareParametersFromUi(const QString &reason, quint8
     snapshot.trapShapeEnable = ui->trapShapeEnable->isChecked();
     // snapshot.trapShapeTimeConstD1 = static_cast<quint16>(ui->sb_trapShapeTimeConstD1->value());
     // snapshot.trapShapeTimeConstD2 = static_cast<quint16>(ui->sb_trapShapeTimeConstD2->value());
-    snapshot.trapShapeRisePoint = static_cast<quint8>(ui->spinBox_trapShapeRisePoint->value());
-    snapshot.trapShapePeakPoint = static_cast<quint8>(ui->spinBox_trapShapePeakPoint->value());
-    snapshot.trapShapeFallPoint = static_cast<quint8>(ui->spinBox_trapShapeFallPoint->value());
+    snapshot.trapShapeRisePoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/RisePoint", 10).toUInt());//static_cast<quint8>(ui->spinBox_trapShapeRisePoint->value());
+    snapshot.trapShapePeakPoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/Peakoint", 15).toUInt());//static_cast<quint8>(ui->spinBox_trapShapePeakPoint->value());
+    snapshot.trapShapeFallPoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/FallPoint", 10).toUInt());//static_cast<quint8>(ui->spinBox_trapShapeFallPoint->value());
     snapshot.alphaGammaUpperThold = static_cast<quint16>(ui->spinBox_alphaGammaUpperThold->value());
     snapshot.alphaGammaLowerThold = static_cast<quint16>(ui->spinBox_alphaGammaLowerThold->value());
 
@@ -717,11 +717,11 @@ void DetSettingWindow::saveAt(quint8 detId)
     //时间常数D2
     // detParameter->trapShapeTimeConstD2 = static_cast<quint16>(ui->sb_trapShapeTimeConstD2->value());
     //上升沿
-    detParameter->trapShapeRisePoint = static_cast<quint8>(ui->spinBox_trapShapeRisePoint->value());
+    detParameter->trapShapeRisePoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/RisePoint").toUInt());//static_cast<quint8>(ui->spinBox_trapShapeRisePoint->value());
     //平顶
-    detParameter->trapShapePeakPoint = static_cast<quint8>(ui->spinBox_trapShapePeakPoint->value());
+    detParameter->trapShapePeakPoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/PeakPoint").toUInt());//static_cast<quint8>(ui->spinBox_trapShapePeakPoint->value());
     //下降沿
-    detParameter->trapShapeFallPoint = static_cast<quint8>(ui->spinBox_trapShapeFallPoint->value());
+    detParameter->trapShapeFallPoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/FallPoint").toUInt());//static_cast<quint8>(ui->spinBox_trapShapeFallPoint->value());
 
     //α/γ甄别阈值
     detParameter->alphaGammaUpperThold = static_cast<quint16>(ui->spinBox_alphaGammaUpperThold->value());
@@ -792,11 +792,11 @@ void DetSettingWindow::loadAt(quint8 detId, bool recordLog)
     //时间常数D2
     // ui->sb_trapShapeTimeConstD2->setValue(detParameter->trapShapeTimeConstD2);
     //上升沿
-    ui->spinBox_trapShapeRisePoint->setValue(detParameter->trapShapeRisePoint);
+    // ui->spinBox_trapShapeRisePoint->setValue(detParameter->trapShapeRisePoint);
     //平顶
-    ui->spinBox_trapShapePeakPoint->setValue(detParameter->trapShapePeakPoint);
+    // ui->spinBox_trapShapePeakPoint->setValue(detParameter->trapShapePeakPoint);
     //下降沿
-    ui->spinBox_trapShapeFallPoint->setValue(detParameter->trapShapeFallPoint);
+    // ui->spinBox_trapShapeFallPoint->setValue(detParameter->trapShapeFallPoint);
 
     //α/γ甄别阈值
     ui->spinBox_alphaGammaUpperThold->setValue(detParameter->alphaGammaUpperThold);

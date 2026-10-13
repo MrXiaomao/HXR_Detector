@@ -1,4 +1,4 @@
-#include "globalsettings.h"
+﻿#include "globalsettings.h"
 #include <QFileInfo>
 #include <QApplication>
 #include <QTextCodec>
@@ -160,6 +160,13 @@ HDF5Settings::HDF5Settings(QObject *parent) : QObject(parent), mPluseTime(10)
     //初始化数据类型
     mConfigDataType = createCfgDataType();
     mSpectrumDataType = createH5SpectrumType();
+
+    // 检查梯形成型默认参数项
+    if (!GlobalSettings(DEVICE_CONFIG_FILE).contains("FPGA")){
+        GlobalSettings(DEVICE_CONFIG_FILE).setValue("FPGA/RisePoint", 10);
+        GlobalSettings(DEVICE_CONFIG_FILE).setValue("FPGA/Peakoint", 15);
+        GlobalSettings(DEVICE_CONFIG_FILE).setValue("FPGA/FallPoint", 10);
+    }
 
     // 创建配置文件
     load_localDetPara();
@@ -366,6 +373,9 @@ void HDF5Settings::load_localDetPara()
                 if (item.id >= 1 && item.id <= DET_NUM){
                     DetParameter* det = new DetParameter;
                     memcpy(det, &item, sizeof(DetParameter));
+                    det->trapShapeRisePoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/RisePoint", 10).toUInt());//static_cast<quint8>(ui->spinBox_trapShapeRisePoint->value());
+                    det->trapShapePeakPoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/Peakoint", 15).toUInt());//static_cast<quint8>(ui->spinBox_trapShapePeakPoint->value());
+                    det->trapShapeFallPoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/FallPoint", 10).toUInt());//static_cast<quint8>(ui->spinBox_trapShapeFallPoint->value());
                     mMapDetParameter[item.id] = det;
                 }
             }

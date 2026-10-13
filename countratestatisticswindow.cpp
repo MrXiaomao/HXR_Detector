@@ -325,6 +325,7 @@ void CountRateStatisticsWindow::initUi()
         ui->picture_setting_group->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Expanding);
         ui->plot_widget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
         QHBoxLayout *layout = new QHBoxLayout;
+        layout->setContentsMargins(0,0,0,0);
         layout->addWidget(ui->plot_widget);
         layout->addWidget(ui->picture_setting_group);
         // 设置拉伸因子（关键）
@@ -1188,8 +1189,6 @@ void CountRateStatisticsWindow::on_action_open_triggered()
             emit reporWriteLog(tr("未读取到有效打靶时刻或开测时刻，测量起始时间按 0 显示，否则请手动输入打靶时刻"), QtWarningMsg);
         }
 
-        emit reporWriteLog(tr("参考通道#%1，测量时长/s：%2").arg(probeIndex).arg(ui->line_measure_endT->text()));
-        
         // 设置时间步长下限
         if (data->measureTime == 0) {
             emit reporWriteLog(tr("参考通道#%1，测量时长/s：%2").arg(probeIndex).arg(mMeasureDurationSecond), QtWarningMsg);
@@ -1283,6 +1282,7 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
     clearAllPlots();
     clearAllDetectorStatisticsRows(ui->tableWidget);
     qApp->setOverrideCursor(QCursor(Qt::WaitCursor));
+    const qint32 tmStartBase = ui->line_measure_startT->text().toUInt();
     const qint32 tmStart = ui->spinBox_timeStart->value();
     const qint32 tmEnd = ui->spinBox_timeEnd->value();
     const int stepSec = ui->spinBox->value();
@@ -1481,7 +1481,7 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                     if (data->measureTime == 0) {
                         emit reporWriteLog(tr("通道#%1 第 %2 行 measureTime 为 0，跳过").arg(index).arg(i + 1), QtWarningMsg);
                     } else {
-                        const double rowTimeSec = data->sequence * data->measureTime / 1000.0;
+                        const double rowTimeSec = data->sequence * data->measureTime / 1000.0 + tmStartBase/*测量起始时间*/;
                         if (rowTimeSec > tmEnd) {
                             break;
                         }
@@ -1512,7 +1512,7 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                                 if (row->measureTime == 0 || row->measureTime != measureTimeMs)
                                     break;
 
-                                const double binTimeSec = row->sequence * row->measureTime / 1000.0;
+                                const double binTimeSec = row->sequence * row->measureTime / 1000.0 + tmStartBase/*测量起始时间*/;
                                 if (binTimeSec > tmEnd)
                                     break;
                                 if (binTimeSec < tmStart)
@@ -1576,7 +1576,7 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                                     break;
                                 }
 
-                                const double timeSec = lastSequence * measureTimeMs / 1000.0;
+                                const double timeSec = lastSequence * measureTimeMs / 1000.0 + tmStartBase/*测量起始时间*/;
                                 mMapCount[index].push_back(qMakePair(timeSec, countRate));
                                 mMapCountCorrect[index].push_back(qMakePair(timeSec, countRateCorrect));
                             }

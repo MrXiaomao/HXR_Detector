@@ -65,6 +65,7 @@ void WaveformWindow::on_pushButton_start_clicked()
         return;
     }
 
+    pkgCount.store(0);
     ui->lineEdit_pkgCount->setText(QString::number(0));
     commHelper->startMeasure(QDateTime::currentDateTime(), CommandAdapter::MeasureMode::mmManual, CommandAdapter::WorkMode::wmWaveform);
 
