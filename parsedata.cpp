@@ -485,7 +485,9 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
         const double deathRatio = deadTimeRateFromSegment(spec);
         double peakCount = 0.0;
         double peakPos = 0.0;
-        if (!SpecStripping(singleSpectrum, newEnergyScal, fit_c, stripFlag, deathRatio, &peakCount, &peakPos)) {
+        double sigmaP = 0.0;
+        if (!SpecStripping(singleSpectrum, newEnergyScal, fit_c, stripFlag, deathRatio,
+                           &peakCount, &peakPos, &sigmaP)) {
             mFitFailureMessages.append(
                 QStringLiteral("谱仪%1第%2段能谱拟合失败，解析失败").arg(mDetId).arg(segmentIndex));
             delete[] singleSpectrum;
@@ -497,6 +499,7 @@ int ParseData::getResult(QVector<mergeSpecData> mergeSpec)
         initialValue = fit_c;
         mCount909Time.push_back(spec.currentTime * 1.0 / 60000.0);
         mCount909Count.push_back(peakCount);
+        mCount909SigmaP.push_back(sigmaP);
         mCount909PeakPos.push_back(peakPos);
         // 保留最近一次成功剥谱得到的能量刻度，供界面手动导出到 device_config.ini。
         mLatestEnergyCalibration[0] = newEnergyScal[0];
@@ -883,12 +886,13 @@ bool ParseData::PeakFind(double* spectrum, QVector<fit_result>& init_c, bool* ex
  * @param deadTimeRate 死时间率
  * @param peakCountOut 909keV峰面积净计数
  * @param peakPositionOut 909keV峰位道址，可为空
+ * @param sigmaPOut 909keV峰面积标准差，可为空
  * @return 是否成功
  * 拟合成功后，init_c更新为拟合结果
  */
 bool ParseData::SpecStripping(double *spectrum, double energy_scale[], QVector<double> &init_c,
                               bool *exitflag, double deadTimeRate, double *peakCountOut,
-                              double *peakPositionOut)
+                              double *peakPositionOut, double *sigmaPOut)
 {
     // 909keV峰位
     double position909peak = 0.0; 
@@ -929,6 +933,12 @@ bool ParseData::SpecStripping(double *spectrum, double energy_scale[], QVector<d
     alglib::real_1d_array c;
     QVector<double> residual_rate;
     SpecStripFitInfo stripFitInfo;
+    CurveFit::LsFitCov fitCov;
+    double gauss_a = 0.0;
+    double gauss_c = 0.0;
+    double var_a = 0.0;
+    double var_c = 0.0;
+    double cov_ac = 0.0;
 
     // 846keV能峰存在则采用双高斯拟合，不存在则采用单高斯拟合
     if (exitflag[0]) {
@@ -937,7 +947,7 @@ bool ParseData::SpecStripping(double *spectrum, double energy_scale[], QVector<d
             p[i] = init_c[i];
 
         double fitR2 = 0.0;
-        if (!CurveFit::fit_2gauss_ploy4(fitPoints, p, residual_rate, mSpectrumFitR2Min, &fitR2))
+        if (!CurveFit::fit_2gauss_ploy4(fitPoints, p, residual_rate, mSpectrumFitR2Min, &fitR2, &fitCov))
             return false;
         for (int i = 0; i < 11; ++i)
             init_c[i] = p[i];
@@ -956,6 +966,15 @@ bool ParseData::SpecStripping(double *spectrum, double energy_scale[], QVector<d
         // 记录909keV峰位
         position909peak = p[4];
 
+        // 909 峰高/sigma 对应双高斯参数下标 3、5（修正 MATLAB V2.0 误用 846 下标的问题）
+        gauss_a = init_c[3];
+        gauss_c = init_c[5];
+        if (fitCov.valid) {
+            var_a = fitCov.at(3, 3);
+            var_c = fitCov.at(5, 5);
+            cov_ac = fitCov.at(3, 5);
+        }
+
         stripFitInfo.model = SpecStripFitModel::TwoGaussPoly4;
         stripFitInfo.r2 = fitR2;
         stripFitInfo.coeffs.resize(11);
@@ -968,10 +987,11 @@ bool ParseData::SpecStripping(double *spectrum, double energy_scale[], QVector<d
             p[i] = init_c[i + 3];
 
         double fitR2 = 0.0;
-        if (!CurveFit::fit_gauss_ploy4(fitPoints, p, residual_rate, mSpectrumFitR2Min, &fitR2))
+        if (!CurveFit::fit_gauss_ploy4(fitPoints, p, residual_rate, mSpectrumFitR2Min, &fitR2, &fitCov))
             return false;
+        // V2.0：保留初值前三个参数（含 846 峰位），不再写死 846
         init_c[0] = savedInitial[0];
-        init_c[1] = 846.0;
+        init_c[1] = savedInitial[1];
         init_c[2] = savedInitial[2];
         for (int i = 0; i < 8; ++i)
             init_c[i + 3] = p[i];
@@ -989,6 +1009,15 @@ bool ParseData::SpecStripping(double *spectrum, double energy_scale[], QVector<d
         }
         // 记录909keV峰位
         position909peak = p[1];
+
+        // 单高斯拟合参数：峰高 p[0]、sigma p[2] → init_c[3]/[5]
+        gauss_a = init_c[3];
+        gauss_c = init_c[5];
+        if (fitCov.valid) {
+            var_a = fitCov.at(0, 0);
+            var_c = fitCov.at(2, 2);
+            cov_ac = fitCov.at(0, 2);
+        }
 
         stripFitInfo.model = SpecStripFitModel::GaussPoly4;
         stripFitInfo.r2 = fitR2;
@@ -1031,10 +1060,23 @@ bool ParseData::SpecStripping(double *spectrum, double energy_scale[], QVector<d
 
     const double pi = 3.141592654;
     const double denom = (1.0 - deadTimeRate) > 1e-12 ? (1.0 - deadTimeRate) : 1.0;
+    const double sigma_d = 0.0; // 死时间标准差，当前未建模
     if (peakCountOut)
-        *peakCountOut = init_c[3] * init_c[5] * std::sqrt(pi) / denom;
+        *peakCountOut = gauss_a * gauss_c * std::sqrt(pi) / denom;
     if (peakPositionOut)
         *peakPositionOut = position909peak;
+    if (sigmaPOut) {
+        // P = a*c*√π/(1-d)，误差传播（含 Cov(a,c)）
+        const double termA = gauss_c * std::sqrt(pi) / denom;
+        const double termC = gauss_a * std::sqrt(pi) / denom;
+        const double termD = gauss_a * gauss_c * std::sqrt(pi) / (denom * denom);
+        const double varP =
+            termA * termA * var_a +
+            termC * termC * var_c +
+            termD * termD * sigma_d * sigma_d +
+            2.0 * gauss_a * gauss_c * pi / (denom * denom) * cov_ac;
+        *sigmaPOut = (varP > 0.0 && std::isfinite(varP)) ? std::sqrt(varP) : 0.0;
+    }
 
     mSpecStripDataX.append(fitx);
     mSpecStripDataY.append(fity);
@@ -1060,26 +1102,38 @@ bool ParseData::fit909data()
     mHasCount909DecayFit = false;
     mCount909FitA = 0.0;
     mCount909FitR2 = 0.0;
+    mCount909FitSigmaA = 0.0;
+    mCount909FitRelSigmaA = 0.0;
+    mInitialCountSigma = 0.0;
     const int ch_count = mCount909Count.size();
     if (ch_count < 2)
+        return false;
+    if (mCount909SigmaP.size() != ch_count)
         return false;
 
     QVector<QPointF> fitPoints;
     QVector<double> fitx;
     QVector<double> fity;
+    QVector<double> weights;
     fitPoints.reserve(ch_count);
     fitx.reserve(ch_count);
     fity.reserve(ch_count);
+    weights.reserve(ch_count);
     for (int i = 0; i < ch_count; ++i) {
         fitx.push_back(mCount909Time.at(i));
         fity.push_back(mCount909Count.at(i));
         fitPoints.push_back(QPointF(fitx.last(), fity.last()));
+        // 逆方差权重 w = 1/σ_P²（与 MATLAB V2.0 一致）
+        const double sigmaP = mCount909SigmaP.at(i);
+        const double varP = std::max(sigmaP * sigmaP, 1e-24);
+        weights.push_back(1.0 / varP);
     }
 
     double fit_a = fity.first();
     QVector<double> residual_rate;
     double fitR2 = 0.0;
-    if (!CurveFit::fit_exp_decay(fitPoints, &fit_a, residual_rate, &fitR2))
+    double rmse = 0.0;
+    if (!CurveFit::fit_exp_decay(fitPoints, &fit_a, residual_rate, &fitR2, &weights, &rmse))
         return false;
 
     QVector<double> fity_curve;
@@ -1101,9 +1155,24 @@ bool ParseData::fit909data()
     mCount909FitA = fit_a;
     mCount909FitR2 = fitR2;
 
+    // y = a*k(t), k=exp(-λt)；σ_a = RMSE / √(Σ w k²)
     const double t1 = log(2.0) / (78.4 * 60.0);
+    double sumWk2 = 0.0;
+    for (int i = 0; i < ch_count; ++i) {
+        const double k = std::exp(-t1 * fitx.at(i));
+        sumWk2 += weights.at(i) * k * k;
+    }
+    if (sumWk2 > 0.0 && std::isfinite(rmse))
+        mCount909FitSigmaA = rmse / std::sqrt(sumWk2);
+    if (std::abs(fit_a) > 0.0 && std::isfinite(mCount909FitSigmaA))
+        mCount909FitRelSigmaA = mCount909FitSigmaA / std::abs(fit_a) * 100.0;
+
     const double timeBinMin = mTimeBinOnline / 60.0;
-    mInitialCount = fit_a / (std::exp(timeBinMin * t1) - 1.0);
+    const double denomN0 = std::exp(timeBinMin * t1) - 1.0;
+    if (denomN0 > 0.0) {
+        mInitialCount = fit_a / denomN0;
+        mInitialCountSigma = mCount909FitSigmaA / denomN0;
+    }
     return true;
 }
 
@@ -1146,7 +1215,7 @@ QVector<specStripData> ParseData::GetCount909Data()
     return pictureData;
 }
 
-bool ParseData::count909DecayFit(double *a, double *r2) const
+bool ParseData::count909DecayFit(double *a, double *r2, double *sigmaA, double *relSigmaAPct) const
 {
     if (!mHasCount909DecayFit)
         return false;
@@ -1154,6 +1223,10 @@ bool ParseData::count909DecayFit(double *a, double *r2) const
         *a = mCount909FitA;
     if (r2)
         *r2 = mCount909FitR2;
+    if (sigmaA)
+        *sigmaA = mCount909FitSigmaA;
+    if (relSigmaAPct)
+        *relSigmaAPct = mCount909FitRelSigmaA;
     return true;
 }
 
@@ -1163,16 +1236,20 @@ bool ParseData::count909DecayFit(double *a, double *r2) const
 void ParseData::clearFitResult()
 {
     mInitialCount = 0.0;
+    mInitialCountSigma = 0.0;
     mSuccessfulFitSegmentCount = 0;
     mFitFailureMessages.clear();
     mCount909Time.clear();
     mCount909Count.clear(); //909keV计数，采用峰面积求得
+    mCount909SigmaP.clear();
     mCount909PeakPos.clear(); //909keV峰位道址
     mCount909FitCount.clear(); //909keV计数随时间变化的拟合曲线
     mCount909Residual.clear(); //残差
     mHasCount909DecayFit = false;
     mCount909FitA = 0.0;
     mCount909FitR2 = 0.0;
+    mCount909FitSigmaA = 0.0;
+    mCount909FitRelSigmaA = 0.0;
     mHasLatestEnergyCalibration = false;
     mLatestEnergyCalibration[0] = 1.0;
     mLatestEnergyCalibration[1] = 0.0;

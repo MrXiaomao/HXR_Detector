@@ -2,17 +2,43 @@
  * @Author: MaoXiaoqing
  * @Date: 2025-04-22 17:21:41
  * @LastEditors: Maoxiaoqing
- * @LastEditTime: 2026-01-26 13:57:12
+ * @LastEditTime: 2026-10-15 20:01:08
  * @Description: 借助ALGLIB库（只需添加到项目便可使用）进行函数拟合，给出拟合结果以及拟合残差，拟合曲线
  */
 
 #include "curveFit.h"
 #include <algorithm>
+#include <cmath>
 #include <QDebug>
 #include <math.h>
 
 using namespace alglib;
 namespace CurveFit {
+
+namespace {
+
+void fillLsFitCov(LsFitCov *covOut, const lsfitreport &rep, int nParam, double resnorm)
+{
+    if (!covOut)
+        return;
+    covOut->valid = false;
+    covOut->nParam = nParam;
+    covOut->resnorm = resnorm;
+    covOut->rmsError = rep.rmserror;
+    covOut->cov = QVector<double>(nParam * nParam, 0.0);
+    if (nParam <= 0)
+        return;
+    if (rep.covpar.rows() < nParam || rep.covpar.cols() < nParam)
+        return;
+    for (int i = 0; i < nParam; ++i) {
+        for (int j = 0; j < nParam; ++j)
+            covOut->cov[i * nParam + j] = rep.covpar[i][j];
+    }
+    covOut->valid = true;
+}
+
+} // namespace
+
     
     void function_linear(const real_1d_array &c, const real_1d_array &x, double &func, void *ptr)
     {
@@ -456,7 +482,8 @@ namespace CurveFit {
         return 1;
     }
 
-    bool fit_gauss_ploy4(QVector<QPointF> points, double* fit_c, QVector<double> &residual_rate, double r2Min, double *r2Out)
+    bool fit_gauss_ploy4(QVector<QPointF> points, double* fit_c, QVector<double> &residual_rate,
+                         double r2Min, double *r2Out, LsFitCov *covOut)
     {
         int paraNum = 8; //待拟合参数个数
         int num = points.size();
@@ -515,6 +542,7 @@ namespace CurveFit {
 
             //计算残差率
             double chi_square_sum = 0.0;
+            double resnorm = 0.0;//残差平方和
             residual_rate.clear();
             for(int i=0; i<num; i++)
             {
@@ -524,15 +552,15 @@ namespace CurveFit {
                 xData[0] = x_temp;
 
                 //计算拟合得到的y值
-                double y;
-                function_gauss_poly4(c, xData, y, NULL);
+                double yFit;
+                function_gauss_poly4(c, xData, yFit, NULL);
 
-                double residual = fit_y.at(i) - y; //残差
-                // double chi_square = residual * residual / y;
-                // chi_square_sum += chi_square;
-                double resRate = residual / y*100.0;
+                double residual = fit_y.at(i) - yFit; //残差
+                resnorm += residual * residual;
+                double resRate = residual / yFit*100.0;
                 residual_rate.push_back(resRate);
             }
+            fillLsFitCov(covOut, rep, paraNum, resnorm);
 
             qDebug().noquote()<<"fit_gauss_ploy4 c:["<<fit_c[0]<<","<<fit_c[1]<<","<<fit_c[2]<<","<<QString::number(fit_c[3], 'g', 9)
                     <<","<<QString::number(fit_c[4], 'g', 9)<<","<<QString::number(fit_c[5], 'g', 9)<<","<<QString::number(fit_c[6], 'g', 9)<<","<<fit_c[7]
@@ -549,7 +577,8 @@ namespace CurveFit {
         return 1;
     }
 
-    bool fit_2gauss_ploy4(QVector<QPointF> points, double* fit_c, QVector<double> &residual_rate, double r2Min, double *r2Out)
+    bool fit_2gauss_ploy4(QVector<QPointF> points, double* fit_c, QVector<double> &residual_rate,
+                          double r2Min, double *r2Out, LsFitCov *covOut)
     {
         int paraNum = 11; //待拟合参数个数
         int num = points.size();
@@ -608,6 +637,7 @@ namespace CurveFit {
 
             //计算残差率
             double chi_square_sum = 0.0;
+            double resnorm = 0.0;
             residual_rate.clear();
             for(int i=0; i<num; i++)
             {
@@ -617,15 +647,15 @@ namespace CurveFit {
                 xData[0] = x_temp;
 
                 //计算拟合得到的y值
-                double y;
-                function_2gauss_poly4(c, xData, y, NULL);
+                double yFit;
+                function_2gauss_poly4(c, xData, yFit, NULL);
 
-                double residual = fit_y.at(i) - y; //残差
-                // double chi_square = residual * residual / y;
-                // chi_square_sum += chi_square;
-                double resRate = residual / y*100.0;
+                double residual = fit_y.at(i) - yFit; //残差
+                resnorm += residual * residual;
+                double resRate = residual / yFit*100.0;
                 residual_rate.push_back(resRate);
             }
+            fillLsFitCov(covOut, rep, paraNum, resnorm);
 
             qDebug().noquote()<<"fit_2gauss_ploy4 c:["<<fit_c[0]<<","<<fit_c[1]<<","<<fit_c[2]<<","
                     <<QString::number(fit_c[3], 'g', 9)<<","<<QString::number(fit_c[4], 'g', 9)<<","
@@ -722,13 +752,15 @@ namespace CurveFit {
         return 1;
     }
 
-    bool fit_exp_decay(QVector<QPointF> points, double *fit_a, QVector<double> &residual_rate, double *r2Out)
+    bool fit_exp_decay(QVector<QPointF> points, double *fit_a, QVector<double> &residual_rate,
+                       double *r2Out, const QVector<double> *weights, double *rmseOut)
     {
         const int paraNum = 1;
         const int num = points.size();
-        if (num < 2)
+        if (num < 2 || !fit_a)
             return false;
 
+        const bool useWeights = weights && weights->size() == num;
         QVector<double> fit_x;
         QVector<double> fit_y;
         fit_x.reserve(num);
@@ -753,15 +785,25 @@ namespace CurveFit {
             lsfitstate state;
             lsfitreport rep;
 
-            lsfitcreatef(x, y, c, 1e-9, state);
+            if (useWeights) {
+                alglib::real_1d_array w;
+                w.setcontent(num, weights->constData());
+                lsfitcreatewf(x, y, w, c, 1e-9, state);
+            } else {
+                lsfitcreatef(x, y, c, 1e-9, state);
+            }
             alglib::lsfitsetcond(state, epsx, maxits);
             alglib::lsfitfit(state, function_exp_decay);
             lsfitresults(state, c, rep);
+
+            if (rep.terminationtype < 1)
+                return false;
 
             fit_a[0] = c[0];
             if (r2Out)
                 *r2Out = rep.r2;
             residual_rate.clear();
+            double sseW = 0.0;
             for (int i = 0; i < num; ++i) {
                 alglib::real_1d_array xData;
                 xData.setlength(1);
@@ -769,11 +811,21 @@ namespace CurveFit {
                 double yFit = 0.0;
                 function_exp_decay(c, xData, yFit, nullptr);
                 const double measured = fit_y.at(i);
+                const double residual = measured - yFit;
+                const double wi = useWeights ? weights->at(i) : 1.0;
+                sseW += wi * residual * residual;
                 residual_rate.push_back((measured - yFit) / yFit * 100.0);
+            }
+            // 与 MATLAB gof.rmse / 加权最小二乘一致：sqrt(Σ w r² / (n-p))
+            if (rmseOut) {
+                const int dof = std::max(num - paraNum, 1);
+                *rmseOut = std::sqrt(sseW / static_cast<double>(dof));
             }
 
             qDebug().nospace() << "CurveFit::fit_exp_decay a=" << fit_a[0]
-                               << " r2=" << rep.r2;
+                               << " r2=" << rep.r2
+                               << " weighted=" << useWeights
+                               << " rmse=" << (rmseOut ? *rmseOut : rep.rmserror);
         } catch (alglib::ap_error &alglib_exception) {
             printf("ALGLIB exception with message '%s'\n", alglib_exception.msg.c_str());
             return false;

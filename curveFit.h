@@ -19,6 +19,25 @@ namespace CurveFit {
     /** 寻峰 fit_gauss_linear2 不做 R² 门槛时使用 */
     constexpr double kNoSpectrumFitR2Check = -1.0;
 
+    /** 非线性最小二乘参数协方差（行主序 nParam×nParam） */
+    struct LsFitCov {
+        int nParam = 0;
+        double resnorm = 0.0;
+        double rmsError = 0.0;
+        QVector<double> cov;
+        bool valid = false;
+
+        double at(int row, int col) const
+        {
+            if (!valid || row < 0 || col < 0 || row >= nParam || col >= nParam)
+                return 0.0;
+            const int idx = row * nParam + col;
+            if (idx < 0 || idx >= cov.size())
+                return 0.0;
+            return cov.at(idx);
+        }
+    };
+
     /**
      * @brief 定义线性函数 f=kx+b
      * @param c 拟合参数c
@@ -157,7 +176,8 @@ namespace CurveFit {
      * @return 拟合是否成功
      */
     bool fit_gauss_ploy4(QVector<QPointF> points, double* fit_c, QVector<double> &residual_rate,
-                         double r2Min = kDefaultSpectrumFitR2Min, double *r2Out = nullptr);
+                         double r2Min = kDefaultSpectrumFitR2Min, double *r2Out = nullptr,
+                         LsFitCov *covOut = nullptr);
 
     /**
      * @brief 双高斯+4阶多项式拟合
@@ -169,7 +189,8 @@ namespace CurveFit {
      * @return 拟合是否成功
      */
     bool fit_2gauss_ploy4(QVector<QPointF> points, double* fit_c, QVector<double> &residual_rate,
-                          double r2Min = kDefaultSpectrumFitR2Min, double *r2Out = nullptr);
+                          double r2Min = kDefaultSpectrumFitR2Min, double *r2Out = nullptr,
+                          LsFitCov *covOut = nullptr);
 
     /**
      * @brief 对909全能峰计数随时间变化曲线进行拟合
@@ -184,8 +205,12 @@ namespace CurveFit {
     /**
      * @brief 909 全能峰计数随时间指数衰减拟合 func = a*exp(-ln2/(78.4*60)*t)
      * @param r2Out 可选，输出拟合优度 R²
+     * @param weights 可选，逆方差权重 w_i=1/σ_i²；为空则等权
+     * @param rmseOut 可选，输出加权/等权 RMSE（供 σ_a 计算）
      */
     bool fit_exp_decay(QVector<QPointF> points, double *fit_a, QVector<double> &residual_rate,
-                       double *r2Out = nullptr);
+                       double *r2Out = nullptr,
+                       const QVector<double> *weights = nullptr,
+                       double *rmseOut = nullptr);
 }
 

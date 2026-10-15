@@ -400,44 +400,6 @@ void applyDetectorTableItemFlags(QTableWidgetItem *item, int column)
     item->setFlags(flags);
 }
 
-double compute909FitR2(const QVector<specStripData> &data)
-{
-    if (data.size() < 2)
-        return 0.0;
-
-    double meanY = 0.0;
-    for (const specStripData &d : data)
-        meanY += d.y;
-    meanY /= data.size();
-
-    double ssRes = 0.0;
-    double ssTot = 0.0;
-    for (const specStripData &d : data) {
-        const double diff = d.y - d.fit_y;
-        ssRes += diff * diff;
-        const double dev = d.y - meanY;
-        ssTot += dev * dev;
-    }
-    if (ssTot <= 0.0)
-        return 0.0;
-    return qBound(0.0, 1.0 - ssRes / ssTot, 1.0);
-}
-
-double mapFitQualityToUncertainty(double r2)
-{
-    constexpr double kUncMin = 1.0;
-    constexpr double kUncMax = 3.0;
-    constexpr double kR2TypicalMin = 0.9;
-    constexpr double kR2Perfect = 1.0;
-
-    r2 = qBound(0.0, r2, 1.0);
-
-    double quality = 0.0;
-    if (r2 >= kR2TypicalMin)
-        quality = (r2 - kR2TypicalMin) / (kR2Perfect - kR2TypicalMin);
-
-    return kUncMin + (1.0 - quality) * (kUncMax - kUncMin);
-}
 } // namespace
 
 NeutronYieldStatisticsWindow::NeutronYieldStatisticsWindow(bool isDarkTheme, QWidget *parent)
@@ -3027,13 +2989,12 @@ void NeutronYieldStatisticsWindow::slotSuccess(int detID)
         applyDetectorTableItemFlags(yieldItem, 1);
         ui->twResults->setItem(detID-1, 1, yieldItem);
 
-        const QVector<specStripData> fit909 = dealFile[detID - 1]->GetCount909Data();
+        // Uncertainty 列：衰减拟合参数 a 的相对不确定度 σ_a/|a|×100（%），与产额相对不确定度相同
         auto *uncItem = new QTableWidgetItem;
         applyDetectorTableItemFlags(uncItem, 2);
-        if (fit909.size() >= 2) {
-            const double r2 = compute909FitR2(fit909);
-            uncItem->setText(QString::number(mapFitQualityToUncertainty(r2), 'f', 2));
-        }
+        double relSigmaAPct = 0.0;
+        if (dealFile[detID - 1]->count909DecayFit(nullptr, nullptr, nullptr, &relSigmaAPct))
+            uncItem->setText(QString::number(relSigmaAPct, 'f', 2));
         ui->twResults->setItem(detID - 1, 2, uncItem);
 
         //从界面左侧表格读取探测器经纬度(这意味着用户可以离线分析中手动修改各个探测器的坐标位置）
@@ -3709,15 +3670,25 @@ bool NeutronYieldStatisticsWindow::exportCount909Xlsx(const QString &filePath) c
         {
             double fitA = 0.0;
             double fitR2 = 0.0;
-            if (parsed->count909DecayFit(&fitA, &fitR2)) {
+            double sigmaA = 0.0;
+            double relSigmaAPct = 0.0;
+            if (parsed->count909DecayFit(&fitA, &fitR2, &sigmaA, &relSigmaAPct)) {
                 row++;
                 col = 1;
                 xlsx.write(row, col++, QStringLiteral("计数率拟合公式"));
-                xlsx.write(row, col, QStringLiteral("y = a*exp(-ln(2)/(78.4*60)*t)，t 单位 min"));
+                xlsx.write(row, col, QStringLiteral("y = a*exp(-ln(2)/(78.4*60)*t)，t 单位 min（逆方差加权）"));
                 row++;
                 col = 1;
                 xlsx.write(row, col++, QStringLiteral("a"));
                 xlsx.write(row, col, fitA);
+                row++;
+                col = 1;
+                xlsx.write(row, col++, QStringLiteral("σ_a"));
+                xlsx.write(row, col, sigmaA);
+                row++;
+                col = 1;
+                xlsx.write(row, col++, QStringLiteral("相对不确定度(%)"));
+                xlsx.write(row, col, relSigmaAPct);
                 row++;
                 col = 1;
                 xlsx.write(row, col++, QStringLiteral("R²"));

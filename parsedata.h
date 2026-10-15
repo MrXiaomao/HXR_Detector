@@ -118,8 +118,17 @@ public:
 
     double GetInitialCount(){return mInitialCount;}
 
-    /** @brief 909 计数衰减拟合参数 a 与 R²（fit909data 成功后有效） */
-    bool count909DecayFit(double *a, double *r2) const;
+    /** @brief 零时刻计数 N0 的标准差（由 σ_a 误差传播） */
+    double GetInitialCountUncertainty() const { return mInitialCountSigma; }
+
+    /**
+     * @brief 909 计数衰减拟合参数（fit909data 成功后有效）
+     * @param sigmaA 可选，参数 a 的标准差
+     * @param relSigmaAPct 可选，相对不确定度 σ_a/|a|×100
+     */
+    bool count909DecayFit(double *a, double *r2,
+                          double *sigmaA = nullptr,
+                          double *relSigmaAPct = nullptr) const;
 
     /** @brief 各时段 909 能谱剥谱拟合信息，与 GetStripData(i) 下标一一对应 */
     const QVector<SpecStripFitInfo> &specStripFitInfos() const { return mSpecStripFitInfos; }
@@ -151,9 +160,10 @@ public:
      */
     bool PeakFind(double* spectrum, QVector<fit_result>& init_c, bool* exitflag);
 
-    // 剥谱
+    // 剥谱；sigmaPOut 可选，输出 909 keV 峰面积标准差
     bool SpecStripping(double* spectrum, double energy_scale[], QVector<double>& init_c, bool* exitflag,
-                       double deadTimeRate, double *peakCountOut, double *peakPositionOut = nullptr);
+                       double deadTimeRate, double *peakCountOut, double *peakPositionOut = nullptr,
+                       double *sigmaPOut = nullptr);
 
     // 拟合909全能峰计数随时间的变化
     bool fit909data();
@@ -303,12 +313,15 @@ private:
     // 所有的拟合数据依次压入specStripData数据中
     QVector<double> mCount909Time; //各分时能谱对应测量结束时间（也就是右端点），单位min
     QVector<double> mCount909Count; //909keV计数，采用峰面积求得
+    QVector<double> mCount909SigmaP; //各时段 909 keV 峰面积标准差
     QVector<double> mCount909PeakPos; //909keV峰位道址
     QVector<double> mCount909FitCount; //909keV计数随时间变化的拟合曲线
     QVector<double> mCount909Residual; //残差
     bool mHasCount909DecayFit = false;
     double mCount909FitA = 0.0;
     double mCount909FitR2 = 0.0;
+    double mCount909FitSigmaA = 0.0;
+    double mCount909FitRelSigmaA = 0.0; // 百分数
     bool mHasLatestEnergyCalibration = false;
     double mLatestEnergyCalibration[2] = {1.0, 0.0};
     QVector<double> mLatestEnergyCalibrationPointsX;
@@ -330,6 +343,7 @@ private:
     int mTimeBinOnline = 300*60; //解析能谱的时间宽度，单位s.分时能谱的单个能谱测量时间
 
     double mInitialCount = 0.0; //对数拟合后，给出来的初始计数率
+    double mInitialCountSigma = 0.0; // N0 标准差
     QVector<int> mSpecStripRightCh; //存放所有剥谱图形的右端点下标
     int mSuccessfulFitSegmentCount = 0;
     QStringList mFitFailureMessages;
