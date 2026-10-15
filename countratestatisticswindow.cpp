@@ -1173,20 +1173,25 @@ void CountRateStatisticsWindow::on_action_open_triggered()
                 shotTime = HDF5Settings::parseConfigTimeString(
                     HDF5Settings::readConfigStringFromGroup(cfgGroup, "ShotTime"));
             } else {
-                emit reporWriteLog(tr("当前 H5 文件 Config 中未找到 ShotTime，测量起始时间按 0 显示，否则请手动输入打靶时刻"), QtWarningMsg);
+                emit reporWriteLog(tr("当前 H5 文件 Config 中未找到 ShotTime，暂以开测时刻为时间零点；可在打靶时刻控件中补填后点「导入打靶时刻」"), QtWarningMsg);
             }
             cfgGroup.close();
         }
         mMeasureStartTime = measureStartTime;
         if (shotTime.isValid()) {
             ui->fusionDateTime->setDateTime(shotTime);
-        }
-        if (updateMeasureStartTimeFromShotTime(shotTime)) {
-            // 已按 H5 中的 ShotTime 刷新测量起始时间
-        } else {
+            if (updateMeasureStartTimeFromShotTime(shotTime)) {
+                emit reporWriteLog(tr("已按 H5 中 ShotTime 设置时间零点（相对开测偏移 %1 s）；仍可通过打靶时刻控件覆盖")
+                                       .arg(mMeasureStartSecond));
+            }
+        } else if (mMeasureStartTime.isValid()) {
+            // 无 ShotTime：时间零点=开测时刻，fusionDateTime 预填开测时刻便于手工改成真实打靶时刻
             updateMeasureStartSecond(0);
             ui->fusionDateTime->setDateTime(mMeasureStartTime);
-            emit reporWriteLog(tr("未读取到有效打靶时刻或开测时刻，测量起始时间按 0 显示，否则请手动输入打靶时刻"), QtWarningMsg);
+            emit reporWriteLog(tr("未读取到有效打靶时刻，暂以开测时刻为时间零点；请在打靶时刻控件中补填后点「导入打靶时刻」"), QtWarningMsg);
+        } else {
+            updateMeasureStartSecond(0);
+            emit reporWriteLog(tr("未读取到有效开测时刻与打靶时刻，时间轴从 0 起；请打开有效测量文件"), QtWarningMsg);
         }
 
         // 设置时间步长下限
@@ -1240,16 +1245,23 @@ void CountRateStatisticsWindow::updateMeasureStartSecond(double startSecond)
 {
     mMeasureStartSecond = startSecond;
     ui->line_measure_startT->setText(QString::number(startSecond));
-    ui->line_measure_endT->setText(QString::number(mMeasureDurationSecond + startSecond));
-    const double boundedStartSecond = qBound(static_cast<double>(std::numeric_limits<int>::min()),
-                                             startSecond,
-                                             static_cast<double>(std::numeric_limits<int>::max()));
-    const int minimumStartSecond = static_cast<int>(std::ceil(boundedStartSecond));
-    const int maximumEndSecond = static_cast<int>(std::floor(mMeasureDurationSecond));
+    const double endSecond = mMeasureDurationSecond + startSecond;
+    ui->line_measure_endT->setText(QString::number(endSecond));
+
+    const double intMin = static_cast<double>(std::numeric_limits<int>::min());
+    const double intMax = static_cast<double>(std::numeric_limits<int>::max());
+    const int minimumStartSecond = static_cast<int>(std::ceil(qBound(intMin, startSecond, intMax)));
+    const int maximumEndSecond = static_cast<int>(std::floor(qBound(intMin, endSecond, intMax)));
+
+    // 先放宽范围，再设值，避免 spinBox 钳制导致起止错乱
     ui->spinBox_timeStart->setMinimum(minimumStartSecond);
-    if (ui->spinBox_timeStart->value() < minimumStartSecond)
-        ui->spinBox_timeStart->setValue(minimumStartSecond);
-        ui->spinBox_timeEnd->setValue(mMeasureDurationSecond + startSecond);
+    ui->spinBox_timeStart->setMaximum(qMax(minimumStartSecond, maximumEndSecond));
+    ui->spinBox_timeEnd->setMinimum(minimumStartSecond);
+    ui->spinBox_timeEnd->setMaximum(qMax(minimumStartSecond, maximumEndSecond));
+
+    // 导入打靶时刻后，解析区间默认对齐整段测量范围
+    ui->spinBox_timeStart->setValue(minimumStartSecond);
+    ui->spinBox_timeEnd->setValue(maximumEndSecond);
 }
 
 void CountRateStatisticsWindow::on_ConfirmTime_clicked()
@@ -1266,7 +1278,8 @@ void CountRateStatisticsWindow::on_ConfirmTime_clicked()
     }
 
     if (updateMeasureStartTimeFromShotTime(shotTime)) {
-        emit reporWriteLog(tr("导入打靶时刻成功，可以开始解析。"));
+        emit reporWriteLog(tr("已按打靶时刻控件更新时间零点（相对开测偏移 %1 s，可为负），可开始解析")
+                               .arg(mMeasureStartSecond));
     }
 }
 
@@ -1282,7 +1295,75 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
     clearAllPlots();
     clearAllDetectorStatisticsRows(ui->tableWidget);
     qApp->setOverrideCursor(QCursor(Qt::WaitCursor));
-    const qint32 tmStartBase = ui->line_measure_startT->text().toUInt();
+
+    // 解析前再次读取打靶时刻控件：支持无 ShotTime 时补全，或覆盖 H5 中已有 ShotTime。
+    // 只更新零点偏移与测量范围显示，不强制重置用户已选的解析起止（完整重置请点「导入打靶时刻」）。
+    if (mMeasureStartTime.isValid()) {
+        const QDateTime shotFromUi = ui->fusionDateTime->dateTime();
+        if (shotFromUi.isValid()) {
+            QDateTime measureStartTime = mMeasureStartTime;
+            QDateTime fusionShotTime = shotFromUi;
+            measureStartTime.setTimeSpec(Qt::UTC);
+            fusionShotTime.setTimeSpec(Qt::UTC);
+            mMeasureStartSecond = fusionShotTime.msecsTo(measureStartTime) / 1000.0;
+            ui->line_measure_startT->setText(QString::number(mMeasureStartSecond));
+            ui->line_measure_endT->setText(QString::number(mMeasureDurationSecond + mMeasureStartSecond));
+        }
+    }
+
+    const QString filePath = ui->textBrowser_filepath->toPlainText();
+    if (filePath.isEmpty()) {
+        qApp->restoreOverrideCursor();
+        emit reporWriteLog(tr("请先打开测量文件"), QtWarningMsg);
+        return;
+    }
+    if (mMeasureDurationSecond <= 0) {
+        qApp->restoreOverrideCursor();
+        emit reporWriteLog(tr("测量时长无效，请重新打开测量文件"), QtWarningMsg);
+        return;
+    }
+
+    // 测量时间范围（相对打靶）：[mMeasureStartSecond, mMeasureStartSecond + duration]
+    const double measureRangeStart = mMeasureStartSecond;
+    const double measureRangeEnd = mMeasureStartSecond + mMeasureDurationSecond;
+    const double intMin = static_cast<double>(std::numeric_limits<int>::min());
+    const double intMax = static_cast<double>(std::numeric_limits<int>::max());
+    const int measureMinSec = static_cast<int>(std::ceil(qBound(intMin, measureRangeStart, intMax)));
+    const int measureMaxSec = static_cast<int>(std::floor(qBound(intMin, measureRangeEnd, intMax)));
+    if (measureMinSec > measureMaxSec) {
+        qApp->restoreOverrideCursor();
+        emit reporWriteLog(tr("测量时间范围无效：[%1, %2] s").arg(measureRangeStart).arg(measureRangeEnd), QtWarningMsg);
+        return;
+    }
+
+    // 先读用户输入，再把 spinBox 合法区间同步到测量范围
+    const qint32 rawStart = ui->spinBox_timeStart->value();
+    const qint32 rawEnd = ui->spinBox_timeEnd->value();
+    ui->spinBox_timeStart->setMinimum(measureMinSec);
+    ui->spinBox_timeStart->setMaximum(measureMaxSec);
+    ui->spinBox_timeEnd->setMinimum(measureMinSec);
+    ui->spinBox_timeEnd->setMaximum(measureMaxSec);
+
+    const bool startOutOfRange = (rawStart < measureMinSec || rawStart > measureMaxSec);
+    const bool endOutOfRange = (rawEnd < measureMinSec || rawEnd > measureMaxSec);
+    if (startOutOfRange || endOutOfRange) {
+        qApp->restoreOverrideCursor();
+        emit reporWriteLog(tr("解析时间区间 [%1, %2] s 超出测量时间范围 [%3, %4] s，请调整到测量范围内后再解析")
+                               .arg(rawStart)
+                               .arg(rawEnd)
+                               .arg(measureMinSec)
+                               .arg(measureMaxSec),
+                           QtWarningMsg);
+        // 将控件收回到合法范围，便于用户下一次直接改
+        if (startOutOfRange)
+            ui->spinBox_timeStart->setValue(qBound(measureMinSec, rawStart, measureMaxSec));
+        if (endOutOfRange)
+            ui->spinBox_timeEnd->setValue(qBound(measureMinSec, rawEnd, measureMaxSec));
+        return;
+    }
+
+    // t = (StartTime - ShotTime) + sequence * measureTime_s；无有效打靶时刻时偏移为 0（开测为零点）
+    const double tmStartBase = mMeasureStartSecond;
     const qint32 tmStart = ui->spinBox_timeStart->value();
     const qint32 tmEnd = ui->spinBox_timeEnd->value();
     const int stepSec = ui->spinBox->value();
@@ -1296,13 +1377,13 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
         emit reporWriteLog(tr("时间步长须大于 0"), QtWarningMsg);
         return;
     }
-    emit reporWriteLog(tr("解析时间区间：[%1, %2] s，时间步长：%3 s").arg(tmStart).arg(tmEnd).arg(stepSec));
-    const QString filePath = ui->textBrowser_filepath->toPlainText();
-    if (filePath.isEmpty()) {
-        qApp->restoreOverrideCursor();
-        emit reporWriteLog(tr("请先打开测量文件"), QtWarningMsg);
-        return;
-    }
+    emit reporWriteLog(tr("解析时间区间：[%1, %2] s（测量范围 [%3, %4] s，相对打靶零点偏移 %5 s），时间步长：%6 s")
+                           .arg(tmStart)
+                           .arg(tmEnd)
+                           .arg(measureMinSec)
+                           .arg(measureMaxSec)
+                           .arg(tmStartBase)
+                           .arg(stepSec));
 
     try {
         H5ErrorStackSilencer silence;
@@ -1481,7 +1562,8 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                     if (data->measureTime == 0) {
                         emit reporWriteLog(tr("通道#%1 第 %2 行 measureTime 为 0，跳过").arg(index).arg(i + 1), QtWarningMsg);
                     } else {
-                        const double rowTimeSec = data->sequence * data->measureTime / 1000.0 + tmStartBase/*测量起始时间*/;
+                        // 相对打靶：t = (StartTime-ShotTime) + sequence×measureTime_s
+                        const double rowTimeSec = data->sequence * data->measureTime / 1000.0 + tmStartBase;
                         if (rowTimeSec > tmEnd) {
                             break;
                         }
@@ -1512,7 +1594,7 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                                 if (row->measureTime == 0 || row->measureTime != measureTimeMs)
                                     break;
 
-                                const double binTimeSec = row->sequence * row->measureTime / 1000.0 + tmStartBase/*测量起始时间*/;
+                                const double binTimeSec = row->sequence * row->measureTime / 1000.0 + tmStartBase;
                                 if (binTimeSec > tmEnd)
                                     break;
                                 if (binTimeSec < tmStart)
@@ -1576,7 +1658,7 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                                     break;
                                 }
 
-                                const double timeSec = lastSequence * measureTimeMs / 1000.0 + tmStartBase/*测量起始时间*/;
+                                const double timeSec = lastSequence * measureTimeMs / 1000.0 + tmStartBase;
                                 mMapCount[index].push_back(qMakePair(timeSec, countRate));
                                 mMapCountCorrect[index].push_back(qMakePair(timeSec, countRateCorrect));
                             }

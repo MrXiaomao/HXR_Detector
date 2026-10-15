@@ -190,7 +190,7 @@ void DataProcessor::updateSetting(DetParameter* detParameter, bool isRead/* = fa
          if (detParameter->trapShapeEnable || isRead){
             //#07 梯形成型常数=1|0|13|1234000FFE1000000000ABCD
             // this->sendTrapTimeConst(isRead, detParameter->trapShapeTimeConstD1, detParameter->trapShapeTimeConstD2);
-            //#08 上升沿参数=1|0|15|1234000FFE1100000000ABCD            
+            //#08 上升沿参数=1|0|15|1234000FFE1100000000ABCD
             detParameter->trapShapeRisePoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/RisePoint", 10).toUInt());//static_cast<quint8>(ui->spinBox_trapShapeRisePoint->value());
             detParameter->trapShapePeakPoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/Peakoint", 15).toUInt());//static_cast<quint8>(ui->spinBox_trapShapePeakPoint->value());
             detParameter->trapShapeFallPoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/FallPoint", 10).toUInt());//static_cast<quint8>(ui->spinBox_trapShapeFallPoint->value());
