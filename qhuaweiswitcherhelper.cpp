@@ -1,7 +1,10 @@
 ﻿#include "qhuaweiswitcherhelper.h"
 #include "globalsettings.h"
 
+#include <QDate>
+#include <QDateTime>
 #include <QDir>
+#include <QFileInfo>
 
 #ifndef USE_QTELNET
 #include <QTcpSocket>
@@ -15,10 +18,7 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
     , mState(State::Disconnected)
     , mIp(ip)
 {
-    QDir().mkpath(QStringLiteral("./logs"));
-    mFileCommand = new QFile(QString("./logs/Switcher-%1.log").arg(QDateTime::currentDateTime().toString("yyyy-MM-dd-HHmmss")));
-    mFileCommand->open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Append | QIODevice::Unbuffered);
-    mTextStream = new QTextStream(mFileCommand);
+    // 日志延迟到首次 Telnet 收发再建，避免未连接时产生空 Switcher-*.log
 
     mTelnet = new QTelnet(this);
     mHeartbeatTimer = new QTimer(this);
@@ -51,15 +51,13 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
 
             mRespondString.append(dest);
 
-            *mTextStream << rx_current;
-            flushCommandLog();
+            writeCommandLog(rx_current);
         }
 
 #else
     connect(mTelnet, &QTelnet::readyRead,this,[=](const QByteArray& dest){
         mRespondString.append(dest);
-        *mTextStream << dest;
-        flushCommandLog();
+        writeCommandLog(dest);
 #endif
         //qDebug() << "STR2:" << mRespondString;
 
@@ -333,11 +331,7 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
 
 QHuaWeiSwitcherHelper::~QHuaWeiSwitcherHelper()
 {
-    flushCommandLog();
-    delete mTextStream;
-    mTextStream = nullptr;
-    delete mFileCommand;
-    mFileCommand = nullptr;
+    closeCommandLog(true);
 }
 
 //判断谱仪编号是否存在
@@ -456,12 +450,77 @@ void QHuaWeiSwitcherHelper::forceOpenPower()
 /*********************************************************
      交换机指令
     ***********************************************************/
+bool QHuaWeiSwitcherHelper::ensureCommandLogOpen()
+{
+    const QString today = QDate::currentDate().toString(QStringLiteral("yyyy-MM-dd"));
+    if (mFileCommand && mFileCommand->isOpen() && mCommandLogDate == today && mTextStream)
+        return true;
+
+    // 跨天或尚未打开：先关掉旧文件（旧文件若为空则删除）
+    closeCommandLog(true);
+
+    QDir().mkpath(QStringLiteral("./logs"));
+    const QString path = QStringLiteral("./logs/Switcher-%1.log").arg(today);
+    mFileCommand = new QFile(path);
+    if (!mFileCommand->open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Append | QIODevice::Unbuffered)) {
+        delete mFileCommand;
+        mFileCommand = nullptr;
+        mCommandLogDate.clear();
+        return false;
+    }
+    mTextStream = new QTextStream(mFileCommand);
+    mCommandLogDate = today;
+    return true;
+}
+
+void QHuaWeiSwitcherHelper::writeCommandLog(const QByteArray &data)
+{
+    if (data.isEmpty() || !ensureCommandLogOpen() || !mTextStream)
+        return;
+    *mTextStream << data;
+    flushCommandLog();
+}
+
+void QHuaWeiSwitcherHelper::writeCommandLog(const QString &data)
+{
+    if (data.isEmpty() || !ensureCommandLogOpen() || !mTextStream)
+        return;
+    *mTextStream << data;
+    flushCommandLog();
+}
+
 void QHuaWeiSwitcherHelper::flushCommandLog()
 {
     if (mTextStream)
         mTextStream->flush();
     if (mFileCommand && mFileCommand->isOpen())
         mFileCommand->flush();
+}
+
+void QHuaWeiSwitcherHelper::closeCommandLog(bool removeIfEmpty)
+{
+    flushCommandLog();
+
+    QString path;
+    qint64 size = 0;
+    if (mFileCommand) {
+        path = mFileCommand->fileName();
+        if (mFileCommand->isOpen()) {
+            size = mFileCommand->size();
+            mFileCommand->close();
+        } else if (!path.isEmpty() && QFileInfo::exists(path)) {
+            size = QFileInfo(path).size();
+        }
+    }
+
+    delete mTextStream;
+    mTextStream = nullptr;
+    delete mFileCommand;
+    mFileCommand = nullptr;
+    mCommandLogDate.clear();
+
+    if (removeIfEmpty && !path.isEmpty() && size == 0)
+        QFile::remove(path);
 }
 
 bool QHuaWeiSwitcherHelper::isPoeSequenceInProgress() const
@@ -1153,9 +1212,9 @@ void QHuaWeiSwitcherHelper::executeNextAction(bool keepFirst)
             mBusyStartTimer.start();
         }
 
-        *mTextStream << "\n==================================================\n";
-        *mTextStream << QDateTime::currentDateTime().toString("yyyy-MM-dd HH:mm:ss.zzz :") << commandToSend;
-        flushCommandLog();
+        writeCommandLog(QStringLiteral("\n==================================================\n")
+                        + QDateTime::currentDateTime().toString(QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz :"))
+                        + commandToSend);
         mTelnet->write(commandToSend.toLatin1());
     });
 }

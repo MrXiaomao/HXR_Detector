@@ -155,7 +155,12 @@ private:
     void clearAllPendingActionsExceptProtected();
     void finishCurrentActionAndAdvance();
     bool isPoeSequenceInProgress() const;
+    /** 首次有收发时再按天打开日志；跨天自动切换文件 */
+    bool ensureCommandLogOpen();
+    void writeCommandLog(const QByteArray &data);
+    void writeCommandLog(const QString &data);
     void flushCommandLog();
+    void closeCommandLog(bool removeIfEmpty);
 
 private:
 #ifndef USE_QTELNET
@@ -216,8 +221,9 @@ private:
     // bool mSingleOff = false;//批量关
     // quint8 mCurrentQueryPort = 0;
 
-    QFile* mFileCommand;//记录指令
-    QTextStream* mTextStream; // 指令输出流
+    QFile *mFileCommand = nullptr;       // 延迟创建：未连接不建文件
+    QTextStream *mTextStream = nullptr;  // 指令输出流
+    QString mCommandLogDate;             // 当前已打开日志对应的日期 yyyy-MM-dd
 };
 
 #endif // QHUAWEISWITCHERHELPER_H
