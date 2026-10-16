@@ -509,7 +509,7 @@ void DetSettingWindow::logHardwareParametersFromUi(const QString &reason, quint8
     // snapshot.trapShapeTimeConstD1 = static_cast<quint16>(ui->sb_trapShapeTimeConstD1->value());
     // snapshot.trapShapeTimeConstD2 = static_cast<quint16>(ui->sb_trapShapeTimeConstD2->value());
     snapshot.trapShapeRisePoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/RisePoint", 10).toUInt());//static_cast<quint8>(ui->spinBox_trapShapeRisePoint->value());
-    snapshot.trapShapePeakPoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/Peakoint", 15).toUInt());//static_cast<quint8>(ui->spinBox_trapShapePeakPoint->value());
+    snapshot.trapShapePeakPoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/PeakPoint", 15).toUInt());//static_cast<quint8>(ui->spinBox_trapShapePeakPoint->value());
     snapshot.trapShapeFallPoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/FallPoint", 10).toUInt());//static_cast<quint8>(ui->spinBox_trapShapeFallPoint->value());
     snapshot.alphaGammaUpperThold = static_cast<quint16>(ui->spinBox_alphaGammaUpperThold->value());
     snapshot.alphaGammaLowerThold = static_cast<quint16>(ui->spinBox_alphaGammaLowerThold->value());
@@ -719,7 +719,7 @@ void DetSettingWindow::saveAt(quint8 detId)
     //上升沿
     detParameter->trapShapeRisePoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/RisePoint").toUInt());//static_cast<quint8>(ui->spinBox_trapShapeRisePoint->value());
     //平顶
-    detParameter->trapShapePeakPoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/PeakPoint").toUInt());//static_cast<quint8>(ui->spinBox_trapShapePeakPoint->value());
+    detParameter->trapShapePeakPoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/PeakPoint", 15).toUInt());//static_cast<quint8>(ui->spinBox_trapShapePeakPoint->value());
     //下降沿
     detParameter->trapShapeFallPoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/FallPoint").toUInt());//static_cast<quint8>(ui->spinBox_trapShapeFallPoint->value());
 

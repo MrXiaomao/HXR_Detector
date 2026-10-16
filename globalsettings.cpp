@@ -161,11 +161,20 @@ HDF5Settings::HDF5Settings(QObject *parent) : QObject(parent), mPluseTime(10)
     mConfigDataType = createCfgDataType();
     mSpectrumDataType = createH5SpectrumType();
 
-    // 检查梯形成型默认参数项
-    if (!GlobalSettings(DEVICE_CONFIG_FILE).contains("FPGA")){
-        GlobalSettings(DEVICE_CONFIG_FILE).setValue("FPGA/RisePoint", 10);
-        GlobalSettings(DEVICE_CONFIG_FILE).setValue("FPGA/Peakoint", 15);
-        GlobalSettings(DEVICE_CONFIG_FILE).setValue("FPGA/FallPoint", 10);
+    // 检查梯形成型默认参数项（兼容历史错误键名 FPGA/Peakoint → FPGA/PeakPoint）
+    {
+        GlobalSettings fpgaCfg(DEVICE_CONFIG_FILE);
+        if (fpgaCfg.contains("FPGA/Peakoint") && !fpgaCfg.contains("FPGA/PeakPoint")) {
+            fpgaCfg.setValue("FPGA/PeakPoint", fpgaCfg.value("FPGA/Peakoint", 15));
+            fpgaCfg.remove("FPGA/Peakoint");
+        }
+        if (!fpgaCfg.contains("FPGA")) {
+            fpgaCfg.setValue("FPGA/RisePoint", 10);
+            fpgaCfg.setValue("FPGA/PeakPoint", 15);
+            fpgaCfg.setValue("FPGA/FallPoint", 10);
+        } else if (!fpgaCfg.contains("FPGA/PeakPoint")) {
+            fpgaCfg.setValue("FPGA/PeakPoint", 15);
+        }
     }
 
     // 创建配置文件
@@ -374,7 +383,7 @@ void HDF5Settings::load_localDetPara()
                     DetParameter* det = new DetParameter;
                     memcpy(det, &item, sizeof(DetParameter));
                     det->trapShapeRisePoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/RisePoint", 10).toUInt());//static_cast<quint8>(ui->spinBox_trapShapeRisePoint->value());
-                    det->trapShapePeakPoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/Peakoint", 15).toUInt());//static_cast<quint8>(ui->spinBox_trapShapePeakPoint->value());
+                    det->trapShapePeakPoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/PeakPoint", 15).toUInt());//static_cast<quint8>(ui->spinBox_trapShapePeakPoint->value());
                     det->trapShapeFallPoint = static_cast<quint8>(GlobalSettings(DEVICE_CONFIG_FILE).value("FPGA/FallPoint", 10).toUInt());//static_cast<quint8>(ui->spinBox_trapShapeFallPoint->value());
                     mMapDetParameter[item.id] = det;
                 }
