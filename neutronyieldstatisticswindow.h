@@ -191,7 +191,6 @@ private:
     bool isPerChannelShotTimeMode() const;
     void updateShotTimeModeUi();
     void syncMeasureDateTimeForDetector(int detId);
-    qint64 beginTimeForDetector(int detId, const QDateTime &fusionTime) const;
     int currentPictureDetId() const;
     void updatePictureForDetector(int detID);
     void updateAllPeakChannelPlot();

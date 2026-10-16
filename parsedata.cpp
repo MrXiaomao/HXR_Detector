@@ -42,10 +42,19 @@ namespace {
 
 qint64 resolveFileStartMs(const QString &filePath, const std::string &filePathStd)
 {
-    const QDateTime startDt = HDF5Settings::resolveMeasureStartTime(filePath, filePathStd);
+    QDateTime startDt = HDF5Settings::resolveMeasureStartTime(filePath, filePathStd);
     if (!startDt.isValid())
         return 0;
+    // 与计数率界面一致：强制同一 TimeSpec（UTC）后再取 epoch，避免 Local/UTC 混用
+    startDt.setTimeSpec(Qt::UTC);
     return startDt.toMSecsSinceEpoch();
+}
+
+/** offset_ms + (sequence - sequence0)×dt，与计数率相对打靶时刻公式一致 */
+qint64 relativeTimeMsFromShot(qint64 offsetMs, quint32 sequence0, quint32 measureTimeMs, quint32 sequence)
+{
+    return offsetMs + static_cast<qint64>(sequence - sequence0)
+                    * static_cast<qint64>(measureTimeMs);
 }
 
 qint64 syntheticSpectrumStartMs(qint64 fileStartMs, quint32 sequence0, quint32 measureTimeMs, quint32 sequence)
@@ -1690,7 +1699,8 @@ void ParseData::addCompressedSpectrumToSegment(mergeSpecData &seg, const H5Spect
  * 2. 按 sequence 连续性切分连续段（相邻序号差 > 1 为断点），再按解析窗口筛选；
  * 3. 每连续段从首条能谱起，每 spectraPerBin 条原始能谱合并为 1 段（8192→2048 压缩求和）；
  *    spectraPerBin = stepSec×1000 / measureTimeMs；fileStart 优先 Config/StartTime，否则文件名；
- * 4. 不足一整段的尾部能谱丢弃；合并段 currentTime 取该 bin 最后一条子能谱结束时刻（推算起始+measureTime）相对打靶的右端点；
+ * 4. 不足一整段的尾部能谱丢弃；合并段 currentTime =
+ *    offset + (lastSequence - sequence0)×dt，offset = StartTime - ShotTime（ms，UTC 同规格）；
  * 5. 多文件产生的合并段按 currentTime 排序串联后，调用 getResult() 寻峰/剥谱/衰减拟合。
  *
  * @param filePaths    测量 H5 文件路径列表
@@ -1720,10 +1730,16 @@ bool ParseData::getResult_offlineMultiFileUtc(const QStringList &filePaths,
     if (stepSec <= 0 || windowLeft >= windowRight)
         return false;
 
-    // 解析窗口与打靶时刻（ms）
-    const qint64 leftMs = windowLeft.toMSecsSinceEpoch();
-    const qint64 rightMs = windowRight.toMSecsSinceEpoch();
-    const qint64 fusionMs = fusionTime.toMSecsSinceEpoch();
+    // 解析窗口与打靶时刻（ms）：强制 UTC TimeSpec，与计数率界面一致
+    QDateTime fusionUtc = fusionTime;
+    QDateTime windowLeftUtc = windowLeft;
+    QDateTime windowRightUtc = windowRight;
+    fusionUtc.setTimeSpec(Qt::UTC);
+    windowLeftUtc.setTimeSpec(Qt::UTC);
+    windowRightUtc.setTimeSpec(Qt::UTC);
+    const qint64 leftMs = windowLeftUtc.toMSecsSinceEpoch();
+    const qint64 rightMs = windowRightUtc.toMSecsSinceEpoch();
+    const qint64 fusionMs = fusionUtc.toMSecsSinceEpoch();
 
     QTextCodec *gbk_codec = QTextCodec::codecForName("GBK");
     quint32 totalRawRows = 0; // 参与合并的原始能谱条数（统计用）
@@ -1771,6 +1787,9 @@ bool ParseData::getResult_offlineMultiFileUtc(const QStringList &filePaths,
                                  << " stepSec=" << stepSec << " measureTimeMs=" << measureTimeMs;
             continue;
         }
+
+        // offset = StartTime - ShotTime（ms），与计数率 mMeasureStartSecond 同语义
+        const qint64 offsetMs = fileStartMs - fusionMs;
 
         const auto specStartMs = [&](const H5Spectrum &spec) -> qint64 {
             return syntheticSpectrumStartMs(fileStartMs, sequence0, measureTimeMs, spec.sequence);
@@ -1820,11 +1839,10 @@ bool ParseData::getResult_offlineMultiFileUtc(const QStringList &filePaths,
                     ++totalRawRows;
                 }
 
-                // 合并段右端点 = 本 bin 最后一条子能谱的结束时刻（起始 + measureTime），再转为相对打靶 ms
+                // 点时刻 = offset + (sequence - sequence0)×dt（取本 bin 最后一条子能谱）
                 const H5Spectrum &lastSpecInBin = filtered.at(binEnd - 1);
-                const qint64 rightEndpointMs = specStartMs(lastSpecInBin)
-                    + static_cast<qint64>(lastSpecInBin.measureTime);
-                seg.currentTime = rightEndpointMs - fusionMs;
+                seg.currentTime = relativeTimeMsFromShot(
+                    offsetMs, sequence0, measureTimeMs, lastSpecInBin.sequence);
                 mMergeSpec.append(seg);
                 ++fileMergedCount;
                 reportParseProgress(ParseProgressPhase::Merge,

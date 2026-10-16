@@ -45,7 +45,6 @@ void NeutronYieldParseWorker::run(const NeutronYieldParseJob &job)
         detectorList += QString::number(detID);
 
         auto *parseData = new ParseData();
-        parseData->setStartTime(job.beginTimeByDet.value(detID, 0));
         parseData->setSpectrumFitR2Min(job.spectrumFitR2Min);
         parseData->setInitialPeakFindWidth(job.initialPeakFindWidth);
         parseData->setPeakHeightMin(job.peakHeightMin);

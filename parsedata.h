@@ -67,7 +67,7 @@ public:
     // 数据包结构定义,合并后的能谱数据，已经做了丢包处理
     #pragma pack(push, 1) // 确保1字节对齐
     struct mergeSpecData {
-        qint64 currentTime; //能谱测量结束时刻，打靶时刻为零时刻，早于打靶为负数，单位ms
+        qint64 currentTime; //相对打靶时刻：offset+(sequence-sequence0)×dt，单位ms，可为负
         quint64 specTime;   //能谱测量对应时长，单位ms
         quint64 deathTime;  //能谱测量死时间，单位ns
         quint32 rowCount = 0;         // 合并子能谱个数
@@ -168,11 +168,6 @@ public:
     // 拟合909全能峰计数随时间的变化
     bool fit909data();
 
-    void setStartTime(int time)
-    {
-        mT0BeforeShot = time;
-    }
-
     void setParseProgressCallback(ParseProgressCallback callback);
     void clearParseProgressCallback();
     void setParseCancelFlag(std::atomic<bool> *flag);
@@ -248,7 +243,8 @@ public:
     bool getResult_offline(quint64 timeBin, quint64 start_time, quint64 end_time);
 
     /**
-     * @brief 从多个 H5 文件读取指定通道，按推算时刻分段合并（fileStart+sequence×measureTime，8192→2048），并执行寻峰/剥谱
+     * @brief 从多个 H5 文件读取指定通道，按推算时刻分段合并（8192→2048），并执行寻峰/剥谱
+     * 相对打靶时刻：t = (StartTime-ShotTime) + (sequence-sequence0)×dt（与计数率界面一致，UTC）
      * @param filePaths 测量文件列表
      * @param detectorId 探测器通道号 1..DET_NUM
      * @param fusionTime 打靶时刻（零时刻）
@@ -293,7 +289,8 @@ private:
     const int mChannel8192 = 8192; //能谱的道数
     static constexpr int mChannel2048 = 2048; //做能谱寻峰所用的道数（MSVC 栈数组需 constexpr）
     const int mSpecPackLen = 8237;//2050*4 + 9 +13 + 1 + 3*4+2 %完整数据包的长度（解码后长度），1是包头，9是时间信息以及空白，13是大包的帧内容
-    qint32 mT0BeforeShot = 0; //能谱开测时刻相对于打靶零时刻的时间（单位s，可正数可负数)T0_beforeShot = 开测时刻 - 打靶时刻
+    /** 仅旧版 mergeSpecTime_offline 使用；主路径 getResult_offlineMultiFileUtc 按文件 StartTime/ShotTime 计算 offset */
+    qint32 mT0BeforeShot = 0;
 
     int mTotalPackets = 0; //读取到的有效数据包长度
     QByteArray mProcessingBuffer;

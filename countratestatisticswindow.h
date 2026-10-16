@@ -79,7 +79,7 @@ private:
     QColor mThemeColor = QColor(255,255,255);
     class QGoodWindowHelper *mainWindow = nullptr;
     QDateTime mMeasureStartTime;           // H5 Config/StartTime（或文件名推算）
-    /** 开测相对打靶的秒数 = StartTime - ShotTime；无 ShotTime 时为 0（开测为零点），可为负 */
+    /** 开测相对打靶的秒数 offset = StartTime - ShotTime；点时刻 t = offset + (sequence-sequence0)×dt；无 ShotTime 时为 0 */
     double mMeasureStartSecond = 0.0;
     double mMeasureDurationSecond = 0.0;
 

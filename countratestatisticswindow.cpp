@@ -1362,7 +1362,7 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
         return;
     }
 
-    // t = (StartTime - ShotTime) + sequence * measureTime_s；无有效打靶时刻时偏移为 0（开测为零点）
+    // t = (StartTime - ShotTime) + (sequence - sequence0) * measureTime_s；无有效打靶时刻时偏移为 0（开测为零点）
     const double tmStartBase = mMeasureStartSecond;
     const qint32 tmStart = ui->spinBox_timeStart->value();
     const qint32 tmEnd = ui->spinBox_timeEnd->value();
@@ -1518,6 +1518,8 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                 std::vector<uint32_t> row_data(cols);
 
                 quint32 measureInterval = 0;
+                quint32 sequence0 = 0;
+                bool haveSequence0 = false;
                 {
                     hsize_t firstStart[2] = {0, 0};
                     hsize_t firstCount[2] = {1, cols};
@@ -1525,8 +1527,18 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                     dataset.read(row_data.data(), H5::PredType::NATIVE_UINT, mem_space, file_space);
                     const H5Spectrum* firstRow = reinterpret_cast<const H5Spectrum*>(row_data.data());
                     measureInterval = firstRow->measureTime;
+                    if (firstRow->measureTime != 0) {
+                        sequence0 = firstRow->sequence;
+                        haveSequence0 = true;
+                    }
                     file_space.selectNone();
                 }
+
+                // 相对打靶：t = offset + (sequence - sequence0)×dt，offset = StartTime - ShotTime（秒）
+                const auto relativeTimeSec = [&](quint32 sequence, quint32 measureTimeMs) -> double {
+                    const qint64 deltaSeq = static_cast<qint64>(sequence) - static_cast<qint64>(sequence0);
+                    return tmStartBase + static_cast<double>(deltaSeq) * measureTimeMs / 1000.0;
+                };
 
                 double minV = 0.0;
                 double maxV = 0.0;
@@ -1562,8 +1574,11 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                     if (data->measureTime == 0) {
                         emit reporWriteLog(tr("通道#%1 第 %2 行 measureTime 为 0，跳过").arg(index).arg(i + 1), QtWarningMsg);
                     } else {
-                        // 相对打靶：t = (StartTime-ShotTime) + sequence×measureTime_s
-                        const double rowTimeSec = data->sequence * data->measureTime / 1000.0 + tmStartBase;
+                        if (!haveSequence0) {
+                            sequence0 = data->sequence;
+                            haveSequence0 = true;
+                        }
+                        const double rowTimeSec = relativeTimeSec(data->sequence, data->measureTime);
                         if (rowTimeSec > tmEnd) {
                             break;
                         }
@@ -1594,7 +1609,7 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                                 if (row->measureTime == 0 || row->measureTime != measureTimeMs)
                                     break;
 
-                                const double binTimeSec = row->sequence * row->measureTime / 1000.0 + tmStartBase;
+                                const double binTimeSec = relativeTimeSec(row->sequence, row->measureTime);
                                 if (binTimeSec > tmEnd)
                                     break;
                                 if (binTimeSec < tmStart)
@@ -1658,7 +1673,7 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                                     break;
                                 }
 
-                                const double timeSec = lastSequence * measureTimeMs / 1000.0 + tmStartBase;
+                                const double timeSec = relativeTimeSec(lastSequence, measureTimeMs);
                                 mMapCount[index].push_back(qMakePair(timeSec, countRate));
                                 mMapCountCorrect[index].push_back(qMakePair(timeSec, countRateCorrect));
                             }

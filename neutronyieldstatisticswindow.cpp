@@ -1554,19 +1554,6 @@ void NeutronYieldStatisticsWindow::syncMeasureDateTimeForDetector(int detId)
         ui->messureDateTime->setDateTime(firstDt);
 }
 
-qint64 NeutronYieldStatisticsWindow::beginTimeForDetector(int detId, const QDateTime &fusionTime) const
-{
-    if (isPerChannelShotTimeMode()) {
-        const QDateTime measureStart = mDetectorFirstDateTime.value(detId);
-        if (measureStart.isValid() && fusionTime.isValid())
-            return measureStart.toSecsSinceEpoch() - fusionTime.toSecsSinceEpoch();
-    }
-
-    const qint64 fusionSec = fusionTime.toSecsSinceEpoch();
-    const qint64 measureSec = ui->messureDateTime->dateTime().toSecsSinceEpoch();
-    return measureSec - fusionSec;
-}
-
 void NeutronYieldStatisticsWindow::on_action_lightTheme_triggered()
 {
     if(!mIsDarkTheme) return;
@@ -2630,11 +2617,6 @@ void NeutronYieldStatisticsWindow::on_action_startCalculate_triggered()
             QStringLiteral("Parse/peakSigmaRatioMax"),
             ParseData::kDefaultPeakSigmaRatioMax).toDouble();
     }
-    for (int detID : detIds) {
-        if (detID >= 1 && detID <= DET_NUM)
-            job.beginTimeByDet.insert(detID, static_cast<int>(beginTimeForDetector(detID, fusionTime)));
-    }
-
     startParseWorker(job);
 }
 
