@@ -32,6 +32,8 @@ public:
                         const QString &plotTitle = QString(), double xAxisMax = 1000.0);
     void applyColorTheme();
     void restoreSettings();
+    void saveUiParameters();
+    void loadUiParameters();
 
 private slots:
     void on_action_lightTheme_triggered();
@@ -70,8 +72,8 @@ private:
     /** 原始/修正 全局复选框：全选或全不选对应列通道 */
     void applyOriginalGlobalState(bool enableAll);
     void applyCorrectGlobalState(bool enableAll);
-    bool updateMeasureStartTimeFromShotTime(const QDateTime &shotTime);
-    void updateMeasureStartSecond(double startSecond);
+    bool updateMeasureStartTimeFromShotTime(const QDateTime &shotTime, bool resetParseRange = true);
+    void updateMeasureStartSecond(double startSecond, bool resetParseRange = true);
 
     Ui::CountRateStatisticsWindow *ui;
     bool mIsDarkTheme = true;

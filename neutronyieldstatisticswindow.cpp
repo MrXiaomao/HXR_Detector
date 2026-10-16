@@ -25,6 +25,7 @@
 #include <QJsonObject>
 #include <QJsonDocument>
 #include <QMessageBox>
+#include <QProgressDialog>
 #include <QSettings>
 #include <QCheckBox>
 #include <QComboBox>
@@ -467,6 +468,8 @@ NeutronYieldStatisticsWindow::~NeutronYieldStatisticsWindow()
             settingsSystem.setValue(QStringLiteral("Global/splitterFileList/State"), splitterFileList->saveState());
     }
 
+    saveUiParameters();
+
     if (mParseWorker)
         mParseWorker->requestCancel();
     if (mParseWorkerThread) {
@@ -716,17 +719,30 @@ void NeutronYieldStatisticsWindow::initUi()
     ui->twResults->setSelectionMode(QAbstractItemView::SingleSelection);
     ui->twResults->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     {
+        // 长表头拆成两行显示，便于缩窄列宽
+        ui->twResults->setHorizontalHeaderLabels({
+            tr("序号"),
+            tr("中子产额"),
+            tr("相对不确定度\n(%)"),
+            tr("经度\n(-180~180°)"),
+            tr("纬度\n(-90~90°)"),
+            tr("初始计数\n(909keV)"),
+            tr("能谱个数")
+        });
         QHeaderView *header = ui->twResults->horizontalHeader();
+        header->setDefaultAlignment(Qt::AlignCenter);
+        header->setMinimumHeight(42);
+        header->setFixedHeight(42);
         header->setSectionResizeMode(QHeaderView::Interactive);
         header->setStretchLastSection(false);
         header->setSectionResizeMode(0, QHeaderView::Fixed);
         ui->twResults->setColumnWidth(0, 40);   // #
-        ui->twResults->setColumnWidth(1, 90);   // 中子产额
-        ui->twResults->setColumnWidth(2, 95);   // 不确定度(%)
-        ui->twResults->setColumnWidth(3, 60);   // 经度
-        ui->twResults->setColumnWidth(4, 60);   // 纬度
-        ui->twResults->setColumnWidth(5, 130);  // 初始计数(909keV)
-        ui->twResults->setColumnWidth(6, 70);   // 能谱个数
+        ui->twResults->setColumnWidth(1, 70);   // 中子产额
+        ui->twResults->setColumnWidth(2, 80);   // 不确定度(%)
+        ui->twResults->setColumnWidth(3, 72);   // 经度
+        ui->twResults->setColumnWidth(4, 72);   // 纬度
+        ui->twResults->setColumnWidth(5, 80);   // 初始计数(909keV)
+        ui->twResults->setColumnWidth(6, 60);   // 能谱个数
     }
 
     ui->twResults->blockSignals(true);
@@ -746,9 +762,10 @@ void NeutronYieldStatisticsWindow::initUi()
     }
     initDetectorTableSelectAllRow();
     ui->twResults->blockSignals(false);
-    // 表头 + 32 通道 + 全选行，并预留横向滚动条高度
+    // 两行表头 + 32 通道 + 全选行，并预留横向滚动条高度
+    const int headerHeight = ui->twResults->horizontalHeader()->height();
     const int horizontalScrollBarSpace = 18;
-    ui->twResults->setFixedHeight((DET_NUM + 1 + 1) * 25 + horizontalScrollBarSpace);
+    ui->twResults->setFixedHeight(headerHeight + (DET_NUM + 1) * 25 + horizontalScrollBarSpace);
     ui->leftStackedWidget->setMinimumWidth(200);
 
     initFileListTable();
@@ -842,12 +859,7 @@ void NeutronYieldStatisticsWindow::initUi()
         }
     }
 
-    {
-        QSettings nySettings(neutronYieldConfigPath(), QSettings::IniFormat);
-        ui->doubleSpinBox_fitR2Min->setValue(
-            nySettings.value(QStringLiteral("Parse/spectrumFitR2Min"),
-                             CurveFit::kDefaultSpectrumFitR2Min).toDouble());
-    }
+    loadUiParameters();
 
     setParseBusy(false);
 }
@@ -1714,6 +1726,111 @@ void NeutronYieldStatisticsWindow::restoreSettings()
     }
 }
 
+void NeutronYieldStatisticsWindow::saveUiParameters()
+{
+    if (!ui)
+        return;
+
+    GlobalSettings settings;
+    settings.beginGroup(QStringLiteral("NeutronYieldStatistics"));
+    settings.setValue(QStringLiteral("timeStart"), ui->spinBox_timeStart->value());
+    settings.setValue(QStringLiteral("timeEnd"), ui->spinBox_timeEnd->value());
+    settings.setValue(QStringLiteral("timeStep"), ui->spinBox_step->value());
+    settings.setValue(QStringLiteral("spectrumFitR2Min"), ui->doubleSpinBox_fitR2Min->value());
+    settings.setValue(QStringLiteral("savePath"), ui->lineEdit_savepath->text());
+    settings.setValue(QStringLiteral("fileNamePrefix"), ui->lineEdit_fileName->text());
+    settings.setValue(QStringLiteral("perChannelShotTime"),
+                      ui->radioButton_perChannelShotTime->isChecked());
+    settings.setValue(QStringLiteral("channelId"), ui->spinBox_channelId->value());
+    settings.setValue(QStringLiteral("pictureDet"), ui->spinBox_pictureDet->value());
+    settings.setValue(QStringLiteral("plotViewIndex"), ui->stackedWidget->currentIndex());
+    settings.endGroup();
+
+    // 与解析配置保持同步，供解析任务与其它模块读取
+    QSettings nySettings(neutronYieldConfigPath(), QSettings::IniFormat);
+    nySettings.setValue(QStringLiteral("Parse/spectrumFitR2Min"),
+                        ui->doubleSpinBox_fitR2Min->value());
+}
+
+void NeutronYieldStatisticsWindow::loadUiParameters()
+{
+    if (!ui)
+        return;
+
+    GlobalSettings settings;
+    settings.beginGroup(QStringLiteral("NeutronYieldStatistics"));
+
+    if (settings.contains(QStringLiteral("timeStart")))
+        ui->spinBox_timeStart->setValue(settings.value(QStringLiteral("timeStart")).toInt());
+    if (settings.contains(QStringLiteral("timeEnd")))
+        ui->spinBox_timeEnd->setValue(settings.value(QStringLiteral("timeEnd")).toInt());
+    if (settings.contains(QStringLiteral("timeStep")))
+        ui->spinBox_step->setValue(settings.value(QStringLiteral("timeStep")).toInt());
+
+    // 优先上次关闭时的 R²；若无则回退到 NeutronYield.ini 的 Parse 配置
+    if (settings.contains(QStringLiteral("spectrumFitR2Min"))) {
+        ui->doubleSpinBox_fitR2Min->setValue(
+            settings.value(QStringLiteral("spectrumFitR2Min")).toDouble());
+    } else {
+        QSettings nySettings(neutronYieldConfigPath(), QSettings::IniFormat);
+        ui->doubleSpinBox_fitR2Min->setValue(
+            nySettings.value(QStringLiteral("Parse/spectrumFitR2Min"),
+                             CurveFit::kDefaultSpectrumFitR2Min).toDouble());
+    }
+
+    if (settings.contains(QStringLiteral("savePath")))
+        ui->lineEdit_savepath->setText(settings.value(QStringLiteral("savePath")).toString());
+    if (settings.contains(QStringLiteral("fileNamePrefix")))
+        ui->lineEdit_fileName->setText(settings.value(QStringLiteral("fileNamePrefix")).toString());
+
+    if (settings.contains(QStringLiteral("perChannelShotTime"))) {
+        const bool perChannel = settings.value(QStringLiteral("perChannelShotTime")).toBool();
+        ui->radioButton_perChannelShotTime->setChecked(perChannel);
+        ui->radioButton_unifiedShotTime->setChecked(!perChannel);
+        updateShotTimeModeUi();
+    }
+
+    if (settings.contains(QStringLiteral("channelId"))) {
+        const int channelId = qBound(ui->spinBox_channelId->minimum(),
+                                    settings.value(QStringLiteral("channelId")).toInt(),
+                                    ui->spinBox_channelId->maximum());
+        ui->spinBox_channelId->setValue(channelId);
+    }
+
+    if (settings.contains(QStringLiteral("pictureDet"))) {
+        const int pictureDet = qBound(ui->spinBox_pictureDet->minimum(),
+                                     settings.value(QStringLiteral("pictureDet")).toInt(),
+                                     ui->spinBox_pictureDet->maximum());
+        const bool blocked = ui->spinBox_pictureDet->blockSignals(true);
+        ui->spinBox_pictureDet->setValue(pictureDet);
+        ui->spinBox_pictureDet->blockSignals(blocked);
+        m_lastPictureDetId = pictureDet;
+    }
+
+    if (settings.contains(QStringLiteral("plotViewIndex"))) {
+        const int plotViewIndex = qBound(0,
+                                        settings.value(QStringLiteral("plotViewIndex")).toInt(),
+                                        ui->stackedWidget->count() - 1);
+        ui->stackedWidget->setCurrentIndex(plotViewIndex);
+        switch (plotViewIndex) {
+        case 1:
+            ui->radioButton_count->setChecked(true);
+            break;
+        case 2:
+            ui->rb_peakChannel_909keV->setChecked(true);
+            break;
+        case 3:
+            ui->radioButton_neutronYield->setChecked(true);
+            break;
+        default:
+            ui->radioButton_spectrum->setChecked(true);
+            break;
+        }
+    }
+
+    settings.endGroup();
+}
+
 void NeutronYieldStatisticsWindow::replyWriteLog(const QString &msg, QtMsgType msgType)
 {
     QPlainTextEdit* edit = ui->plainTextEdit_log;
@@ -2167,9 +2284,10 @@ void NeutronYieldStatisticsWindow::ensurePeakChannelCurveColumn()
     ui->twResults->insertColumn(col);
     mPeakChannelCurveColumn = col;
 
-    auto *header = new QTableWidgetItem(tr("曲线显示"));
+    auto *header = new QTableWidgetItem(tr("曲线\n显示"));
+    header->setTextAlignment(Qt::AlignCenter);
     ui->twResults->setHorizontalHeaderItem(col, header);
-    ui->twResults->setColumnWidth(col, 80);
+    ui->twResults->setColumnWidth(col, 56);
 
     for (int row = 0; row < DET_NUM; ++row) {
         const int detId = row + 1;
@@ -3798,17 +3916,79 @@ void NeutronYieldStatisticsWindow::on_bt_saveResult_clicked()
         }
     }
 
+    const QStringList saveLabels = {
+        tr("计算结果"),
+        tr("909峰位演变数据"),
+        tr("分时能谱"),
+        tr("909全能峰计数"),
+        tr("中子产额空间分布"),
+        tr("中子产额空间分布图")
+    };
+
+    QProgressDialog progress(tr("正在保存结果文件..."), tr("取消"), 0, outputPaths.size(), this);
+    progress.setWindowTitle(tr("保存进度"));
+    progress.setWindowModality(Qt::WindowModal);
+    progress.setMinimumDuration(0);
+    progress.setAutoClose(false);
+    progress.setAutoReset(false);
+    progress.setValue(0);
+    QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+
     struct SaveItem {
         QString path;
         bool ok;
     };
     QVector<SaveItem> results;
-    results.append({outputPaths.at(0), exportResultTableXlsx(outputPaths.at(0))});
-    results.append({outputPaths.at(1), exportPeakEvolutionXlsx(outputPaths.at(1))});
-    results.append({outputPaths.at(2), exportMultiSegmentXlsx(outputPaths.at(2))});
-    results.append({outputPaths.at(3), exportCount909Xlsx(outputPaths.at(3))});
-    results.append({outputPaths.at(4), exportYieldDisXlsx(outputPaths.at(4))});
-    results.append({outputPaths.at(5), w && w->exportToPng(outputPaths.at(5))});
+    results.reserve(outputPaths.size());
+    bool cancelled = false;
+
+    for (int i = 0; i < outputPaths.size(); ++i) {
+        if (progress.wasCanceled()) {
+            cancelled = true;
+            break;
+        }
+
+        progress.setLabelText(tr("正在保存（%1/%2）：%3")
+                                  .arg(i + 1)
+                                  .arg(outputPaths.size())
+                                  .arg(saveLabels.at(i)));
+        progress.setValue(i);
+        QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+
+        if (progress.wasCanceled()) {
+            cancelled = true;
+            break;
+        }
+
+        bool ok = false;
+        switch (i) {
+        case 0:
+            ok = exportResultTableXlsx(outputPaths.at(i));
+            break;
+        case 1:
+            ok = exportPeakEvolutionXlsx(outputPaths.at(i));
+            break;
+        case 2:
+            ok = exportMultiSegmentXlsx(outputPaths.at(i));
+            break;
+        case 3:
+            ok = exportCount909Xlsx(outputPaths.at(i));
+            break;
+        case 4:
+            ok = exportYieldDisXlsx(outputPaths.at(i));
+            break;
+        case 5:
+            ok = w && w->exportToPng(outputPaths.at(i));
+            break;
+        default:
+            break;
+        }
+        results.append({outputPaths.at(i), ok});
+    }
+
+    if (!cancelled)
+        progress.setValue(outputPaths.size());
+    progress.close();
 
     int okCount = 0;
     QStringList failed;
@@ -3820,6 +4000,19 @@ void NeutronYieldStatisticsWindow::on_bt_saveResult_clicked()
             failed << item.path;
             emit reporWriteLog(tr("文件保存失败，路径：%1").arg(item.path), QtWarningMsg);
         }
+    }
+
+    if (cancelled) {
+        emit reporWriteLog(tr("保存已取消，已完成 %1/%2 个文件。")
+                               .arg(results.size())
+                               .arg(outputPaths.size()),
+                           QtWarningMsg);
+        QMessageBox::information(this, tr("提示"),
+                                 tr("保存已取消。\n已完成 %1 个，成功 %2 个，失败 %3 个。")
+                                     .arg(results.size())
+                                     .arg(okCount)
+                                     .arg(failed.size()));
+        return;
     }
 
     if (failed.isEmpty()) {

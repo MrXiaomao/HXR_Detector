@@ -201,6 +201,15 @@ CountRateStatisticsWindow::CountRateStatisticsWindow(bool isDarkTheme, QWidget *
 
 CountRateStatisticsWindow::~CountRateStatisticsWindow()
 {
+    {
+        GlobalSettings settingsSystem;
+        if (QSplitter *splitterH1 = findChild<QSplitter*>(QStringLiteral("splitterH1")))
+            settingsSystem.setValue(QStringLiteral("Global/splitterH1/State"), splitterH1->saveState());
+        if (QSplitter *splitterV2 = findChild<QSplitter*>(QStringLiteral("splitterV2")))
+            settingsSystem.setValue(QStringLiteral("Global/splitterV2/State"), splitterV2->saveState());
+    }
+
+    saveUiParameters();
     delete ui;
 }
 
@@ -502,6 +511,8 @@ void CountRateStatisticsWindow::initUi()
             }
         }
     }
+
+    loadUiParameters();
 }
 
 void CountRateStatisticsWindow::createDetectorLegendCheckboxes()
@@ -779,6 +790,49 @@ void CountRateStatisticsWindow::restoreSettings()
             QGoodWindow::setAppCustomTheme(mIsDarkTheme,this->mThemeColor); // Must be >96
         });
     }
+}
+
+void CountRateStatisticsWindow::saveUiParameters()
+{
+    if (!ui)
+        return;
+
+    GlobalSettings settings;
+    settings.beginGroup(QStringLiteral("CountRateStatistics"));
+    settings.setValue(QStringLiteral("timeStart"), ui->spinBox_timeStart->value());
+    settings.setValue(QStringLiteral("timeEnd"), ui->spinBox_timeEnd->value());
+    settings.setValue(QStringLiteral("timeStep"), ui->spinBox->value());
+    settings.setValue(QStringLiteral("showOriginalPlot"), ui->cb_countOriginalPlotShow->isChecked());
+    settings.setValue(QStringLiteral("showCorrectPlot"), ui->cb_countCorrectPlotShow->isChecked());
+    settings.endGroup();
+}
+
+void CountRateStatisticsWindow::loadUiParameters()
+{
+    if (!ui)
+        return;
+
+    GlobalSettings settings;
+    settings.beginGroup(QStringLiteral("CountRateStatistics"));
+
+    if (settings.contains(QStringLiteral("timeStart")))
+        ui->spinBox_timeStart->setValue(settings.value(QStringLiteral("timeStart")).toInt());
+    if (settings.contains(QStringLiteral("timeEnd")))
+        ui->spinBox_timeEnd->setValue(settings.value(QStringLiteral("timeEnd")).toInt());
+    if (settings.contains(QStringLiteral("timeStep"))) {
+        const int timeStep = qMax(ui->spinBox->minimum(),
+                                  settings.value(QStringLiteral("timeStep")).toInt());
+        ui->spinBox->setValue(timeStep);
+    }
+
+    if (settings.contains(QStringLiteral("showOriginalPlot")))
+        ui->cb_countOriginalPlotShow->setChecked(
+            settings.value(QStringLiteral("showOriginalPlot")).toBool());
+    if (settings.contains(QStringLiteral("showCorrectPlot")))
+        ui->cb_countCorrectPlotShow->setChecked(
+            settings.value(QStringLiteral("showCorrectPlot")).toBool());
+
+    settings.endGroup();
 }
 
 
@@ -1180,17 +1234,18 @@ void CountRateStatisticsWindow::on_action_open_triggered()
         mMeasureStartTime = measureStartTime;
         if (shotTime.isValid()) {
             ui->fusionDateTime->setDateTime(shotTime);
-            if (updateMeasureStartTimeFromShotTime(shotTime)) {
+            // 打开文件时尽量保留上次解析起止（若仍落在测量范围内）
+            if (updateMeasureStartTimeFromShotTime(shotTime, false)) {
                 emit reporWriteLog(tr("已按 H5 中 ShotTime 设置时间零点（相对开测偏移 %1 s）；仍可通过打靶时刻控件覆盖")
                                        .arg(mMeasureStartSecond));
             }
         } else if (mMeasureStartTime.isValid()) {
             // 无 ShotTime：时间零点=开测时刻，fusionDateTime 预填开测时刻便于手工改成真实打靶时刻
-            updateMeasureStartSecond(0);
+            updateMeasureStartSecond(0, false);
             ui->fusionDateTime->setDateTime(mMeasureStartTime);
             emit reporWriteLog(tr("未读取到有效打靶时刻，暂以开测时刻为时间零点；请在打靶时刻控件中补填后点「导入打靶时刻」"), QtWarningMsg);
         } else {
-            updateMeasureStartSecond(0);
+            updateMeasureStartSecond(0, false);
             emit reporWriteLog(tr("未读取到有效开测时刻与打靶时刻，时间轴从 0 起；请打开有效测量文件"), QtWarningMsg);
         }
 
@@ -1227,7 +1282,8 @@ void CountRateStatisticsWindow::on_action_exit_triggered()
     mainWindow->close();
 }
 
-bool CountRateStatisticsWindow::updateMeasureStartTimeFromShotTime(const QDateTime &shotTime)
+bool CountRateStatisticsWindow::updateMeasureStartTimeFromShotTime(const QDateTime &shotTime,
+                                                                   bool resetParseRange)
 {
     if (!mMeasureStartTime.isValid() || !shotTime.isValid())
         return false;
@@ -1237,11 +1293,11 @@ bool CountRateStatisticsWindow::updateMeasureStartTimeFromShotTime(const QDateTi
     measureStartTime.setTimeSpec(Qt::UTC);
     fusionShotTime.setTimeSpec(Qt::UTC);
 
-    updateMeasureStartSecond(fusionShotTime.msecsTo(measureStartTime) / 1000.0);
+    updateMeasureStartSecond(fusionShotTime.msecsTo(measureStartTime) / 1000.0, resetParseRange);
     return true;
 }
 
-void CountRateStatisticsWindow::updateMeasureStartSecond(double startSecond)
+void CountRateStatisticsWindow::updateMeasureStartSecond(double startSecond, bool resetParseRange)
 {
     mMeasureStartSecond = startSecond;
     ui->line_measure_startT->setText(QString::number(startSecond));
@@ -1253,15 +1309,27 @@ void CountRateStatisticsWindow::updateMeasureStartSecond(double startSecond)
     const int minimumStartSecond = static_cast<int>(std::ceil(qBound(intMin, startSecond, intMax)));
     const int maximumEndSecond = static_cast<int>(std::floor(qBound(intMin, endSecond, intMax)));
 
+    const int prevStart = ui->spinBox_timeStart->value();
+    const int prevEnd = ui->spinBox_timeEnd->value();
+
     // 先放宽范围，再设值，避免 spinBox 钳制导致起止错乱
     ui->spinBox_timeStart->setMinimum(minimumStartSecond);
     ui->spinBox_timeStart->setMaximum(qMax(minimumStartSecond, maximumEndSecond));
     ui->spinBox_timeEnd->setMinimum(minimumStartSecond);
     ui->spinBox_timeEnd->setMaximum(qMax(minimumStartSecond, maximumEndSecond));
 
-    // 导入打靶时刻后，解析区间默认对齐整段测量范围
-    ui->spinBox_timeStart->setValue(minimumStartSecond);
-    ui->spinBox_timeEnd->setValue(maximumEndSecond);
+    if (!resetParseRange
+        && prevStart >= minimumStartSecond
+        && prevEnd <= maximumEndSecond
+        && prevStart <= prevEnd) {
+        // 打开文件时优先保留上次（或已加载）的解析起止
+        ui->spinBox_timeStart->setValue(prevStart);
+        ui->spinBox_timeEnd->setValue(prevEnd);
+    } else {
+        // 导入打靶时刻，或旧区间落在测量范围外：对齐整段测量范围
+        ui->spinBox_timeStart->setValue(minimumStartSecond);
+        ui->spinBox_timeEnd->setValue(maximumEndSecond);
+    }
 }
 
 void CountRateStatisticsWindow::on_ConfirmTime_clicked()

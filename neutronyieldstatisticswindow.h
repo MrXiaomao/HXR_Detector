@@ -55,6 +55,8 @@ public:
     
     void applyColorTheme();
     void restoreSettings();
+    void saveUiParameters();
+    void loadUiParameters();
 
     void initFileListTable();
     void addFilesToList(const QStringList &paths);
