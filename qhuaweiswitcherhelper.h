@@ -77,7 +77,7 @@ public:
     void setAssociatedDetector(quint8 index);
     void setAssociatedDetector(QString);
 
-    /** 全部开/关时保留该 POE 端口的队列（时间同步触发模块），0 表示无保护端口 */
+    /** 全部开/关时跳过的 POE 端口，0 表示不跳过 */
     void setProtectedPoePort(quint8 port);
 
     /*

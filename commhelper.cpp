@@ -7,14 +7,6 @@
 #include <QNetworkConfigurationManager>
 #include <QThread>
 
-void CommHelper::extendTimeSynModule::reload()
-{
-    GlobalSettings settings(DEVICE_CONFIG_FILE);
-    ip = settings.value("TimeSynModule/ip").toString();
-    poeIndex = settings.value("TimeSynModule/poeIndex", 24).toInt();
-    switcherIndex = settings.value("TimeSynModule/switcherIndex", 1).toInt();
-}
-
 // 全局类名与 commhelper.h 中 friend 声明一致
 class SpectrumH5FlushThread : public QThread {
 public:
@@ -267,11 +259,6 @@ void CommHelper::initSocket()
             quint16 peerPort = channel->peerport();
             qDebug().nospace() << "新客户端连接，地址：" << peerAddress << ", 端口：" << peerPort;
 
-            if (shouldRejectTimeSynReconnect() && peerAddress == mExtendTimeSynModule.ip) {
-                qInfo().nospace() << "关电流程中，拒绝时间同步模块重连，地址：" << peerAddress;
-                channel->close();
-                return;
-            }
             const qint8 peekIndex = peekDetectorIndex(peerAddress, peerPort);
             if (peekIndex >= 0 && shouldRejectDetectorReconnect(static_cast<quint8>(peekIndex))) {
                 qInfo().nospace() << "关电流程中，拒绝谱仪[#" << peekIndex << "]重连，地址：" << peerAddress;
@@ -361,12 +348,6 @@ void CommHelper::initSocket()
         quint16 peerPort = connection->peerPort();
         qDebug().nospace() << "新客户端连接，地址：" << peerAddress << ", 端口：" << peerPort;
 
-        if (shouldRejectTimeSynReconnect() && peerAddress == mExtendTimeSynModule.ip) {
-            qInfo().nospace() << "关电流程中，拒绝时间同步模块重连，地址：" << peerAddress;
-            connection->disconnectFromHost();
-            connection->deleteLater();
-            return;
-        }
         const qint8 peekIndex = peekDetectorIndex(peerAddress, peerPort);
         if (peekIndex >= 0 && shouldRejectDetectorReconnect(static_cast<quint8>(peekIndex))) {
             qInfo().nospace() << "关电流程中，拒绝谱仪[#" << peekIndex << "]重连，地址：" << peerAddress;
@@ -454,8 +435,7 @@ void CommHelper::initSocket()
 
 void CommHelper::initDataProcessor()
 {
-    // 这里必须是从0开始，0对应的是时间同步模块，1-32对应探测器索引，这样可以通过索引直接访问对应的处理器
-    for (int index = 0; index <= DET_NUM; ++index){
+    for (int index = 1; index <= DET_NUM; ++index){
         DataProcessor* processor = new DataProcessor(index, nullptr, this);
         mDetectorDataProcessor[index] = processor;
 
@@ -468,6 +448,9 @@ void CommHelper::initDataProcessor()
         //对温度超时报警进行处理
         connect(processor, &DataProcessor::reportTemperatureTimeout, this,
             &CommHelper::onTemperatureTimeout_Thread, Qt::DirectConnection);
+
+        connect(processor, &DataProcessor::reportFirstSpectrumFrame, this,
+                &CommHelper::onFirstSpectrumFrame, Qt::DirectConnection);
 
         // 能谱数据（解析后的完整能谱数据）
         connect(processor, &DataProcessor::reportFullSpectrum, this, [=](quint8 detID, const FullSpectrum& fullSpectrum){
@@ -488,15 +471,6 @@ void CommHelper::initDataProcessor()
         // 粒子数据（解析后的粒子信息）
         connect(processor, &DataProcessor::reportParticleInfo, this,
             &CommHelper::onParticleInfo_Thread, Qt::DirectConnection);
-
-        // 触发信号时间戳(解析后的数据)
-        connect(processor, &DataProcessor::reportTriggerTimeInfo, this, [=](quint8 detID, const QDateTime triggerTime){
-            emit reportTimestampe(triggerTime); //通知界面更新触发时间戳
-
-            // 若当前测量H5文件已存在，则将打靶时刻写入Config/shotTime
-            // const QString shotTime = triggerTime.toString("yyyy-MM-dd hh:mm:ss");
-            // HDF5Settings::instance()->writeShotTimeToCurrentH5(shotTime);
-        }, Qt::DirectConnection);
 
         // 原始OTA升级数据
         connect(processor, &DataProcessor::reportOTAUpgradeData, this, [=](quint8 detID, const QByteArray& data){
@@ -709,17 +683,9 @@ bool CommHelper::shouldRejectDetectorReconnect(quint8 index) const
     return mPoePowerClosing && mIntentionalPOECloseIDs.contains(index);
 }
 
-bool CommHelper::shouldRejectTimeSynReconnect()
-{
-    mExtendTimeSynModule.reload();
-    return mPoePowerClosing && mClosingExtendTimeSynModule;
-}
-
-void CommHelper::markPoeCloseInProgress(bool closingExtendModule)
+void CommHelper::markPoeCloseInProgress()
 {
     mPoePowerClosing = true;
-    if (closingExtendModule)
-        mClosingExtendTimeSynModule = true;
 }
 
 void CommHelper::tryClearPoeCloseInProgress()
@@ -733,22 +699,14 @@ void CommHelper::tryClearPoeCloseInProgress()
     }
 
     mPoePowerClosing = false;
-    mClosingExtendTimeSynModule = false;
     qDebug() << "开关电流程：所有交换机 POE 指令队列已空闲，允许探测器重连";
 }
 
 #if ENABLE_LIBHV
 qint8 CommHelper::allocDataProcessor(const hv::SocketChannelPtr& socket)
 {
-    mExtendTimeSynModule.reload();
     QString peerAddress = QString::fromStdString(socket->peerip());
     quint32 peerPort = socket->peerport();
-    if (peerAddress == mExtendTimeSynModule.ip){
-        //时钟同步模块不分配数据处理器
-        mDetectorDataProcessor[0]->reallocSocket(socket);
-        return 0;
-    }
-
     HDF5Settings *settings = HDF5Settings::instance();
     QMap<quint8, DetParameter*> detParameters = settings->getDetParameters();
     bool needExport = false;
@@ -843,16 +801,8 @@ qint8 CommHelper::indexOfAddress(const uint32_t socketDescriptor/*QString peerAd
 #else
 qint8 CommHelper::allocDataProcessor(QTcpSocket *socket)
 {
-    mExtendTimeSynModule.reload();
     QString peerAddress = socket->peerAddress().toString();
     quint32 peerPort = socket->peerPort();
-    if (peerAddress == mExtendTimeSynModule.ip){
-        //时钟同步模块不分配数据处理器
-        socket->setProperty("isTimeSynModule", true);
-        mDetectorDataProcessor[0]->reallocSocket(socket);
-        return 0;
-    }
-
     HDF5Settings *settings = HDF5Settings::instance();
     QMap<quint8, DetParameter *> detParameters = settings->getDetParameters();
     bool needExport = false;
@@ -990,70 +940,24 @@ bool CommHelper::closeSwitcherPOEPower(quint8 index)
     return ok;
 }
 
-/*
-     打开交换机POE口输出电源(时钟同步模块)
-    */
-bool CommHelper::openSwitcherExtendPOEPower()
-{
-    mClosingExtendTimeSynModule = false;
-
-    mExtendTimeSynModule.reload();
-    //检查是否存在
-    if(mHuaWeiSwitcherHelper.isEmpty() || mExtendTimeSynModule.switcherIndex <= 0 || mExtendTimeSynModule.switcherIndex > mHuaWeiSwitcherHelper.size()){
-        return false;
-    }
-
-    mHuaWeiSwitcherHelper[mExtendTimeSynModule.switcherIndex-1]->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
-    return mHuaWeiSwitcherHelper[mExtendTimeSynModule.switcherIndex-1]->openSwitcherPOEPower(mExtendTimeSynModule.poeIndex);
-}
-
-/*
-     关闭交换机POE口输出电源(时钟同步模块)
-    */
-bool CommHelper::closeSwitcherExtendPOEPower()
-{
-    markPoeCloseInProgress(true);
-
-    mExtendTimeSynModule.reload();
-    //检查是否存在
-    if(mHuaWeiSwitcherHelper.isEmpty() || mExtendTimeSynModule.switcherIndex <= 0 || mExtendTimeSynModule.switcherIndex > mHuaWeiSwitcherHelper.size()){
-        tryClearPoeCloseInProgress();
-        return false;
-    }
-
-    mHuaWeiSwitcherHelper[mExtendTimeSynModule.switcherIndex-1]->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
-    const bool ok = mHuaWeiSwitcherHelper[mExtendTimeSynModule.switcherIndex-1]->closeSwitcherPOEPower(mExtendTimeSynModule.poeIndex);
-    tryClearPoeCloseInProgress();
-    return ok;
-}
-
-/////////////////////////////////////////////////////////////////////////////////
 void CommHelper::initSwitchers()
 {
     if (!mHuaWeiSwitcherHelper.isEmpty())
         return;
 
     GlobalSettings settings(DEVICE_CONFIG_FILE);
-    mHuaWeiSwitcherCount = settings.value("Switcher/Count", 0).toUInt();
+    mHuaWeiSwitcherCount = qMin<quint8>(1, settings.value("Switcher/Count", 1).toUInt());
     mHuaWeiSwitcherHelper.reserve(mHuaWeiSwitcherCount);
-    mExtendTimeSynModule.reload();
     for (int i = 0; i < mHuaWeiSwitcherCount; ++i) {
         QString ip = settings.value(QString("Switcher/%1/ip").arg(i + 1), "").toString();
         QString ass = settings.value(QString("Switcher/%1/detector").arg(i + 1), "").toString();
         QHuaWeiSwitcherHelper* huaWeiSwitcherHelper = new QHuaWeiSwitcherHelper(ip);
         huaWeiSwitcherHelper->setAssociatedDetector(ass);
-        if (mExtendTimeSynModule.switcherIndex == (i + 1))
-            huaWeiSwitcherHelper->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
-
         connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::switcherLogged, this, &CommHelper::switcherLogged);
         connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::switcherConnected, this, &CommHelper::switcherConnected);
         connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::switcherDisconnected, this, &CommHelper::switcherDisconnected);
         connect(huaWeiSwitcherHelper, &QHuaWeiSwitcherHelper::reportPoePowerStatus, this, [=](quint8 index, bool on) {
-            mExtendTimeSynModule.reload();
-            quint8 reportIndex = index;
-            if (huaWeiSwitcherHelper == mHuaWeiSwitcherHelper[mExtendTimeSynModule.switcherIndex - 1]
-                && index == mExtendTimeSynModule.poeIndex)
-                reportIndex = 0;
+            const quint8 reportIndex = index;
 
             // 查询到通道电源已关闭时，停用温度超时报警定时器
             if (!on) {
@@ -1171,14 +1075,9 @@ bool CommHelper::isOpen()
 
 void CommHelper::connectSwitcher(bool query)
 {
-    mExtendTimeSynModule.reload();
     for (int i = 0; i < mHuaWeiSwitcherHelper.size(); ++i) {
         auto switcherHelper = mHuaWeiSwitcherHelper[i];
-        if (switcherHelper == mHuaWeiSwitcherHelper[mExtendTimeSynModule.switcherIndex - 1])
-            switcherHelper->setAssociatedDetector(mExtendTimeSynModule.poeIndex);
-
-        switcherHelper->setProtectedPoePort(
-            (i + 1 == mExtendTimeSynModule.switcherIndex) ? mExtendTimeSynModule.poeIndex : 0);
+        switcherHelper->setProtectedPoePort(0);
 
         if (query)
             switcherHelper->queryPowerStatus();
@@ -1200,19 +1099,16 @@ void CommHelper::disconnectSwitcher()
 void CommHelper::openPower()
 {
     mPoePowerClosing = false;
-    mClosingExtendTimeSynModule = false;
 
-    mExtendTimeSynModule.reload();
     GlobalSettings settings(DEVICE_CONFIG_FILE);
-    mHuaWeiSwitcherCount =  settings.value("Switcher/Count", 0).toUInt();
+    mHuaWeiSwitcherCount = qMin<quint8>(1, settings.value("Switcher/Count", 1).toUInt());
     for (int i=0; i<mHuaWeiSwitcherCount; ++i){
         QString ip = settings.value(QString("Switcher/%1/ip").arg(i+1), "").toString();
         QString ass = settings.value(QString("Switcher/%1/detector").arg(i+1), "").toString();
         for (auto switcherHelper : mHuaWeiSwitcherHelper)
         {
             if (switcherHelper->ip() == ip){
-                switcherHelper->setProtectedPoePort(
-                    (i + 1 == mExtendTimeSynModule.switcherIndex) ? mExtendTimeSynModule.poeIndex : 0);
+                switcherHelper->setProtectedPoePort(0);
                 switcherHelper->setAssociatedDetector(ass);
                 switcherHelper->openSwitcherPOEPower(0x00);
             }
@@ -1226,17 +1122,15 @@ void CommHelper::closePower(bool disconnect)
 {
     markPoeCloseInProgress();
 
-    mExtendTimeSynModule.reload();
     GlobalSettings settings(DEVICE_CONFIG_FILE);
-    mHuaWeiSwitcherCount =  settings.value("Switcher/Count", 0).toUInt();
+    mHuaWeiSwitcherCount = qMin<quint8>(1, settings.value("Switcher/Count", 1).toUInt());
     for (int i=0; i<mHuaWeiSwitcherCount; ++i){
         QString ip = settings.value(QString("Switcher/%1/ip").arg(i+1), "").toString();
         QString ass = settings.value(QString("Switcher/%1/detector").arg(i+1), "").toString();
         for (auto switcherHelper : mHuaWeiSwitcherHelper)
         {
             if (switcherHelper->ip() == ip){
-                switcherHelper->setProtectedPoePort(
-                    (i + 1 == mExtendTimeSynModule.switcherIndex) ? mExtendTimeSynModule.poeIndex : 0);
+                switcherHelper->setProtectedPoePort(0);
                 switcherHelper->setAssociatedDetector(ass);
                 for (quint8 detIndex = 1; detIndex <= DET_NUM; ++detIndex) {
                     if (switcherHelper->contains(detIndex) && !mIntentionalPOECloseIDs.contains(detIndex))
@@ -1259,6 +1153,29 @@ void CommHelper::setShotInformation(const QString shotDir, const QString shotNum
     this->mShotNum = shotNum;
 }
 
+void CommHelper::onFirstSpectrumFrame(quint8 detID, const QDateTime& receiveTime)
+{
+    {
+        QMutexLocker locker(&mAutoShotTimeMutex);
+        if (!mAwaitAutoShotTime)
+            return;
+        mAwaitAutoShotTime = false;
+    }
+
+    const QDateTime shotTime = receiveTime;
+    const QString shotText = shotTime.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss.zzz"));
+    {
+        QMutexLocker locker(&mAutoShotTimeMutex);
+        mShotTime = shotText;
+    }
+    const bool ok = HDF5Settings::instance()->writeShotTimeToCurrentH5(shotText);
+    qInfo().noquote() << QStringLiteral("谱仪[#%1]收到首帧能谱，打靶时刻=%2%3")
+                             .arg(detID)
+                             .arg(shotText)
+                             .arg(ok ? QStringLiteral("，已写入H5") : QStringLiteral("，写入H5失败"));
+    emit reportAutoShotTime(shotTime);
+}
+
 
 /**
  * @brief 开始测量
@@ -1278,6 +1195,10 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
     mMeasuring = true;
 
     if (index == 0) {
+        {
+            QMutexLocker locker(&mAutoShotTimeMutex);
+            mAwaitAutoShotTime = (workMode == CommandAdapter::WorkMode::wmSpectrum);
+        }
         for (int i = 1; i <= DET_NUM; ++i) {
             QMutexLocker lock(&mSpectrumH5MutexByDetector[i]);
             mPendingH5ByDetector[i].clear();
@@ -1291,7 +1212,10 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
 
         mDataFileList.clear();
         mSessionMeasureStartTime = mMeasureStartTime;
-        mShotTime = shotTime;
+        {
+            QMutexLocker locker(&mAutoShotTimeMutex);
+            mShotTime = shotTime;
+        }
         QString filePath = QString("%1/%2/%3.H5").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime);
         HDF5Settings::instance()->closeH5Spectrum();
         HDF5Settings::instance()->createH5Spectrum(filePath, mMeasureStartTime, shotTime);
@@ -1345,6 +1269,10 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
         }
     }
     else if (index >= 1 && index <= DET_NUM){
+        if (!wasMeasuring && workMode == CommandAdapter::WorkMode::wmSpectrum) {
+            QMutexLocker locker(&mAutoShotTimeMutex);
+            mAwaitAutoShotTime = true;
+        }
         if (mDetectFileProcessor.contains(index)){
             if (mDetectFileProcessor[index]->isOpen()){
                 mDetectFileProcessor[index]->close();
@@ -1376,8 +1304,13 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
                                  .arg(mShotNum)
                                  .arg(channelStartTime)
                                  .arg(index);
+            QString shotForChannel;
+            {
+                QMutexLocker locker(&mAutoShotTimeMutex);
+                shotForChannel = mShotTime.isEmpty() ? shotTime : mShotTime;
+            }
             const QString createdPath = HDF5Settings::instance()->createChannelH5Spectrum(
-                index, h5Path, channelStartTime, mShotTime.isEmpty() ? shotTime : mShotTime);
+                index, h5Path, channelStartTime, shotForChannel);
             if (!createdPath.isEmpty() && !mDataFileList.contains(createdPath))
                 mDataFileList.push_back(createdPath);
         }
@@ -1477,6 +1410,11 @@ void CommHelper::checkAndFlushDetectFile(quint8 index, qint64 bytesWritten)
 */
 void CommHelper::stopMeasure(quint8 index/* = 0*/)
 {
+    if (index == 0) {
+        QMutexLocker locker(&mAutoShotTimeMutex);
+        mAwaitAutoShotTime = false;
+    }
+
     // 停止前先将 H5 缓存落盘，避免累计在内存中
     flushSpectrumH5BuffersOnWorkerThread(true);
     // 停止前先将网口原始数据缓存落盘，避免尾包丢失
@@ -1524,7 +1462,10 @@ void CommHelper::stopMeasure(quint8 index/* = 0*/)
         mMeasuring = false;
         mCurrentWorkMode = CommandAdapter::WorkMode::wmSpectrum;
         mSessionMeasureStartTime.clear();
-        mShotTime.clear();
+        {
+            QMutexLocker locker(&mAutoShotTimeMutex);
+            mShotTime.clear();
+        }
         HDF5Settings::instance()->closeH5Spectrum();
     }
     else if (index >= 1 && index <= DET_NUM){ //关闭单个通道
@@ -1712,10 +1653,7 @@ void CommHelper::handleDetectorDisconnection(quint8 index)
             Q_ARG(QString, peerAddress),
             Q_ARG(quint16, peerPort));
 
-        if (0 == index)
-            qInfo().nospace() << "时间同步模块下线，已执行断开连接处理";
-        else
-            qInfo().nospace() << "谱仪[#" << index << "]下线，已执行断开连接处理";
+        qInfo().nospace() << "谱仪[#" << index << "]下线，已执行断开连接处理";
         return; // 找到并处理完成，退出
     }
 
@@ -1749,18 +1687,24 @@ bool CommHelper::isDetectorConnected(quint8 detIndex)
 
 void CommHelper::startOTAUpgrade(quint8 index)
 {
-    mDetectorDataProcessor[index]->startOTAUpgrade();
+    DataProcessor *processor = mDetectorDataProcessor.value(index);
+    if (processor)
+        processor->startOTAUpgrade();
 }
 
 void CommHelper::endOTAUpgrade(quint8 index)
 {
-    mDetectorDataProcessor[index]->endOTAUpgrade();
+    DataProcessor *processor = mDetectorDataProcessor.value(index);
+    if (processor)
+        processor->endOTAUpgrade();
 }
 
 bool CommHelper::sendOTAUpgradeData(quint8 index, const QByteArray& data)
 {
-    if (index == 0)
-        return mDetectorDataProcessor[mExtendTimeSynModule.switcherIndex-1]->sendOTAUpgradeData(data);
-    else
-        return mDetectorDataProcessor[index]->sendOTAUpgradeData(data);
+    if (index < 1 || index > DET_NUM)
+        return false;
+    DataProcessor *processor = mDetectorDataProcessor.value(index);
+    if (!processor)
+        return false;
+    return processor->sendOTAUpgradeData(data);
 }

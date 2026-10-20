@@ -62,14 +62,12 @@ OTAUpgradeWindow::OTAUpgradeWindow(QWidget *parent)
     ui->tableWidget_detector->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     ui->tableWidget_detector->horizontalHeader()->setFixedHeight(25);
     ui->tableWidget_detector->setRowCount(DET_NUM+1);
-    ui->tableWidget_detector->setRowHeight(0, 50);
-    ui->tableWidget_detector->verticalHeaderItem(0)->setText("时间同步\n触发模块");
+    ui->tableWidget_detector->setRowHidden(0, true);
     for (int row=0; row<ui->tableWidget_detector->rowCount(); ++row){
         QTableWidgetItem* item = nullptr;
         if (row == 0)
-            item = new QTableWidgetItem(tr("时间同步\n触发模块"));
-        else
-            item = new QTableWidgetItem(QString("谱仪#%1").arg(row));
+            continue;
+        item = new QTableWidgetItem(QString("谱仪#%1").arg(row));
         ui->tableWidget_detector->setItem(row, 0, item);
         item->setCheckState(Qt::Unchecked);
         item->setTextAlignment(Qt::AlignCenter);
@@ -95,9 +93,7 @@ OTAUpgradeWindow::OTAUpgradeWindow(QWidget *parent)
         QMap<int, QString> rpdFiles = enumRpdFilesByNumber(dirPath);
         // 输出结果（按数字键升序排列）
         for (auto it = rpdFiles.begin(); it != rpdFiles.end(); ++it) {
-            if (it.key() == 0)
-                emit sigWriteLog(QString(tr("[时间同步模块] 更新文件名称\"%1\"")).arg(it.value()));
-            else
+            if (it.key() >= 1)
                 emit sigWriteLog(QString(tr("谱仪[#%1] 更新文件名称\"%2\"")).arg(it.key()).arg(it.value()));
         }
 
@@ -126,6 +122,8 @@ OTAUpgradeWindow::OTAUpgradeWindow(QWidget *parent)
     commHelper = CommHelper::instance();
     // 探测器
     connect(commHelper, &CommHelper::detectorOnline, this, [=](quint8 index){
+        if (index < 1 || index > DET_NUM)
+            return;
         int row = index;
         QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 1));
         cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::green));
@@ -134,6 +132,8 @@ OTAUpgradeWindow::OTAUpgradeWindow(QWidget *parent)
     });
 
     connect(commHelper, &CommHelper::detectorOffline, this, [=](quint8 index){
+        if (index < 1 || index > DET_NUM)
+            return;
         int row = index;
         QLabel* cell =  qobject_cast<QLabel*>(ui->tableWidget_detector->cellWidget(row, 1));
         cell->setPixmap(dblroundPixmap(QSize(20,20), Qt::red));
@@ -334,6 +334,8 @@ void OTAUpgradeWindow::on_pushButton_ok_clicked()
 {
     QVector<int> validIndexes;
     for (int i=0; i<ui->tableWidget_detector->rowCount(); ++i){
+        if (i == 0)
+            continue;
         QTableWidgetItem* item = ui->tableWidget_detector->item(i, 0);
         if (item->checkState() == Qt::Checked){
             int index = i;
@@ -397,8 +399,7 @@ void OTAUpgradeWindow::startNextTask()
     QString partition = currentTask.second;
     QString filePath = m_rpdFiles.value(index);
 
-    QString detectorName = (index == 0) ? QStringLiteral("[时钟同步模块]")
-                                        : QStringLiteral("谱仪[#%1]").arg(index);
+    const QString detectorName = QStringLiteral("谱仪[#%1]").arg(index);
 
     emit sigWriteLog(tr("=== 开始执行任务%1：%2（分区：%3） ===")
                     .arg(m_currentTaskIndex + 1).arg(detectorName).arg(partition));
@@ -465,7 +466,7 @@ void OTAUpgradeWindow::startNextTask()
 
 void OTAUpgradeWindow::on_pushButton_exit_clicked()
 {
-    for (int index = 0; index <=DET_NUM; ++index)
+    for (int index = 1; index <= DET_NUM; ++index)
         commHelper->endOTAUpgrade(index);
 
     ui->pushButton_ok->setEnabled(true);
@@ -478,6 +479,8 @@ void OTAUpgradeWindow::on_pushButton_switch_clicked()
 {
     QVector<int> validIndexes;
     for (int i=0; i<ui->tableWidget_detector->rowCount(); ++i){
+        if (i == 0)
+            continue;
         QTableWidgetItem* item = ui->tableWidget_detector->item(i, 0);
         if (item->checkState() == Qt::Checked){
             int index = i;
@@ -504,12 +507,7 @@ void OTAUpgradeWindow::on_pushButton_switch_clicked()
     }
 
     for (const auto index : validIndexes) {
-        if (index == 0){
-            emit sigWriteLog(tr("开始切换[时间同步触发模块]程序至[%1]......").arg(selectedPartition));
-        }
-        else{
-            emit sigWriteLog(tr("开始切换谱仪[#%1]程序至[%2]......").arg(index).arg(selectedPartition));
-        }
+        emit sigWriteLog(tr("开始切换谱仪[#%1]程序至[%2]......").arg(index).arg(selectedPartition));
 
         // 切换程序指令
         QByteArray data = QByteArray::fromHex("12 34 00 0F CA 12 00 00 00 00 AB CD");
@@ -520,33 +518,18 @@ void OTAUpgradeWindow::on_pushButton_switch_clicked()
         }
 
         if (!commHelper->sendOTAUpgradeData(index, data)){
-            if (index == 0){
-                emit sigWriteLog(tr("[时间同步触发模块]程序切换失败！！！（原因：设备未连接或通信写入失败）"), QtCriticalMsg);
-            }
-            else{
-                emit sigWriteLog(tr("谱仪[#%1]程序切换失败！！！（原因：设备未连接或通信写入失败）").arg(index), QtCriticalMsg);
-            }
+            emit sigWriteLog(tr("谱仪[#%1]程序切换失败！！！（原因：设备未连接或通信写入失败）").arg(index), QtCriticalMsg);
 
             continue;
         }
 
-        if (index == 0){
-            emit sigWriteLog(tr("[时间同步触发模块]程序切换成功！！！"));
-        }
-        else{
-            emit sigWriteLog(tr("谱仪[#%1]程序切换成功！！！").arg(index));
-        }
+        emit sigWriteLog(tr("谱仪[#%1]程序切换成功！！！").arg(index));
     }
 }
 
 void OTAUpgradeWindow::asyncSendOTAData(int index, const QString& filePath, const QString& selectedPartition)
 {
-    QString detectorName;
-    if (index == 0){
-        detectorName = QStringLiteral("[时钟同步模块]");
-    } else {
-        detectorName = QStringLiteral("谱仪[#%1]").arg(index);
-    }
+    const QString detectorName = QStringLiteral("谱仪[#%1]").arg(index);
 
     QFile file(filePath);
     if (!file.open(QIODevice::ReadOnly)) {
@@ -765,15 +748,13 @@ void OTAUpgradeWindow::slotSendFinished(int index, const QString& partition, boo
 
         if (commHelper->sendOTAUpgradeData(index, finishData)) {
         } else {
-            QString detectorName = (index == 0) ? QStringLiteral("[时钟同步模块]")
-                                                : QStringLiteral("谱仪[#%1]").arg(index);
+            const QString detectorName = QStringLiteral("谱仪[#%1]").arg(index);
             emit sigWriteLog(tr("%1[%2]发送完成指令失败！（原因：设备未连接或通信写入失败）")
                              .arg(detectorName).arg(partition), QtCriticalMsg);
         }
     } else {
         // 具体失败原因已在 asyncSendOTAData 中打印，此处仅做汇总提示
-        QString detectorName = (index == 0) ? QStringLiteral("[时钟同步模块]")
-                                            : QStringLiteral("谱仪[#%1]").arg(index);
+        const QString detectorName = QStringLiteral("谱仪[#%1]").arg(index);
         emit sigWriteLog(tr("%1[%2]更新失败（详见上方失败原因）").arg(detectorName).arg(partition), QtCriticalMsg);
     }
 

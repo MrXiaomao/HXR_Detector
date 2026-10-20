@@ -3,6 +3,7 @@
 
 #include <QMainWindow>
 #include <QColor>
+#include <QDateTime>
 #include <QElapsedTimer>
 #include <QHash>
 #include <QList>
@@ -289,8 +290,9 @@ private:
     QTimer *mAutoMeasureDelayTimer = nullptr;// 自动测量触发倒计时
     bool mAutoMeasureTimerActive = false; // 自动测量定时器是否正在倒计时
     
-    // 连续测量计时器
+    // 连续测量计时器（波形等无打靶时刻时使用）
     QElapsedTimer *mMeasureTimer = nullptr;
+    QDateTime mDurationFromShotTime; // 能谱测量时长从打靶时刻起算
 
     // 交换机连接状态管理
     bool mSwitcherLogged = false;  // 交换机是否已登录
@@ -356,6 +358,8 @@ private:
     void startMeasure();
     void stopMeasure();
     void logMeasureStartInfo();
+    int measureElapsedSeconds() const;
+    void syncTriggerModeDisplay(int measureModeIndex);
     std::atomic<bool> mCountRatePlotReady = false; // 计数率曲线待刷新
     std::atomic<bool> mSpectrumPlotReady = false;  // 能谱曲线待刷新
     void replotSpectrumBottom(QCustomPlot *plot, bool allowYRescale);

@@ -48,7 +48,6 @@ DataProcessor::DataProcessor(quint8 index, QTcpSocket* socket, QObject *parent)
     connect(this, &CommandAdapter::reportSpectrumData, this, &DataProcessor::mergeSubSpec_Thread, Qt::DirectConnection);
     connect(this, &CommandAdapter::reportWaveformData, this, &DataProcessor::extractWaveformData_Thread, Qt::DirectConnection);
     connect(this, &CommandAdapter::reportParticleData, this, &DataProcessor::extractParticleData_Thread, Qt::DirectConnection);
-    connect(this, &CommandAdapter::reportTimestampData, this, &DataProcessor::extractTimestampData_Thread, Qt::DirectConnection);
 
 #if ENABLE_LIBHV
 #else
@@ -238,12 +237,14 @@ void DataProcessor::startMeasure(CommandAdapter::WorkMode workMode, bool sendAlp
             this->sendAlphaGammaThold(false, detParameter->alphaGammaUpperThold, detParameter->alphaGammaLowerThold);
     }
 
-    //#15 开始测量=1|0|25|1234000FEA1000000001ABCD
+    // 能谱测量：首帧到达后记录打靶时刻
+    mAwaitFirstSpectrumFrame = (workMode == CommandAdapter::WorkMode::wmSpectrum);
     this->sendStartMeasure(CommandAdapter::MeasureMode::mmManual);
 }
 
 void DataProcessor::startAutoMeasure(QDateTime tmStart, CommandAdapter::WorkMode workMode)
 {
+    Q_UNUSED(tmStart);
     /*开始测量之前清空解析缓存，防止野数据存在*/
     requestParserResetOnDataThread();
     {
@@ -257,10 +258,8 @@ void DataProcessor::startAutoMeasure(QDateTime tmStart, CommandAdapter::WorkMode
     //#14 粒子工作模式=1|0|24|1234000FFF1000000002ABCD
     this->sendWorkMode(false, workMode);
 
-    //#15发送测量时间
-    this->sendAutoMeasureTime(tmStart);
-
-    //#16 开始测量=1|0|25|1234000FEA1000000001ABCD
+    // 外触发测量开始：FPGA 等到硬件触发后再上传数据，不再下发定时测量时刻
+    mAwaitFirstSpectrumFrame = (workMode == CommandAdapter::WorkMode::wmSpectrum);
     this->sendStartMeasure(CommandAdapter::MeasureMode::mmAuto);
 }
 
@@ -269,6 +268,7 @@ void DataProcessor::startAutoMeasure(QDateTime tmStart, CommandAdapter::WorkMode
      */
 void DataProcessor::stopMeasure()
 {
+    mAwaitFirstSpectrumFrame = false;
     //#16 停止测量=1|0|26|1234000FEA1000000000ABCD
     this->sendStopMeasure();
 
@@ -391,6 +391,11 @@ void DataProcessor::mergeSubSpec_Thread(quint8 no, const QByteArray& data){
         qWarning() << "Invalid sub-spectrum part, seq:" << spectrumSeq
                    << ", part:" << static_cast<int>(part);
         return;
+    }
+
+    if (mAwaitFirstSpectrumFrame) {
+        mAwaitFirstSpectrumFrame = false;
+        emit reportFirstSpectrumFrame(no, QDateTime::currentDateTime());
     }
 
     FullSpectrum fullSpectrumCopy;
@@ -526,22 +531,6 @@ void DataProcessor::extractParticleData_Thread(quint8 no, const QByteArray& data
     }
     
     emit reportParticleInfo(mIndex, particles);
-}
-
-// 解析时间戳数据包
-void DataProcessor::extractTimestampData_Thread(quint8 no, const QByteArray& packetData)
-{
-    bool ok;
-    quint32 utc = packetData.mid(6, 4).toHex().toUInt(&ok, 16); // utc时间戳
-    quint32 UTCms = packetData.mid(10, 4).toHex().toUInt(&ok, 16);
-    quint64 msecond = static_cast<quint64>(UTCms) * 1000 / std::pow(2,32);//65536; // 毫秒
-
-    // UTC转Unix时间戳，也就是从1970年1月1日00：00：00开始计算的整数秒数
-    quint64 tmUnix = static_cast<quint64>(utc) - 2208988800ULL; // UTC时间戳（1970）-unix时间戳
-    QDateTime tm = QDateTime::fromMSecsSinceEpoch(tmUnix*1000 + msecond);
-
-    // 上报时间戳信息
-    emit reportTriggerTimeInfo(no, tm);
 }
 
 /**

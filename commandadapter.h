@@ -41,7 +41,6 @@ signals:
     void reportSpectrumData(quint8 index, const QByteArray&); // 上报能谱数据
     void reportWaveformData(quint8 index, const QByteArray&); // 上报波形数据
     void reportParticleData(quint8 index, const QByteArray&); // 上报粒子数据
-    void reportTimestampData(quint8 index, const QByteArray&); // 上报外触发时间戳数据
     void reportParamterData(quint8 index, const QByteArray&); // 上报参数数据
     void reportTemperatureData(float temperature, const QDateTime& trTime);
 
@@ -132,8 +131,7 @@ public:
     enum DataType{
         dtWaveform = 0x00D1,//波形
         dtSpectrum = 0x00D2,//能谱
-        dtParticle = 0x00D3, //粒子
-        dtTimestamp = 0x00D4 //触发时间戳
+        dtParticle = 0x00D3 //粒子
     };
 
     void sendWorkMode(bool isRead = true, WorkMode workMode = wmSpectrum);

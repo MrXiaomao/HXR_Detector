@@ -38,13 +38,6 @@ public:
         return &commHelper;
     }
 
-    struct extendTimeSynModule{
-        QString ip;
-        int poeIndex;
-        int switcherIndex;
-        void reload();
-    } mExtendTimeSynModule;
-
     /*
      打开服务
     */
@@ -145,7 +138,7 @@ public:
     Q_SIGNAL void reportWaveCurve(quint8, const QVector<quint16>& data); // 发送解析后的波形曲线
     Q_SIGNAL void reportParticle(quint8 index, quint32 count); // 发送解析后的粒子个数
     Q_SIGNAL void reportOTAUpgrateData(quint8, QVector<quint16>& data);
-    Q_SIGNAL void reportTimestampe(const QDateTime triggerTime);
+    Q_SIGNAL void reportAutoShotTime(const QDateTime& shotTime);
     Q_SIGNAL void reportParamterData(quint8, const QByteArray&);
     Q_SIGNAL void reportPoePowerStatus(quint8, bool); //POE电源开关
     Q_SIGNAL void reportOTAUpgradeData(quint8, const QByteArray& data); // 上报OTA升级数据
@@ -164,16 +157,6 @@ public:
      关闭交换机POE口输出电源
     */
     bool closeSwitcherPOEPower(quint8 port = 0);
-
-    /*
-     打开交换机POE口输出电源(时钟同步模块)
-    */
-    bool openSwitcherExtendPOEPower();
-
-    /*
-     关闭交换机POE口输出电源(时钟同步模块)
-    */
-    bool closeSwitcherExtendPOEPower();
 
     // 主动关闭POE供电，也就是温度监测被关闭的通道
     void manualCloseSwitcherPOEPower(quint8 index)
@@ -221,6 +204,9 @@ private slots:
     //处理温度数据超时报警（解析线程）
     void onTemperatureTimeout_Thread(quint8 detID);
 
+    // 自动测量首帧能谱：打靶时刻 = 收到时刻 - 能谱刷新时间
+    void onFirstSpectrumFrame(quint8 detID, const QDateTime& receiveTime);
+
     // 处理分包后的能谱数据包（解析线程）
     void onSpectrumData_Thread(quint8 index, const QByteArray& data);
 
@@ -237,8 +223,7 @@ private:
     qint8 peekDetectorIndex(const QString& peerAddress, quint16 peerPort) const;
     // 关电流程中是否应拒绝该通道重连
     bool shouldRejectDetectorReconnect(quint8 index) const;
-    bool shouldRejectTimeSynReconnect();
-    void markPoeCloseInProgress(bool closingExtendModule = false);
+    void markPoeCloseInProgress();
     void tryClearPoeCloseInProgress();
     // 能谱数据落盘
     void flushSpectrumH5BuffersOnWorkerThread(bool forceFlushAll = false); 
@@ -263,6 +248,8 @@ private:
     QString mMeasureStartTime;//测量开始时刻（单通道重测时会更新为该通道本次开测时刻）
     QString mSessionMeasureStartTime; // 整次开测共用 H5 的开测时刻（单通道重测不覆盖）
     QString mShotTime; // 打靶时刻字符串，重测新建通道 H5 时复用
+    QMutex mAutoShotTimeMutex;
+    bool mAwaitAutoShotTime = false; // 等待首帧能谱以写入打靶时刻
     bool mMeasuring = false; // 是否正在测量
     CommandAdapter::WorkMode mCurrentWorkMode = CommandAdapter::WorkMode::wmSpectrum;
 
@@ -286,7 +273,6 @@ private:
     QVector<quint8> mIntentionalPOECloseIDs;
     // 关电流程进行中：拒绝已标记关电通道的 TCP 重连与初始化
     bool mPoePowerClosing = false;
-    bool mClosingExtendTimeSynModule = false;
     QVector<QString> mDataFileList;// 保存当前测量数据文件列表
 
     // 文件flush状态跟踪结构

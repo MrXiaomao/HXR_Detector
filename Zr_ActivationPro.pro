@@ -225,7 +225,6 @@ win32 {
 
     contains(DEFINES, USE_QTELNET=1) {
         message("Including telnet library")
-        # include($$PWD/../3rdParty/QNtpClient/QNtpClient.pri) /*时钟同步服务器*/
         include($$PWD/../3rdParty/QTelnet/QTelnet.pri)
     }
 }

@@ -135,7 +135,7 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
             needNotifyNextCmd = true;
         }
 
-        // 能谱、波形、粒子、时间戳数据包
+        // 能谱、波形、粒子数据包
         if (!handled && hasHeadAt(pos, kspecHead)) {
             quint32 onePkgSize = 0;
             quint16 type = qFromBigEndian<quint16>(reinterpret_cast<const uchar*>(cachePool.constData() + pos + 4));
@@ -146,8 +146,6 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                 onePkgSize = kSpectrumPacketBytes;
             else if (dataType == dtParticle) // len=1058
                 onePkgSize = 4 + 2 + 4 + 130*8 + 4 + 4;
-            else if (dataType == dtTimestamp) // len=22
-                onePkgSize = 4 + 2 + 8 + 4 + 4;
             else {
                 ++mTypeErrorCount;
                 mResyncDropBytes += 4;
@@ -163,15 +161,13 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
                 const char* p = cachePool.constData() + pos;
                 if (memcmp(p + onePkgSize - 4, kspecTail.constData(), 4) == 0) {
                     QByteArray chunk(p, onePkgSize);
-                    if (mIsMeasuring || dataType == dtTimestamp) {
+                    if (mIsMeasuring) {
                         if (dataType == dtWaveform)
                             emit reportWaveformData(mIndex, chunk);
                         else if (dataType == dtSpectrum)
                             emit reportSpectrumData(mIndex, chunk);
                         else if (dataType == dtParticle)
                             emit reportParticleData(mIndex, chunk);
-                        else if (dataType == dtTimestamp)
-                            emit reportTimestampData(mIndex, chunk);
                     }
                     pos += static_cast<int>(onePkgSize);
                 } else {
@@ -504,6 +500,8 @@ void CommandAdapter::sendWaveformMode(bool isRead, TriggerMode triggerMode, quin
 ***********************************************************/
 //能谱刷新时间修改(ms，默认值1000)
 void CommandAdapter::sendSprectnumRefreshTimelength(bool isRead, quint32 spectrumRefreshTime){
+    if (!isRead && spectrumRefreshTime < 1)
+        spectrumRefreshTime = 1;
     QByteArray askCurrentCmd = QByteArray::fromHex(QString("12 34 00 0F FD 10 00 00 00 00 AB CD").toUtf8());
     if (isRead)
         askCurrentCmd[3] = 0x0A;
@@ -655,7 +653,7 @@ void CommandAdapter::sendStartMeasure(CommandAdapter::MeasureMode measureMode){
         askCurrentCmd = QByteArray::fromHex(QString("12 34 00 0F EA 10 00 00 00 02 AB CD").toUtf8());
     }
 
-    pushCmd({QString("开始测量指令"), askCurrentCmd}, false);
+    pushCmd({measureMode == mmAuto ? QString("外触发测量开始指令") : QString("开始测量指令"), askCurrentCmd}, false);
     mIsMeasuring = true;
 
     //通知发送指令

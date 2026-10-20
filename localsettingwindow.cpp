@@ -17,7 +17,6 @@
 #include <QApplication>
 #include <QStyleOptionButton>
 #include <QPainter>
-#include <QButtonGroup>
 #include <QTimer>
 
 class CheckBoxDelegate : public QStyledItemDelegate {
@@ -97,7 +96,6 @@ LocalSettingWindow::LocalSettingWindow(QWidget *parent)
     if (ui->comboBox_ip->findText(QStringLiteral("127.0.0.1")) == -1)
         ui->comboBox_ip->addItem("127.0.0.1");
     ui->comboBox_ip->addItem("0.0.0.0");
-    ui->spinBox->setMaximum(DET_NUM);
 
     GlobalSettings settings(DEVICE_CONFIG_FILE);
     //心跳检测
@@ -118,129 +116,52 @@ LocalSettingWindow::LocalSettingWindow(QWidget *parent)
         // 使用委托
         ui->tableWidget->setItemDelegateForColumn(column, new CheckBoxDelegate()); // 为第0列设置
         ui->tableWidget->setColumnWidth(column, 25);
-        for (int row = 0; row < 3; ++row)
-        {
-            QTableWidgetItem* item = new QTableWidgetItem();
-            item->setCheckState(Qt::CheckState::Unchecked);
-            item->setTextAlignment(Qt::AlignCenter);
-            ui->tableWidget->setItem(row, column, item);
-            item->setData(Qt::UserRole, true);
-        }
+        QTableWidgetItem* item = new QTableWidgetItem();
+        item->setCheckState(Qt::CheckState::Unchecked);
+        item->setTextAlignment(Qt::AlignCenter);
+        ui->tableWidget->setItem(0, column, item);
+        item->setData(Qt::UserRole, true);
     }
 
-    // 加载配置文件
     ui->lineEdit_switcherIp_1->setText(settings.value("Switcher/1/ip", "172.18.41.94").toString());
-    ui->lineEdit_switcherIp_2->setText(settings.value("Switcher/2/ip").toString());
-    ui->lineEdit_switcherIp_3->setText(settings.value("Switcher/3/ip").toString());
     QRegExp regExp(R"(^((25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)\.){3}(25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)$)");
     regExp.setPatternSyntax(QRegExp::RegExp2);
     ui->lineEdit_switcherIp_1->setValidator(new QRegExpValidator(regExp, ui->lineEdit_switcherIp_1));
-    ui->lineEdit_switcherIp_2->setValidator(new QRegExpValidator(regExp, ui->lineEdit_switcherIp_2));
-    ui->lineEdit_switcherIp_3->setValidator(new QRegExpValidator(regExp, ui->lineEdit_switcherIp_3));
 
-    for (int row = 0; row < 3; ++row)
+    ui->tableWidget->blockSignals(true);
+    const QString detectorList = settings.value("Switcher/1/detector").toString();
+    const QStringList detectors = detectorList.split(',');
+    for (const QString &det : detectors)
     {
-        ui->tableWidget->blockSignals(true);
-        QString S1 = settings.value(QString("Switcher/%1/detector").arg(row+1), "").toString();
-        QStringList det1S = S1.split(",");
-        for (auto& det : det1S)
+        const int column = det.toInt();
+        if (column >= 1 && column <= DET_NUM)
         {
-            int column = det.toInt();
-            if (column >= 1 && column <= DET_NUM)
-            {
-                auto *item = ui->tableWidget->item(row, column - 1);
-                if (item)
-                {
-                    item->setCheckState(Qt::Checked);
-                }
-            }
+            auto *item = ui->tableWidget->item(0, column - 1);
+            if (item)
+                item->setCheckState(Qt::Checked);
         }
-        ui->tableWidget->blockSignals(false);
     }
-
+    ui->tableWidget->blockSignals(false);
+    QString loadedDets;
+    for (int column = 0; column < DET_NUM; ++column)
+    {
+        auto *item = ui->tableWidget->item(0, column);
+        if (item && item->checkState() == Qt::Checked)
+            loadedDets += QString("%1,").arg(column + 1);
+    }
+    mLoadedSwitcherIp = ui->lineEdit_switcherIp_1->text();
+    mLoadedSwitcherDetectors = loadedDets;
     ui->label_tip->hide();
-    ui->checkBox->setChecked(settings.value("Switcher/count").toInt() >= 2);
-    ui->checkBox_2->setChecked(settings.value("Switcher/count").toInt() >= 3);
-    ui->checkBox_2->setEnabled(settings.value("Switcher/count").toInt() >= 3);
 
-    mSwitcher2Enabled = ui->checkBox->isChecked();
-    mSwitcher3Enabled = ui->checkBox_2->isChecked();
-
-    // 时钟同步模块
-    {
-        commHelper->mExtendTimeSynModule.reload();
-
-        ui->radioButton->blockSignals(true);
-        ui->radioButton_2->blockSignals(true);
-        ui->radioButton_3->blockSignals(true);
-        ui->lineEdit->setText(commHelper->mExtendTimeSynModule.ip);
-        if (commHelper->mExtendTimeSynModule.switcherIndex == 1)
-            ui->radioButton->setChecked(true);
-        else if (commHelper->mExtendTimeSynModule.switcherIndex == 2)
-            ui->radioButton_2->setChecked(true);
-        else
-            ui->radioButton_3->setChecked(true);
-        ui->spinBox->setValue(commHelper->mExtendTimeSynModule.poeIndex);
-        ui->radioButton->blockSignals(false);
-        ui->radioButton_2->blockSignals(false);
-        ui->radioButton_3->blockSignals(false);
-
-        auto *item = ui->tableWidget->item(commHelper->mExtendTimeSynModule.switcherIndex-1, commHelper->mExtendTimeSynModule.poeIndex-1);
-        if (item)
-        {
-            item->setCheckState(Qt::Checked);
-            item->setData(Qt::UserRole, false);
-            //item->setBackgroundColor(Qt::red);
-        }        
-    }
-
-    QButtonGroup *grp = new QButtonGroup(this);
-    grp->addButton(ui->radioButton, 0);
-    grp->addButton(ui->radioButton_2, 1);
-    grp->addButton(ui->radioButton_3, 2);
-
-    connect(grp, &QButtonGroup::idToggled, this, [=](int id, bool checked){
-        on_spinBox_valueChanged(ui->spinBox->value());
-    });
-    connect(ui->tableWidget, &QTableWidget::itemChanged, this, [=](QTableWidgetItem *item) {
-        if (item->checkState() == Qt::Checked)
-        {
-            ui->tableWidget->blockSignals(true);
-
-            for (int i = 0; i < ui->tableWidget->rowCount(); ++i)
-            {
-                if (i != item->row())
-                {
-                    if (ui->tableWidget->item(i, item->column())->data(Qt::UserRole).toBool())
-                        ui->tableWidget->item(i, item->column())->setCheckState(Qt::Unchecked);
-                }
-                else
-                {
-                    ui->tableWidget->item(item->row(), item->column())->setCheckState(Qt::Checked);
-                }
-            }
-
-            ui->tableWidget->blockSignals(false);
-        }
-        else {
-            ui->tableWidget->item(item->row(), item->column())->setCheckState(Qt::Unchecked);
-        }
-
+    connect(ui->tableWidget, &QTableWidget::itemChanged, this, [this](QTableWidgetItem *) {
         updateData();
     });
     connect(ui->comboBox_ip, &QComboBox::currentTextChanged, this, &LocalSettingWindow::updateData);
     connect(ui->spinBox_port, &QSpinBox::textChanged, this, &LocalSettingWindow::updateData);
-    connect(ui->checkBox, &QCheckBox::stateChanged, this, &LocalSettingWindow::updateData);
-    connect(ui->checkBox_2, &QCheckBox::stateChanged, this, &LocalSettingWindow::updateData);
     connect(ui->lineEdit_switcherIp_1, &QLineEdit::editingFinished, this, &LocalSettingWindow::updateData);
-    connect(ui->lineEdit_switcherIp_2, &QLineEdit::editingFinished, this, &LocalSettingWindow::updateData);
-    connect(ui->lineEdit_switcherIp_3, &QLineEdit::editingFinished, this, &LocalSettingWindow::updateData);
 
     ui->comboBox_ip->installEventFilter(this);
-    ui->lineEdit->installEventFilter(this);
     ui->lineEdit_switcherIp_1->installEventFilter(this);
-    ui->lineEdit_switcherIp_2->installEventFilter(this);
-    ui->lineEdit_switcherIp_3->installEventFilter(this);
     ui->pushButton_ok->setEnabled(!commHelper->isOpen());
 }
 
@@ -261,8 +182,7 @@ bool LocalSettingWindow::eventFilter(QObject *watched, QEvent *event) {
         ip_edit = qobject_cast<QLineEdit*>(watched);
     }
 
-    if (!ip_edit || !(watched == ui->lineEdit || watched == ui->lineEdit_switcherIp_1 ||
-                      watched == ui->lineEdit_switcherIp_2 || watched == ui->lineEdit_switcherIp_3 || watched == ui->comboBox_ip)) {
+    if (!ip_edit || !(watched == ui->lineEdit_switcherIp_1 || watched == ui->comboBox_ip)) {
         return QWidget::eventFilter(watched, event);
     }
 
@@ -289,75 +209,31 @@ void LocalSettingWindow::updateData()
     if (commHelper->isOpen())
         return ;
 
-    if (!ui->checkBox->isChecked()){
-        ui->checkBox_2->setChecked(false);
-    }
-    ui->checkBox_2->setEnabled(ui->checkBox->isChecked());
-
-    ui->radioButton_2->setEnabled(ui->checkBox->isChecked());
-    ui->radioButton_3->setEnabled(ui->checkBox_2->isChecked());
-
-    if (!ui->radioButton_3->isEnabled() && ui->radioButton_3->isChecked())
+    QString dets;
+    for (int column = 0; column < DET_NUM; ++column)
     {
-        if (ui->radioButton_2->isEnabled())
-            ui->radioButton_2->setChecked(true);
-        else
-            ui->radioButton->setChecked(true);
+        auto *item = ui->tableWidget->item(0, column);
+        if (item && item->checkState() == Qt::Checked)
+            dets += QString("%1,").arg(column + 1);
     }
-    if (!ui->radioButton_2->isEnabled() && ui->radioButton_2->isChecked())
-    {
-        ui->radioButton->setChecked(true);
-    }
-
-    if (mSwitcher2Enabled != ui->checkBox->isChecked() || mSwitcher3Enabled != ui->checkBox_2->isChecked())
-    {
-        ui->label_tip->show();
-    }
-    else{
-        ui->label_tip->hide();
-    }
+    const bool switcherChanged = ui->lineEdit_switcherIp_1->text() != mLoadedSwitcherIp
+                                 || dets != mLoadedSwitcherDetectors;
+    ui->label_tip->setVisible(switcherChanged);
 
     GlobalSettings settings(DEVICE_CONFIG_FILE);
-    //心跳检测
     settings.setValue("Global/PluseTime", ui->spinBox_pluseCheckTime->value());
     HDF5Settings::instance()->setPluseTime(ui->spinBox_pluseCheckTime->value());
 
-    //本地服务配置
     settings.setValue("Local/ServerIp", ui->comboBox_ip->currentText());
     settings.setValue("Local/ServerPort", ui->spinBox_port->text());
 
-    //交换机Telnet配置
-    settings.setValue("Switcher/count", ui->checkBox->isChecked() ? (ui->checkBox_2->isChecked() ? 3 : 2) : 1);
-    QCheckBox* checkBoxs[] = {nullptr, ui->checkBox, ui->checkBox_2};
-    for (auto checkBox : checkBoxs)
-    {
-        int index = (checkBox == nullptr) ? 1 : ((checkBox == ui->checkBox) ? 2 : 3);
-        QLineEdit* lineEdit = this->findChild<QLineEdit*>(QString("lineEdit_switcherIp_%1").arg(index));
-        if (lineEdit)
-        {
-            settings.setValue(QString("Switcher/%1/ip").arg(index), lineEdit->text());
-        }
-
-        QString dets;
-        for (int column = 0; column < DET_NUM; ++column)
-        {
-            auto *item = ui->tableWidget->item(index-1, column);
-            if (item)
-            {
-                if (item->checkState() == Qt::Checked && item->data(Qt::UserRole).toBool())
-                {
-                    dets += QString("%1,").arg(column+1);
-                }
-            }
-
-            settings.setValue(QString("Switcher/%1/detector").arg(index), dets);
-        }
-    }
-
-    // 时钟同步模块
-    settings.setValue("TimeSynModule/ip", ui->lineEdit->text());
-    settings.setValue("TimeSynModule/poeIndex", ui->spinBox->value());
-    settings.setValue("TimeSynModule/switcherIndex", ui->radioButton->isChecked() ? 1 : (ui->radioButton_2->isChecked() ? 2: 3));
+    settings.setValue("Switcher/count", 1);
+    settings.setValue("Switcher/1/ip", ui->lineEdit_switcherIp_1->text());
+    settings.setValue("Switcher/1/detector", dets);
+    settings.remove("Switcher/2/ip");
+    settings.remove("Switcher/2/detector");
+    settings.remove("Switcher/3/ip");
+    settings.remove("Switcher/3/detector");
 }
 
 #include <QMessageBox>
@@ -365,22 +241,12 @@ void LocalSettingWindow::on_pushButton_ok_clicked()
 {
     if (ui->lineEdit_switcherIp_1->text().isEmpty())
     {
-        QMessageBox::information(this, tr("提示"), tr("交换机#1的IP地址不能为空！"));
-        return;
-    }
-    if (ui->checkBox->isChecked() && ui->lineEdit_switcherIp_2->text().isEmpty())
-    {
-        QMessageBox::information(this, tr("提示"), tr("交换机#2的IP地址不能为空！"));
-        return;
-    }
-    if (ui->checkBox_2->isChecked() && ui->lineEdit_switcherIp_3->text().isEmpty())
-    {
-        QMessageBox::information(this, tr("提示"), tr("交换机#3的IP地址不能为空！"));
+        QMessageBox::information(this, tr("提示"), tr("交换机地址不能为空！"));
         return;
     }
 
     updateData();
-    UserActionLogger::logMessage(QStringLiteral("保存网络配置 本地服务 ip=%1 port=%2 交换机1=%3")
+    UserActionLogger::logMessage(QStringLiteral("保存网络配置 本地服务 ip=%1 port=%2 交换机=%3")
                                      .arg(ui->comboBox_ip->currentText())
                                      .arg(ui->spinBox_port->value())
                                      .arg(ui->lineEdit_switcherIp_1->text()));
@@ -394,27 +260,4 @@ void LocalSettingWindow::on_pushButton_cancel_clicked()
 }
 
 
-void LocalSettingWindow::on_spinBox_valueChanged(int arg1)
-{
-    CommHelper* commHelper = CommHelper::instance();
-    commHelper->mExtendTimeSynModule.reload();
-    int poeIndex = commHelper->mExtendTimeSynModule.poeIndex;
-    int switcherIndex = commHelper->mExtendTimeSynModule.switcherIndex;
-    auto *item = ui->tableWidget->item(switcherIndex-1, poeIndex-1);
-    if (item)
-    {
-        item->setCheckState(Qt::Unchecked);
-        item->setData(Qt::UserRole, true);
-    }
-
-    int index = ui->radioButton->isChecked() ? 1 : (ui->radioButton_2->isChecked() ? 2 : 3);
-    int column = arg1 - 1;
-    item = ui->tableWidget->item(index-1, column);
-    if (item)
-    {
-        item->setCheckState(Qt::Checked);
-        // 关键：设置UserRole为false，禁止用户修改
-        item->setData(Qt::UserRole, false);
-    }
-}
 

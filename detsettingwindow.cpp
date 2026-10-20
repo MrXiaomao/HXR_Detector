@@ -19,6 +19,8 @@ constexpr int kSpectrumRefreshTimeSpinMax = 60 * 60 * 1000; // 1 hour，单位 m
 
 int spectrumRefreshTimeToSpinValue(quint32 ms)
 {
+    if (ms < 1)
+        ms = 1;
     return static_cast<int>(qMin<quint32>(ms, static_cast<quint32>(kSpectrumRefreshTimeSpinMax)));
 }
 } // namespace

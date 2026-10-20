@@ -91,8 +91,6 @@ public slots:
     void extractWaveformData_Thread(quint8 no, const QByteArray& packetData);
     // 解析粒子数据包（数据解析线程）
     void extractParticleData_Thread(quint8 no, const QByteArray& packetData);
-    // 解析时间戳数据包（数据解析线程）
-    void extractTimestampData_Thread(quint8 no, const QByteArray& packetData);
 
 signals:   
     void relayConnected();// 继电器
@@ -109,9 +107,9 @@ signals:
 
     // 上传解析后的数据
     void reportFullSpectrum(quint8 index, const FullSpectrum& fullSpectrum); // 发送完整的能谱数据
+    void reportFirstSpectrumFrame(quint8 index, const QDateTime& receiveTime); // 自动测量首帧能谱到达时刻
     void reportWaveCurveInfo(quint8, const QVector<quint16>& wave); // 发送解析后的波形曲线
     void reportParticleInfo(quint8 index, const QVector<ParticleData>& particles); // 发送解析后的粒子信息
-    void reportTriggerTimeInfo(quint8 index, const QDateTime trTime); // 发送解析后的触发时间戳信息
     void reportTemperatureTimeout(quint8 index); // 温度心跳超时信号
 
 private:
@@ -142,6 +140,7 @@ private:
     quint8 mChWaveDataValidTag = 0x00;//通道数据是否完整
 
     // 新增成员变量
+    bool mAwaitFirstSpectrumFrame = false; // 自动测量：下一包能谱即首帧
     QHash<quint32, FullSpectrum> mFullSpectrums; // 按能谱序号存储拼接中的能谱
     quint32 mLastSpectrumSeq = 0;
     FullSpectrum mLastFullSpectrum; // 保存上一个全能谱，做缺包补偿用

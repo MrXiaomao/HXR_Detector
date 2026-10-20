@@ -1,6 +1,7 @@
 ﻿#ifndef LOCALSETTINGWINDOW_H
 #define LOCALSETTINGWINDOW_H
 
+#include <QString>
 #include <QWidget>
 
 class CommHelper;
@@ -26,14 +27,12 @@ private slots:
 
     void on_pushButton_cancel_clicked();
 
-    void on_spinBox_valueChanged(int arg1);
-
 private:
     Ui::LocalSettingWindow *ui;
     CommHelper *commHelper = nullptr;
 
-    bool mSwitcher2Enabled = false;
-    bool mSwitcher3Enabled = false;
+    QString mLoadedSwitcherIp;
+    QString mLoadedSwitcherDetectors;
 };
 
 #endif // LOCALSETTINGWINDOW_H

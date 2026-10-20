@@ -214,7 +214,7 @@
           </attribute>
           <row>
            <property name="text">
-            <string>时间同步触发模块</string>
+            <string>谱仪</string>
            </property>
           </row>
           <row>
@@ -1434,7 +1434,7 @@
                   </item>
                   <item>
                    <property name="text">
-                    <string>外触发</string>
+                    <string>硬件触发</string>
                    </property>
                   </item>
                  </widget>
@@ -2043,7 +2043,7 @@
     <string>开启服务</string>
    </property>
    <property name="toolTip">
-    <string>开启后，谱仪与时间同步触发模块可上线</string>
+    <string>开启后，谱仪可上线</string>
    </property>
    <property name="menuRole">
     <enum>QAction::NoRole</enum>
@@ -2058,7 +2058,7 @@
     <string>停止服务</string>
    </property>
    <property name="toolTip">
-    <string>停止后，断开本机与谱仪、时间同步触发模块的网络连接</string>
+    <string>停止后，断开本机与谱仪的网络连接</string>
    </property>
    <property name="menuRole">
     <enum>QAction::NoRole</enum>

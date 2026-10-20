@@ -1063,7 +1063,11 @@ QDateTime HDF5Settings::parseConfigTimeString(const QString &raw)
     if (raw.isEmpty())
         return {};
 
-    QDateTime dt = QDateTime::fromString(raw, QStringLiteral("yyyy-MM-dd_HHmmss"));
+    QDateTime dt = QDateTime::fromString(raw, QStringLiteral("yyyy-MM-dd hh:mm:ss.zzz"));
+    if (!dt.isValid())
+        dt = QDateTime::fromString(raw, QStringLiteral("yyyy-MM-dd HH:mm:ss.zzz"));
+    if (!dt.isValid())
+        dt = QDateTime::fromString(raw, QStringLiteral("yyyy-MM-dd_HHmmss"));
     if (!dt.isValid()) {
         QString normalized = raw;
         dt = QDateTime::fromString(normalized.replace('_', ' '), QStringLiteral("yyyy-MM-dd HH:mm:ss"));
