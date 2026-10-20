@@ -42,7 +42,7 @@ public:
             QDoubleValidator* validator = nullptr;
 
             if (index.column() == 2) {
-                // 第三列：经度 [-180, 180]（与 MollweideHeatmapWidget / Sensor 一致）
+                // 第三列：经度 [-180, 180]
                 validator = new QDoubleValidator(-180.0, 180.0, 6, editor);
             } else {
                 // 第四列：纬度 [-90, 90]

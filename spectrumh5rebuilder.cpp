@@ -25,7 +25,7 @@ const QRegularExpression kBatchMeasureParamNamePattern(
     QRegularExpression::CaseInsensitiveOption);
 
 // 全通道测量共用文件：{yyyy-MM-dd_HHmmss}.H5
-// 掉线重测独立文件：{yyyy-MM-dd_HHmmss}_{detId}.H5（中子产额解析按 Config/StartTime + Detector# 读取，二者均可）
+// 掉线重测独立文件：{yyyy-MM-dd_HHmmss}_{detId}.H5（按 Config/StartTime + Detector# 读取，与全通道文件相同）
 const QRegularExpression kFullChannelMeasureParamNamePattern(
     QStringLiteral(R"(^(\d{4}-\d{2}-\d{2}_\d{6})(?:_\d+)?\.H5$)"),
     QRegularExpression::CaseInsensitiveOption);

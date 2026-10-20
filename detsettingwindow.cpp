@@ -633,7 +633,7 @@ bool DetSettingWindow::setLonLat(int row, double lon, double lat)
     if (row < 0 || row >= ui->tableWidget->rowCount())
         return false;
 
-    // 范围校验（与 MollweideHeatmapWidget / Sensor 一致）
+    // 范围校验：经度 [-180, 180]，纬度 [-90, 90]
     if (lon < -180.0 || lon > 180.0)
         return false;
     if (lat < -90.0 || lat > 90.0)

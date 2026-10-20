@@ -215,7 +215,7 @@
             <item row="3" column="0" colspan="3">
              <widget class="QLabel" name="label_5">
               <property name="text">
-               <string>提示：改变多道道数之后需要重新能量刻度，以免影响中子产额计算</string>
+               <string>提示：改变多道道数之后需要重新能量刻度</string>
               </property>
               <property name="wordWrap">
                <bool>true</bool>

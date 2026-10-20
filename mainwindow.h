@@ -224,14 +224,11 @@ private slots:
     void on_lineEdit_search_returnPressed();
     void on_lineEdit_search_textChanged(const QString &text);
     void on_action_energycalibration_triggered();
-    void on_action_yieldCalibration_triggered();
     void on_checkBox_continueMeasure_toggled(bool toggled);
     void on_cbb_energyCalibration_toggled(bool checked);
     void on_action_particalMode_triggered();
     // 计数率统计
     void on_action_countRateStatistics_triggered();
-
-    void on_action_neutronYieldStatistics_triggered();
 
     void on_action_spectrumH5Rebuild_triggered();
 

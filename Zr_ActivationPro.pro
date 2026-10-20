@@ -9,8 +9,6 @@ CONFIG += c++17
 #DEFINES += QT_DISABLE_DEPRECATED_BEFORE=0x060000    # disables all the APIs deprecated before Qt 6.0.0
 
 SOURCES += \
-    CrasterParabolicHeatmapWidget.cpp \
-    MollweideHeatmapWidget.cpp \
     PeerConnection.cpp \
     QFlowLayout.cpp \
     TcpAgentServer.cpp \
@@ -30,12 +28,8 @@ SOURCES += \
     localsettingwindow.cpp \
     main.cpp \
     mainwindow.cpp \
-    neutronyieldcalibration.cpp \
-    neutronyieldstatisticswindow.cpp \
-    neutronyieldparseworker.cpp \
     otaupgradewindow.cpp \
     offlinespectrumparser.cpp \
-    parsedata.cpp \
     particalwindow.cpp \
     qcomboboxdelegate.cpp \
     qhuaweiswitcherhelper.cpp \
@@ -46,8 +40,6 @@ SOURCES += \
     waveformwindow.cpp
 
 HEADERS += \
-    CrasterParabolicHeatmapWidget.h \
-    MollweideHeatmapWidget.h \
     PeerConnection.h \
     QFlowLayout.h \
     TcpAgentServer.h \
@@ -60,12 +52,8 @@ HEADERS += \
     energycalibration.h \
     energycalibrationstore.h \
     localsettingwindow.h \
-    neutronyieldcalibration.h \
-    neutronyieldstatisticswindow.h \
-    neutronyieldparseworker.h \
     otaupgradewindow.h \
     offlinespectrumparser.h \
-    parsedata.h \
     particalwindow.h \
     qcomboboxdelegate.h \
     qhuaweiswitcherhelper.h \
@@ -90,8 +78,6 @@ FORMS += \
     energycalibration.ui \
     localsettingwindow.ui \
     mainwindow.ui \
-    neutronyieldcalibration.ui \
-    neutronyieldstatisticswindow.ui \
     otaupgradewindow.ui \
     particalwindow.ui \
     spectrumh5rebuildwindow.ui \
@@ -183,11 +169,6 @@ windows {
                 QMAKE_CXXFLAGS_DEBUG -= -g
                 QMAKE_CXXFLAGS_DEBUG += -g1
                 QMAKE_CXXFLAGS_DEBUG += -fno-var-tracking -fno-var-tracking-assignments
-                # parsedata.cpp 体量大且常需单步调试，单独恢复完整变量信息
-                parsedata.cpp {
-                    message("MinGW Debug: full variable symbols for parsedata.cpp (-g2)")
-                    QMAKE_CXXFLAGS += -g2 -fvar-tracking -fvar-tracking-assignments
-                }
             }
         }
         #QMAKE_CXXFLAGS += -finput-charset=UTF-8
@@ -212,7 +193,6 @@ include($$PWD/../3rdParty/QCustomplot/QCustomplot.pri)
 include($$PWD/../3rdParty/QGoodWindow/QGoodWindowHelper/QGoodWindowHelper.pri)
 include($$PWD/../3rdParty/hdf5/C++/hdf5Wrapper.pri)
 include($$PWD/../3rdParty/alglib-cpp/alglib.pri)
-include($$PWD/../3rdParty/QXlsx/QXlsx.pri)
 INCLUDEPATH += $$PWD/../3rdParty/eigen-5.0.0
 
 # 预编译头：log4qt 与 Qt 宏在 PCH 下会冲突（ttcclayout.h），暂不启用

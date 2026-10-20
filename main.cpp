@@ -4,7 +4,6 @@
 #include "commhelper.h"
 // #include "commhelper.h"
 #include "countratestatisticswindow.h"
-#include "neutronyieldstatisticswindow.h"
 #include "spectrumh5rebuildwindow.h"
 #include "useractionlogger.h"
 #include "lightstyle.h"
@@ -74,8 +73,6 @@ static QString resolveAppModuleKey(const QStringList &args)
 {
     if (args.contains(QStringLiteral("-m")) && args.contains(QStringLiteral("countRateStatistics")))
         return QStringLiteral("countRateStatistics");
-    if (args.contains(QStringLiteral("-m")) && args.contains(QStringLiteral("neutronYieldStatistics")))
-        return QStringLiteral("neutronYieldStatistics");
     if (args.contains(QStringLiteral("-m")) && args.contains(QStringLiteral("spectrumH5Rebuild")))
         return QStringLiteral("spectrumH5Rebuild");
     return QStringLiteral("main");
@@ -85,8 +82,6 @@ static QString exitLogMessage(const QString &moduleKey)
 {
     if (moduleKey == QStringLiteral("countRateStatistics"))
         return QObject::tr("计数率统计模块退出");
-    if (moduleKey == QStringLiteral("neutronYieldStatistics"))
-        return QObject::tr("中子产额统计模块退出");
     if (moduleKey == QStringLiteral("spectrumH5Rebuild"))
         return QObject::tr("能谱H5重建模块退出");
     return QObject::tr("主程序退出");
@@ -264,10 +259,6 @@ int main(int argc, char *argv[])
     if (args.contains("-m") && args.contains("countRateStatistics")){
         QApplication::setApplicationName("溴化镧配套软件离线数据分析-计数率统计");
         mMainWindow = new CountRateStatisticsWindow(isDarkTheme, &w);
-    }
-    else if (args.contains("-m") && args.contains("neutronYieldStatistics")){
-        QApplication::setApplicationName("溴化镧配套软件离线数据分析-中子产额统计");
-        mMainWindow = new NeutronYieldStatisticsWindow(isDarkTheme, &w);
     }
     else if (args.contains("-m") && args.contains("spectrumH5Rebuild")){
         QApplication::setApplicationName("溴化镧配套软件离线数据分析-能谱H5重建");

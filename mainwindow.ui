@@ -887,49 +887,6 @@
                 </widget>
                </item>
                <item row="0" column="2">
-                <widget class="QGroupBox" name="groupBox_3">
-                 <property name="title">
-                  <string>测量结果</string>
-                 </property>
-                 <layout class="QGridLayout" name="gridLayout_2">
-                  <item row="0" column="3">
-                   <widget class="QLabel" name="label_10">
-                    <property name="text">
-                     <string>中子产额：</string>
-                    </property>
-                   </widget>
-                  </item>
-                  <item row="0" column="1">
-                   <widget class="QLabel" name="label_19">
-                    <property name="text">
-                     <string>初始活度/Bq：</string>
-                    </property>
-                   </widget>
-                  </item>
-                  <item row="0" column="2">
-                   <widget class="QLineEdit" name="lineEdit_ZrActive">
-                    <property name="enabled">
-                     <bool>false</bool>
-                    </property>
-                    <property name="readOnly">
-                     <bool>true</bool>
-                    </property>
-                   </widget>
-                  </item>
-                  <item row="0" column="4">
-                   <widget class="QLineEdit" name="lineEdit_Yield">
-                    <property name="enabled">
-                     <bool>false</bool>
-                    </property>
-                    <property name="readOnly">
-                     <bool>true</bool>
-                    </property>
-                   </widget>
-                  </item>
-                 </layout>
-                </widget>
-               </item>
-               <item row="0" column="3">
                 <spacer name="horizontalSpacer_3">
                  <property name="orientation">
                   <enum>Qt::Horizontal</enum>
@@ -1794,7 +1751,6 @@
      <string>文件(&amp;F)</string>
     </property>
     <addaction name="action_countRateStatistics"/>
-    <addaction name="action_neutronYieldStatistics"/>
     <addaction name="action_spectrumH5Rebuild"/>
     <addaction name="separator"/>
     <addaction name="action_exit"/>
@@ -1827,7 +1783,6 @@
      <string>工具(&amp;T)</string>
     </property>
     <addaction name="action_energycalibration"/>
-    <addaction name="action_yieldCalibration"/>
     <addaction name="separator"/>
     <addaction name="action_waveformMode"/>
     <addaction name="action_particalMode"/>
@@ -2266,18 +2221,6 @@
     <bool>false</bool>
    </property>
   </action>
-  <action name="action_yieldCalibration">
-   <property name="icon">
-    <iconset resource="../3rdParty/resource/resource.qrc">
-     <normaloff>:/measure.png</normaloff>:/measure.png</iconset>
-   </property>
-   <property name="text">
-    <string>灵敏度标定</string>
-   </property>
-   <property name="menuRole">
-    <enum>QAction::NoRole</enum>
-   </property>
-  </action>
   <action name="action_particalMode">
    <property name="text">
     <string>粒子测量</string>
@@ -2293,18 +2236,6 @@
    </property>
    <property name="text">
     <string>计数率和死时间统计</string>
-   </property>
-   <property name="menuRole">
-    <enum>QAction::NoRole</enum>
-   </property>
-  </action>
-  <action name="action_neutronYieldStatistics">
-   <property name="icon">
-    <iconset resource="../3rdParty/resource/resource.qrc">
-     <normaloff>:/open.png</normaloff>:/open.png</iconset>
-   </property>
-   <property name="text">
-    <string>中子产额统计</string>
    </property>
    <property name="menuRole">
     <enum>QAction::NoRole</enum>

@@ -83,7 +83,6 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
 
     connect(this, &MainWindow::sigWriteLog, this, &MainWindow::slotWriteLog);
 
-    ui->groupBox_3->setVisible(false); //隐藏统计结果，暂时没有在线中子产额统计结果
     ui->action_startServer->setEnabled(true);
     ui->action_stopServer->setEnabled(false);
     ui->action_connectSwitch->setEnabled(commHelper->hasSwitchers());
@@ -2947,22 +2946,6 @@ void MainWindow::on_action_energycalibration_triggered()
 }
 
 
-#include "neutronyieldcalibration.h"
-void MainWindow::on_action_yieldCalibration_triggered()
-{
-    //模态窗口
-    // NeutronYieldCalibration *w = new NeutronYieldCalibration(this);
-    NeutronYieldCalibration *w = new NeutronYieldCalibration(nullptr);
-    w->setAttribute(Qt::WA_DeleteOnClose, true); // 关闭时自动删除
-    // 最小化/最大化/关闭按钮
-    w->setWindowFlags(Qt::Window |
-        Qt::WindowMinimizeButtonHint |
-        Qt::WindowMaximizeButtonHint |
-        Qt::WindowCloseButtonHint);
-    w->setWindowModality(Qt::ApplicationModal);//模态属性，NonModal=非模态，ApplicationModal=应用程序模态（阻塞本程序所有窗口），WindowModal=窗口模态（阻塞父窗口）
-    w->show();
-}
-
 void MainWindow::logMeasureStartInfo()
 {
     const QString measureMode = ui->cbb_measureMode->currentText();
@@ -3380,23 +3363,6 @@ void MainWindow::on_action_countRateStatistics_triggered()
     QProcess::startDetached(program, arguments);
 
     qInfo().nospace().noquote() << tr("打开离线数据分析程序-计数率统计");
-}
-
-
-void MainWindow::on_action_neutronYieldStatistics_triggered()
-{
-    QString program = QCoreApplication::applicationFilePath();
-    QStringList arguments;
-    arguments.append("-m");
-    arguments.append("neutronYieldStatistics");
-
-    static int num = 0;
-    arguments.append("-num");
-    arguments.append(QString::number(num));
-    num++;
-    QProcess::startDetached(program, arguments);
-
-    qInfo().nospace().noquote() << tr("打开离线数据分析程序-中子产额统计");
 }
 
 

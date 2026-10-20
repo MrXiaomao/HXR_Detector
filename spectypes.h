@@ -52,12 +52,6 @@ struct SubSpectrumPacket {
 };
 #pragma pack(pop)
 
-struct Sensor {
-    double lonDeg;  // 经度[-180,180]
-    double latDeg;  // 纬度[-90, 90]
-    double value;   // 中子产额
-};
-
 struct H5Spectrum{
     quint32 sequence;      // 能谱序号
     quint32 timeUTCs;      // utc整数秒
