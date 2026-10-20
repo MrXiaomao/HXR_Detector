@@ -63,15 +63,4 @@ bool readLinearKb(int detectorId, double *k, double *b)
     return true;
 }
 
-int readSpectrumLength(int defaultLength)
-{
-    GlobalSettings settings(DEVICE_CONFIG_FILE);
-    settings.beginGroup(QStringLiteral("EnCalibration"));
-    const int length = settings.value(QStringLiteral("SpectrumLength"), defaultLength).toInt();
-    settings.endGroup();
-    if (length == 1024 || length == 2048 || length == 4096 || length == 8192)
-        return length;
-    return defaultLength > 0 ? defaultLength : 8192;
-}
-
 } // namespace EnergyCalibrationStore

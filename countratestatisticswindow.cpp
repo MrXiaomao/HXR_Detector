@@ -34,7 +34,7 @@
 
 namespace {
 constexpr int kDetectorsPerPlot = 16;
-constexpr int kSpectrumPointCount = 8192;
+constexpr int kSpectrumPointCount = kFullSpectrumChannels;
 /** 统计表每行高度（与 setFixedHeight 计算一致） */
 constexpr int kStatsTableRowHeight = 25;
 constexpr hsize_t kH5SpectrumColumnCount = sizeof(H5Spectrum) / sizeof(quint32);
@@ -1691,7 +1691,6 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                             }
 
                             if (mergedRows > 0) {
-                                spectrum[kSpectrumPointCount - 1] = 0;
                                 rowAdvance = mergedRows;
 
                                 double totalTemp = 0.0;

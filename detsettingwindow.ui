@@ -212,16 +212,6 @@
             <string>能谱设置</string>
            </property>
            <layout class="QGridLayout" name="gridLayout_3">
-            <item row="3" column="0" colspan="3">
-             <widget class="QLabel" name="label_5">
-              <property name="text">
-               <string>提示：改变多道道数之后需要重新能量刻度</string>
-              </property>
-              <property name="wordWrap">
-               <bool>true</bool>
-              </property>
-             </widget>
-            </item>
             <item row="0" column="0">
              <widget class="QLabel" name="label_23">
               <property name="sizePolicy">
@@ -269,33 +259,10 @@
              </widget>
             </item>
             <item row="1" column="1" colspan="2">
-             <widget class="QComboBox" name="comboBox_spectrumLength">
-              <property name="enabled">
-               <bool>true</bool>
+             <widget class="QLabel" name="label_spectrumLength">
+              <property name="text">
+               <string>1024</string>
               </property>
-              <property name="currentIndex">
-               <number>3</number>
-              </property>
-              <item>
-               <property name="text">
-                <string>1024</string>
-               </property>
-              </item>
-              <item>
-               <property name="text">
-                <string>2048</string>
-               </property>
-              </item>
-              <item>
-               <property name="text">
-                <string>4096</string>
-               </property>
-              </item>
-              <item>
-               <property name="text">
-                <string>8192</string>
-               </property>
-              </item>
              </widget>
             </item>
             <item row="2" column="0">

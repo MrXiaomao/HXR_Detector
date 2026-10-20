@@ -11,7 +11,7 @@ namespace {
 const QByteArray kSpecHead = QByteArray::fromHex("FF FF AA B1");
 const QByteArray kSpecTail = QByteArray::fromHex("FF FF CC D1");
 constexpr quint16 kDtSpectrum = 0x00D2;
-constexpr int kSpectrumPacketSize = 4 + 2 + 4 + 4 + 4 + 2 + 256 * 4 + 4 + 8 + 4;
+constexpr int kSpectrumPacketSize = kSpectrumPacketBytes;
 
 } // namespace
 
@@ -80,7 +80,7 @@ bool FullSpectrumAssembler::ingestPacket(const QByteArray &packet, FullSpectrum 
 
     const quint32 spectrumSeq = subSpecPacket.spectrumSeq;
     const quint16 part = subSpecPacket.spectrumSubNo;
-    if (part < 1 || part > 32)
+    if (part < 1 || part > kSpectrumSubCount)
         return false;
 
     auto it = m_pending.find(spectrumSeq);
@@ -99,17 +99,15 @@ bool FullSpectrumAssembler::ingestPacket(const QByteArray &packet, FullSpectrum 
     if (fullSpectrum.receivedMask & bit)
         return false;
 
-    memcpy(fullSpectrum.spectrum + (part - 1) * 256, subSpecPacket.spectrum, 256 * 4);
+    writeSubSpectrumChannels(fullSpectrum, subSpecPacket, part);
     fullSpectrum.receivedMask |= bit;
 
-    if (fullSpectrum.receivedMask != 0xFFFFFFFFu)
+    if (fullSpectrum.receivedMask != kSpectrumCompleteMask)
         return false;
 
     fullSpectrum.isComplete = true;
-    if (completeOut) {
+    if (completeOut)
         *completeOut = fullSpectrum;
-        completeOut->spectrum[8191] = 0;
-    }
     m_pending.remove(spectrumSeq);
     return true;
 }

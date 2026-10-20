@@ -15,7 +15,7 @@ public:
     static int extractSpectrumPackets(QByteArray &cachePool, QVector<QByteArray> &outPackets);
 };
 
-/** @brief 将 32 路子包拼成完整能谱（逻辑同 DataProcessor::mergeSubSpec_Thread） */
+/** @brief 将 2 个子包拼成 1024 道完整能谱（逻辑同 DataProcessor::mergeSubSpec_Thread） */
 class FullSpectrumAssembler
 {
 public:

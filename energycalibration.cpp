@@ -235,17 +235,7 @@ void EnergyCalibration::initUI()
     // 读取上一次勾选的通道号，并勾选
     GlobalSettings settings(DEVICE_CONFIG_FILE);
     settings.beginGroup("EnCalibration");
-
-    // 所有通道共用的多道道数
-    const int spectrumLength = settings.value("SpectrumLength", 8192).toInt();
-    const int lengthIndex = ui->comboBox_spectrumLength->findText(QString::number(spectrumLength));
-    ui->comboBox_spectrumLength->setCurrentIndex(
-        lengthIndex >= 0 ? lengthIndex : ui->comboBox_spectrumLength->findText(QStringLiteral("8192")));
-    ui->doubleSpinBox_x->setMaximum(ui->comboBox_spectrumLength->currentText().toDouble());
-    connect(ui->comboBox_spectrumLength, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, [this](int) {
-        ui->doubleSpinBox_x->setMaximum(ui->comboBox_spectrumLength->currentText().toDouble());
-    });
+    ui->doubleSpinBox_x->setMaximum(kFullSpectrumChannels);
 
     //读取当前勾选的通道号，并获取刻度数据
     int detChannel = settings.value("CheckedDetChannel", 0).toInt();
@@ -456,9 +446,7 @@ void EnergyCalibration::calculate(int no)
     }
 
     //绘制拟合曲线
-    double maxx = ui->comboBox_spectrumLength->currentText().toDouble();
-    if (maxx <= 0.0)
-        maxx = 8192.0;
+    const double maxx = static_cast<double>(kFullSpectrumChannels);
     if(datafit)
     {
         QVector<double> keys, values;
@@ -559,7 +547,7 @@ void EnergyCalibration::on_bt_SaveFit_clicked()
     GlobalSettings settings(DEVICE_CONFIG_FILE);
 
     settings.beginGroup("EnCalibration");
-    settings.setValue("SpectrumLength", ui->comboBox_spectrumLength->currentText().toInt());
+    settings.setValue("SpectrumLength", kFullSpectrumChannels);
     QString channelGroupName = QString("Detector%1").arg(detChannel);
 
     settings.beginGroup(channelGroupName);

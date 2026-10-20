@@ -11,18 +11,27 @@
 #define MAC_LENGTH 18
 #define DEFAULT_HDF5_FILENAME "./Config/Settings.H5"
 
+// 完整能谱 1024*16bit，拆成 2 个子包，每包 512*16bit。整包 530*16bit = 1060 字节。
+constexpr int kSpectrumSubCount = 2;
+constexpr int kSubSpectrumChannels = 512;
+constexpr int kFullSpectrumChannels = kSpectrumSubCount * kSubSpectrumChannels;
+constexpr int kSpectrumPacketBytes =
+    4 + 2 + 4 + 4 + 4 + 2 + kSubSpectrumChannels * static_cast<int>(sizeof(quint16))
+    + 4 + 4 + 4 + 4;
+constexpr quint32 kSpectrumCompleteMask = (1u << kSpectrumSubCount) - 1;
+
 // 子能谱数据包信息
 #pragma pack(push, 1)  // 确保字节对齐
 struct SubSpectrumPacket {
     quint32 header;        // FFFF AAB1
     quint16 dataType;      // 00D2
     quint32 spectrumSeq;   // 能谱序号
-    quint32 measureTime;   // 测量时间
-    quint32 deathTime;     // 死时间
-    quint16 spectrumSubNo; // 能谱编号
-    quint32 spectrum[256]; // 能谱数据 256*32bit
-    quint32 timeUTCs;      // utc整数秒
-    quint32 timeUTCms;     // utc小数秒
+    quint32 measureTime;   // 测量时间，单位 ms
+    quint32 deathTime;     // 死时间，100MHz 主频下单位 10ns
+    quint16 spectrumSubNo; // 能谱编号，1..2
+    quint16 spectrum[kSubSpectrumChannels]; // 能谱数据 512*16bit
+    quint32 timeUTCs;      // utc整数秒，从 1900-01-01 起算
+    quint32 timeUTCms;     // utc小数秒，单位 1/2^32
     quint32 reserved;      // 保留位 0000 0000
     quint32 tail;          // FFFF CCD1
 
@@ -45,12 +54,14 @@ struct SubSpectrumPacket {
         timeUTCms = qFromBigEndian<quint32>(timeUTCms);
         tail = qFromBigEndian<quint32>(tail);
 
-        for (int i = 0; i < 256; ++i) {
-            spectrum[i] = qFromBigEndian<quint32>(spectrum[i]);
+        for (int i = 0; i < kSubSpectrumChannels; ++i) {
+            spectrum[i] = qFromBigEndian<quint16>(spectrum[i]);
         }
     }
 };
 #pragma pack(pop)
+static_assert(sizeof(SubSpectrumPacket) == static_cast<size_t>(kSpectrumPacketBytes),
+              "spectrum packet size must be 530*16bit");
 
 struct H5Spectrum{
     quint32 sequence;      // 能谱序号
@@ -58,7 +69,7 @@ struct H5Spectrum{
     quint32 timeUTCms;     // utc小数秒
     quint32 measureTime;   // 能量测量时间间隔,单位ms
     quint32 deathTime;      // 死时间,单位*10ns
-    quint32 spectrum[8192]; // 8192道完整数据
+    quint32 spectrum[kFullSpectrumChannels]; // 1024道完整数据，线上 16bit 计数升为 32bit 存放
 };
 
 #pragma pack(push, 1)  // 确保字节对齐
@@ -68,8 +79,8 @@ struct FullSpectrum {
     quint32 timeUTCms;     // utc小数秒
     quint32 measureTime;   // 能量测量时间间隔,单位ms
     quint32 deathTime;      // 死时间,单位*10ns
-    quint32 spectrum[8192]; // 8192道完整数据
-    quint32 receivedMask = 0;   // 32个子包位图
+    quint32 spectrum[kFullSpectrumChannels]; // 1024道完整数据
+    quint32 receivedMask = 0;   // 2 个子包位图，收齐为 kSpectrumCompleteMask
     QDateTime completeTime; // 完成时间,记录一个完整能谱数据接收完的北京时间
     bool isComplete;       // 是否完整
 
@@ -106,7 +117,7 @@ struct FullSpectrum {
         measureTime = qFromBigEndian<quint32>(measureTime);
         deathTime = qFromBigEndian<quint32>(deathTime);
 
-        for (int i = 0; i < 8192; ++i) {
+        for (int i = 0; i < kFullSpectrumChannels; ++i) {
             spectrum[i] = qFromBigEndian<quint32>(spectrum[i]);
         }
     }
@@ -120,6 +131,13 @@ struct ParticleData{
 };
 
 H5Spectrum FullSpectoH5Spec(const FullSpectrum& src);
+
+inline void writeSubSpectrumChannels(FullSpectrum &full, const SubSpectrumPacket &sub, int part)
+{
+    const int base = (part - 1) * kSubSpectrumChannels;
+    for (int i = 0; i < kSubSpectrumChannels; ++i)
+        full.spectrum[base + i] = sub.spectrum[i];
+}
 
 Q_DECLARE_METATYPE(H5Spectrum)
 
@@ -172,7 +190,7 @@ typedef struct _DetParameter{
         qstrcpy(det_Ip_port, "0.0.0.0");
 
         spectrumRefreshTime = 1000;
-        spectrumLength = 8192;
+        spectrumLength = kFullSpectrumChannels;
 
         spectrumPlotEnMin = 0.0;
         spectrumPlotEnMax = 3000.0;

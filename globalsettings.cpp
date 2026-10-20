@@ -501,7 +501,7 @@ void HDF5Settings::load_localDetPara()
 
 H5::DataSet HDF5Settings::createSpecDataSet(H5::H5File* H5File, quint8 index)
 {
-    hsize_t columns = 8197;
+    hsize_t columns = sizeof(H5Spectrum) / sizeof(quint32);
     hsize_t init_dims[2] = {0, columns};       // 初始维度
     hsize_t max_dims[2] = {H5S_UNLIMITED, columns};  // 最大维度
     H5::DataSpace dataspace(2, init_dims, max_dims);
@@ -952,8 +952,8 @@ H5::CompType HDF5Settings::createH5SpectrumType()
     type.insertMember("measureTime", offsetof(H5Spectrum, measureTime), H5::PredType::NATIVE_UINT32);
     type.insertMember("deathTime", offsetof(H5Spectrum, deathTime), H5::PredType::NATIVE_UINT32);
 
-    // 数组成员：spectrum[8192]
-    hsize_t spectrum_dims[] = {8192};
+    // 数组成员：spectrum[1024]
+    hsize_t spectrum_dims[] = {kFullSpectrumChannels};
     H5::ArrayType spectrum_array(H5::PredType::NATIVE_UINT32, 1, spectrum_dims);
     type.insertMember("spectrum", offsetof(H5Spectrum, spectrum), spectrum_array);
 

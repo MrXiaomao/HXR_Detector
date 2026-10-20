@@ -142,8 +142,8 @@ void CommandAdapter::analyzeCommands(QByteArray &cachePool)
             DataType dataType = static_cast<DataType>(type);
             if (dataType == dtWaveform) // len=1038
                 onePkgSize = 4 + 2 + 512*2 + 4 + 4;
-            else if (dataType == dtSpectrum) // len=1060
-                onePkgSize = 4 + 2 + 4 + 4 + 4 + 2 + 256*4 + 4 + 8 + 4;
+            else if (dataType == dtSpectrum) // 530*16bit = 1060
+                onePkgSize = kSpectrumPacketBytes;
             else if (dataType == dtParticle) // len=1058
                 onePkgSize = 4 + 2 + 4 + 130*8 + 4 + 4;
             else if (dataType == dtTimestamp) // len=22

@@ -940,14 +940,8 @@ void MainWindow::initCustomPlot(int index, QCustomPlot* customPlot, QString axis
     customPlot->xAxis->rescale(true);
     customPlot->yAxis->rescale(false);
 
-    // 读取探测器参数 ，能谱长度
-    HDF5Settings *settings = HDF5Settings::instance();
-    const QMap<quint8, DetParameter*> detParameters = settings->getDetParameters();
-    const DetParameter *detParameter = detParameters.value(1); //默认读取探测器1的参数
-    int multiCh = detParameter->spectrumLength;
-
-    // 设置刻度范围
-    customPlot->xAxis->setRange(0, multiCh);
+    // 多道道数固定 1024
+    customPlot->xAxis->setRange(0, kFullSpectrumChannels);
     customPlot->yAxis->setRange(0, 10000);
     customPlot->yAxis->ticker()->setTickCount(5);
     customPlot->xAxis->ticker()->setTickCount(graphCount == 1 ? 10 : 5);
@@ -1319,7 +1313,7 @@ void MainWindow::onFullSpectrum_Thread(int index, const FullSpectrum& fullSpectr
         return;
     }
 
-    std::array<quint32, 8192> spectrumSnap{};
+    std::array<quint32, kFullSpectrumChannels> spectrumSnap{};
     double currenTime = 0.0;
     double fixedCountRate = 0.0;
     bool needPlotUpdate = false;
@@ -1330,7 +1324,7 @@ void MainWindow::onFullSpectrum_Thread(int index, const FullSpectrum& fullSpectr
 
         // 累积能谱
         quint32 currentCount = 0;
-        for (int i = 0; i < 8192; ++i) {
+        for (int i = 0; i < kFullSpectrumChannels; ++i) {
             currentCount += fullSpectrum.spectrum[i];
             data.spectrum[i] += fullSpectrum.spectrum[i];
         }
@@ -2555,45 +2549,21 @@ void MainWindow::updateSpecPlotData(int detectorId, const quint32 spectrum[]) {
     // 在持绘图锁之前完成道压缩与坐标换算（主线程内，避免长时间占用 mPlotLocker）
     const bool useEnScale = mEnScale.load();
     const SpectrumPlotSettings specSettings = m_spectrumPlotSettings[detectorId - 1];
-    const int mergebin = (specSettings.multiChannel > 0) ? (8192 / specSettings.multiChannel) : 8192;
 
     QVector<double> x, y;
-    if (useEnScale) {
-        for (int i = 0; i < 8192; ++i) {
-            double mergeCount = 0.0;
-            for (int mergeID = 0; mergeID < mergebin; mergeID++) {
-                if (i < 8192) {
-                    mergeCount += spectrum[i];
-                } else {
-                    break;
-                }
-                i++;
-            }
-            const int newCh = (i + 1) / mergebin;
-            double tempX = 0.0;
-            if (specSettings.fitType == 1) {
+    x.reserve(kFullSpectrumChannels);
+    y.reserve(kFullSpectrumChannels);
+    for (int i = 0; i < kFullSpectrumChannels; ++i) {
+        const double newCh = i + 1;
+        double tempX = newCh;
+        if (useEnScale) {
+            if (specSettings.fitType == 1)
                 tempX = specSettings.c0 * newCh + specSettings.c1;
-            } else if (specSettings.fitType == 2) {
+            else if (specSettings.fitType == 2)
                 tempX = specSettings.c0 * newCh * newCh + specSettings.c1 * newCh + specSettings.c2;
-            }
-            x << tempX;
-            y << mergeCount;
         }
-    } else {
-        for (int i = 0; i < 8192; ++i) {
-            double mergeCount = 0.0;
-            for (int mergeID = 0; mergeID < mergebin; mergeID++) {
-                if (i < 8192) {
-                    mergeCount += spectrum[i];
-                } else {
-                    break;
-                }
-                i++;
-            }
-            const int newCh = (i + 1) / mergebin;
-            x << static_cast<double>(newCh);
-            y << mergeCount;
-        }
+        x << tempX;
+        y << spectrum[i];
     }
 
     QMutexLocker locker(&mPlotLocker);
@@ -3209,43 +3179,37 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
 
     //更新m_spectrumPlotSettings
     const DetParameter *detParameter = detParameters.value(detectorId);
-    int multiCh = detParameter->spectrumLength;
-    m_spectrumPlotSettings[detectorId-1].multiChannel = multiCh;
+    m_spectrumPlotSettings[detectorId-1].multiChannel = kFullSpectrumChannels;
 
     double xMin = 0.0;
-    double xMax = multiCh*1.0;
+    double xMax = static_cast<double>(kFullSpectrumChannels);
 
     if (mEnScale)
     {
         m_spectrumPlotSettings[detectorId-1].xMin = detParameter->spectrumPlotEnMin;
         m_spectrumPlotSettings[detectorId-1].xMax = detParameter->spectrumPlotEnMax;
 
-        // 读取能量刻度系数（仅 device_config.ini），并按刻度道数/显示道数缩放
+        // 读取能量刻度系数（仅 device_config.ini），道址固定为 1024
         int fitType = 1;
         EnergyCalibrationStore::DetectorRecord calibRec;
         if (EnergyCalibrationStore::loadDetector(detectorId, &calibRec))
         {
-            const int N_cal = EnergyCalibrationStore::readSpectrumLength(8192);
-            const int N_disp = (multiCh > 0) ? multiCh : 8192;
-            const double r = static_cast<double>(N_cal) / static_cast<double>(N_disp);
-
             fitType = calibRec.type;
             if (fitType == 1){
-                // E = k_cal * ch_cal + b；ch_cal = ch_disp * (N_cal/N_disp)
-                const double k = calibRec.c0 * r;
+                const double k = calibRec.c0;
                 const double b = calibRec.c1;
                 xMin = b;
-                xMax = k*multiCh + b;
+                xMax = k * kFullSpectrumChannels + b;
 
                 m_spectrumPlotSettings[detectorId-1].c0 = k;
                 m_spectrumPlotSettings[detectorId-1].c1 = b;
             } else if (fitType == 2){
-                // E = a*x^2+b*x+c，x 按 r 缩放：a'=a*r^2, b'=b*r, c'=c
-                const double a = calibRec.c0 * r * r;
-                const double b = calibRec.c1 * r;
+                const double a = calibRec.c0;
+                const double b = calibRec.c1;
                 const double c = calibRec.c2;
                 xMin = c;
-                xMax = a*multiCh*multiCh + b*multiCh + c;
+                xMax = a * kFullSpectrumChannels * kFullSpectrumChannels
+                    + b * kFullSpectrumChannels + c;
 
                 m_spectrumPlotSettings[detectorId-1].c0 = a;
                 m_spectrumPlotSettings[detectorId-1].c1 = b;

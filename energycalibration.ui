@@ -281,7 +281,7 @@
         <item>
          <widget class="QDoubleSpinBox" name="doubleSpinBox_x">
           <property name="maximum">
-           <double>8192.000000000000000</double>
+           <double>1024.000000000000000</double>
           </property>
           <property name="value">
            <double>1000.000000000000000</double>
@@ -341,47 +341,6 @@
           <property name="text">
            <string>拟合</string>
           </property>
-         </widget>
-        </item>
-       </layout>
-      </item>
-      <item>
-       <layout class="QHBoxLayout" name="horizontalLayout_spectrumLength">
-        <item>
-         <widget class="QLabel" name="label_spectrumLength">
-          <property name="text">
-           <string>多道道数：</string>
-          </property>
-          <property name="alignment">
-           <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QComboBox" name="comboBox_spectrumLength">
-          <property name="currentIndex">
-           <number>3</number>
-          </property>
-          <item>
-           <property name="text">
-            <string>1024</string>
-           </property>
-          </item>
-          <item>
-           <property name="text">
-            <string>2048</string>
-           </property>
-          </item>
-          <item>
-           <property name="text">
-            <string>4096</string>
-           </property>
-          </item>
-          <item>
-           <property name="text">
-            <string>8192</string>
-           </property>
-          </item>
          </widget>
         </item>
        </layout>

@@ -39,7 +39,7 @@ class QCheckBox;
 struct DetectorData {
     // double countRate;                 // 当前计数率
     QVector<double> countRateHistory;    // 计数率历史，cps，每秒钟更新一次
-    quint32 spectrum[8192];              // 累积能谱 (固定长度8192)
+    quint32 spectrum[kFullSpectrumChannels]; // 累积能谱，1024 道
     quint32 lastSpectrumID;              // 上次测量累积时间的能谱序号
     quint32 lastAccumulateCount;         // 上次测量累积时间的计数率,暂时不考虑丢包带来的计数率修复
     double lastAccuCountFixed;     // 上次测量累积时间的计数率，考虑死时间修复后的值
@@ -60,7 +60,8 @@ struct DetectorData {
         , disconnectWallMs(0)
     {
         countRateHistory.clear();
-        for(int i=0; i<8192; i++) spectrum[i] = 0;// 初始化能谱为全0
+        for (int i = 0; i < kFullSpectrumChannels; ++i)
+            spectrum[i] = 0;
     }
 };
 
@@ -307,10 +308,10 @@ private:
 
     // 固定的24个通道能谱图像属性设置：是否刻度，X/Y坐标轴范围自动与否，坐标轴范围
     struct SpectrumPlotSettings {
-        //多道道数
-        int multiChannel = 8192;
+        // 多道道数固定为 1024
+        int multiChannel = kFullSpectrumChannels;
         double xMin = 0.0;
-        double xMax = 8192.0;
+        double xMax = kFullSpectrumChannels;
         double yMin = 0.0;
         double yMax = 100.0;
 

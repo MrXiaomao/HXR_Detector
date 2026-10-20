@@ -91,7 +91,7 @@ private:
     /** 每通道：时间(s) -> 原始/修正计数率(cps)，用于曲线绘制 */
     QMap<quint8, QVector<QPair<double, double>>> mMapCount;
     QMap<quint8, QVector<QPair<double, double>>> mMapCountCorrect;
-    /** 每通道累积能谱（原始 / 死时间修正），8192 道 */
+    /** 每通道累积能谱（原始 / 死时间修正），1024 道 */
     QMap<quint8, QVector<quint64>> mMapSpectrum;
     QMap<quint8, QVector<quint64>> mMapSpectrumCorrect;
 

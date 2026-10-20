@@ -372,13 +372,11 @@ void DataProcessor::stopTempTimeout()
 }
 
 /**
- * @brief 解析能谱数据包，并拼接成完整能谱，一个能谱由32个子包组成，每个子包包含256道能谱数据
+ * @brief 解析能谱数据包，并拼接成完整能谱。一个能谱由 2 个子包组成，每个子包 512 道 16bit 计数。
  * @param no 探测器通道编号
  * @param data 完整的能谱数据包，传入进来时已经验证了包的完整性
  */
 void DataProcessor::mergeSubSpec_Thread(quint8 no, const QByteArray& data){
-    // 能谱数据：一个能谱数据包长度为256*32bit，但完整的能谱数据为8192*32bit。
-    // 1. 提取数据包数据（256道 quint32 数据）
     quint32 spectrumSeq = 0;
     SubSpectrumPacket subSpecPackket;
     if (!extractSpectrumData(data, subSpecPackket)) {
@@ -388,9 +386,8 @@ void DataProcessor::mergeSubSpec_Thread(quint8 no, const QByteArray& data){
     }
     spectrumSeq = subSpecPackket.spectrumSeq;
 
-    // 跳过异常分包号，避免位运算和数组偏移越界
-    const quint8 part = subSpecPackket.spectrumSubNo; // 1..32
-    if (part < 1 || part > 32) {
+    const quint16 part = subSpecPackket.spectrumSubNo; // 1..2
+    if (part < 1 || part > kSpectrumSubCount) {
         qWarning() << "Invalid sub-spectrum part, seq:" << spectrumSeq
                    << ", part:" << static_cast<int>(part);
         return;
@@ -422,11 +419,10 @@ void DataProcessor::mergeSubSpec_Thread(quint8 no, const QByteArray& data){
             return;
         }
 
-        // 拷贝子能谱数据到完整能谱
-        memcpy(fullSpectrum.spectrum + (part - 1) * 256, subSpecPackket.spectrum, 256 * 4);
+        writeSubSpectrumChannels(fullSpectrum, subSpecPackket, part);
         fullSpectrum.receivedMask |= bit;
 
-        if (fullSpectrum.receivedMask == 0xFFFFFFFFu) {
+        if (fullSpectrum.receivedMask == kSpectrumCompleteMask) {
             fullSpectrum.isComplete = true;
 
             fullSpectrumCopy = fullSpectrum; // 拷贝数据，避免锁外访问共享对象
@@ -437,8 +433,6 @@ void DataProcessor::mergeSubSpec_Thread(quint8 no, const QByteArray& data){
     }
 
     if (hasFullSpectrum) {
-        // 锁外发送，降低锁持有时长
-        fullSpectrumCopy.spectrum[8191]=0; //将最后一道置零
         emit reportFullSpectrum(mIndex, fullSpectrumCopy);
     }
 }
