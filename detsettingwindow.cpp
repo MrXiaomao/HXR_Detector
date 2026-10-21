@@ -42,12 +42,10 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
     ui->tableWidget->setRowHeight(0, 30); //行高
     ui->tableWidget->setColumnWidth(0, 80);// 名称
     ui->tableWidget->setColumnWidth(1, 120);// ip
-    ui->tableWidget->setColumnWidth(2, 100);// 经度
-    ui->tableWidget->setColumnWidth(3, 100);// 纬度
-    ui->tableWidget->setColumnWidth(4, 100);// 增益
-    ui->tableWidget->setColumnWidth(5, 100);// 阈值
-    ui->tableWidget->setColumnWidth(6, 100);// 死时间
-    ui->tableWidget->setColumnWidth(7, 100);// 高压
+    ui->tableWidget->setColumnWidth(2, 100);// 增益
+    ui->tableWidget->setColumnWidth(3, 100);// 阈值
+    ui->tableWidget->setColumnWidth(4, 100);// 死时间
+    ui->tableWidget->setColumnWidth(5, 100);// 高压
 
     QList<QSpinBox*> spinBoxs = this->findChildren<QSpinBox*>();
     for (auto spinBox: spinBoxs){
@@ -93,7 +91,7 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
     });
 
     ui->tableWidget->setItemDelegate(
-        new LonLatDelegate(ui->tableWidget));
+        new DetParamDelegate(ui->tableWidget));
     /*connect(ui->tableWidget, &QTableWidget::currentItemChanged, this, [=](QTableWidgetItem *current, QTableWidgetItem *previous){
         // if (previous)
         //     saveAt(previous->row() + 1);
@@ -125,7 +123,7 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
         ui->tableWidget->item(row, 0)->setTextAlignment(Qt::AlignCenter);
         ui->tableWidget->item(row, 0)->setFlags(ui->tableWidget->item(row, 0)->flags() & (~Qt::ItemIsEditable));//禁止编辑
 
-        for (int j=1; j<=7; ++j){
+        for (int j=1; j<=5; ++j){
             ui->tableWidget->setItem(row, j, new QTableWidgetItem(""));
             ui->tableWidget->item(row, j)->setTextAlignment(Qt::AlignCenter);
         }
@@ -159,13 +157,11 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
     for (int i=1; i<=DET_NUM; ++i){
         DetParameter *detParameter = detParameters[i];
         ui->tableWidget->item(i - 1, 1)->setText(detParameter->det_Ip_port);
-        ui->tableWidget->item(i - 1, 2)->setText(QString::number(detParameter->longitude));
-        ui->tableWidget->item(i - 1, 3)->setText(QString::number(detParameter->latitude));
-        ui->tableWidget->item(i - 1, 4)->setText(QString::number(detParameter->gain));
-        ui->tableWidget->item(i - 1, 5)->setText(QString::number(detParameter->triggerThold));
-        ui->tableWidget->item(i - 1, 6)->setText(QString::number(detParameter->deathTime));
-        ui->tableWidget->item(i - 1, 7)->setText(QString::number(detParameter->highVoltageOutLevel));
-        ui->tableWidget->item(i - 1, 7)->setCheckState(detParameter->highVoltageEnable ? Qt::Checked : Qt::Unchecked);
+        ui->tableWidget->item(i - 1, 2)->setText(QString::number(detParameter->gain));
+        ui->tableWidget->item(i - 1, 3)->setText(QString::number(detParameter->triggerThold));
+        ui->tableWidget->item(i - 1, 4)->setText(QString::number(detParameter->deathTime));
+        ui->tableWidget->item(i - 1, 5)->setText(QString::number(detParameter->highVoltageOutLevel));
+        ui->tableWidget->item(i - 1, 5)->setCheckState(detParameter->highVoltageEnable ? Qt::Checked : Qt::Unchecked);
     }
 
     ui->tableWidget->setCurrentItem(ui->tableWidget->item(0, 0));
@@ -205,7 +201,7 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
                 if (gainList.size()>=(quint8)cachePool.at(9)){
                     qInfo().noquote() << "增益：" << gainList[(quint8)cachePool.at(9) - 1];
                     //ui->comboBox_gain->setCurrentIndex((quint8)cachePool.at(9) - 1);
-                    model->setData(model->index(row, 4), gainList[(quint8)cachePool.at(9) - 1]);
+                    model->setData(model->index(row, 2), gainList[(quint8)cachePool.at(9) - 1]);
 
                     double gain = gainList[(quint8)cachePool.at(9) - 1].toDouble();
                     if (queryMsg.isEmpty() && !qFuzzyCompare(gain, detParameter->gain)){
@@ -225,7 +221,7 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
                 quint8 deathTime = cachePool.mid(8, 2).toHex().toUShort(&ok, 16);
                 qInfo().noquote() << "死时间/*10ns：" << deathTime;
                 //ui->spinBox_deathTime->setValue(deathTime);
-                model->setData(model->index(row, 6), QString::number(deathTime));
+                model->setData(model->index(row, 4), QString::number(deathTime));
 
                 if (queryMsg.isEmpty() && (deathTime != detParameter->deathTime)){
                     queryMsg = "死时间与本地设置不一致。";
@@ -239,7 +235,7 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
                 quint16 triggerThold = cachePool.mid(8, 2).toHex().toUShort(&ok, 16);
                 qInfo().noquote() << "触发阈值：" << triggerThold;
                 //ui->spinBox_triggerThold->setValue(triggerThold);
-                model->setData(model->index(row, 5), QString::number(triggerThold));
+                model->setData(model->index(row, 3), QString::number(triggerThold));
 
                 if (queryMsg.isEmpty() && (triggerThold != detParameter->triggerThold)){
                     queryMsg = "触发阈值与本地设置不一致。";
@@ -380,9 +376,9 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
                 qInfo().noquote() << "高压使能状态：" << (highVoltageEnable==CommandAdapter::HighVolgateOutLevelEnable::hvClose ? "关闭" : "打开");
                 //ui->highVoltageEnable->setChecked(highVoltageEnable==CommandAdapter::HighVolgateOutLevelEnable::hvOpen);
                 if ((quint8)cachePool.at(9) != 0x00)
-                    model->setData(model->index(row, 7), Qt::Checked, Qt::CheckStateRole);
+                    model->setData(model->index(row, 5), Qt::Checked, Qt::CheckStateRole);
                 else
-                    model->setData(model->index(row, 7), Qt::Unchecked, Qt::CheckStateRole);
+                    model->setData(model->index(row, 5), Qt::Unchecked, Qt::CheckStateRole);
 
                 if (queryMsg.isEmpty() && (highVoltageEnable != static_cast<CommandAdapter::HighVolgateOutLevelEnable>(detParameter->highVoltageEnable))){
                     queryMsg = "高压使能状态与本地设置不一致。";
@@ -400,7 +396,7 @@ DetSettingWindow::DetSettingWindow(QWidget *parent)
                 quint16 highVolgateOutLevel = static_cast<quint16>(std::round(level*2.5*441.0/65536.0));
                 qInfo().noquote() << "DAC输出电平值：" << highVolgateOutLevel << "V";
                 //ui->spinBox_highVoltageOutLevel->setValue(highVolgateOutLevel);
-                model->setData(model->index(row, 7), QString::number(highVolgateOutLevel));
+                model->setData(model->index(row, 5), QString::number(highVolgateOutLevel));
 
                 if (queryMsg.isEmpty() && (highVolgateOutLevel != detParameter->highVoltageOutLevel)){
                     queryMsg = "DAC输出电平值与本地设置不一致。";
@@ -484,27 +480,20 @@ void DetSettingWindow::logHardwareParametersFromUi(const QString &reason, quint8
 
     const int row = detId - 1;
     QAbstractItemModel *model = ui->tableWidget->model();
-    double lon = 0.0;
-    double lat = 0.0;
-    getLonLat(row, lon, lat);
-    snapshot.longitude = lon;
-    snapshot.latitude = lat;
 
     const QString detIp = model->data(model->index(row, 1)).toString();
     memset(snapshot.det_Ip_port, 0, IP_LENGTH);
     qstrncpy(snapshot.det_Ip_port, detIp.toLatin1().constData(), IP_LENGTH - 1);
 
-    snapshot.gain = model->data(model->index(row, 4)).toDouble();
-    snapshot.triggerThold = static_cast<quint16>(model->data(model->index(row, 5)).toUInt());
-    snapshot.deathTime = static_cast<quint8>(model->data(model->index(row, 6)).toUInt());
-    snapshot.highVoltageOutLevel = static_cast<quint16>(model->data(model->index(row, 7)).toUInt());
+    snapshot.gain = model->data(model->index(row, 2)).toDouble();
+    snapshot.triggerThold = static_cast<quint16>(model->data(model->index(row, 3)).toUInt());
+    snapshot.deathTime = static_cast<quint8>(model->data(model->index(row, 4)).toUInt());
+    snapshot.highVoltageOutLevel = static_cast<quint16>(model->data(model->index(row, 5)).toUInt());
     snapshot.highVoltageEnable =
-        static_cast<Qt::CheckState>(model->data(model->index(row, 7), Qt::CheckStateRole).toInt()) == Qt::Checked;
+        static_cast<Qt::CheckState>(model->data(model->index(row, 5), Qt::CheckStateRole).toInt()) == Qt::Checked;
 
     snapshot.spectrumRefreshTime = static_cast<quint32>(ui->spinBox_spectrumRefreshTime->value());
     snapshot.spectrumLength = kFullSpectrumChannels;
-    snapshot.spectrumPlotEnMin = ui->dsp_spectrumPlotEnMin->value();
-    snapshot.spectrumPlotEnMax = ui->dsp_spectrumPlotEnMax->value();
     snapshot.waveformTriggerMode = static_cast<quint8>(ui->comboBox_waveformTriggerMode->currentIndex());
     snapshot.waveformLength = static_cast<quint32>(ui->comboBox_waveformLength->currentText().toUInt());
     snapshot.trapShapeEnable = ui->trapShapeEnable->isChecked();
@@ -548,7 +537,7 @@ void DetSettingWindow::on_pushButton_save_clicked()
         if (auto *cb = qobject_cast<QCheckBox*>(ui->tableWidget->cellWidget(row, 0))) {
             if (!cb->isChecked())
                 continue;
-            if (QTableWidgetItem *tholdItem = ui->tableWidget->item(row, 5)) {
+            if (QTableWidgetItem *tholdItem = ui->tableWidget->item(row, 3)) {
                 bool ok = false;
                 int v = tholdItem->text().trimmed().toInt(&ok);
                 if (!ok)
@@ -605,64 +594,6 @@ void DetSettingWindow::setSaveEnabled(bool enabled)
     ui->pushButton_save->setEnabled(enabled);
 }
 
-bool DetSettingWindow::getLonLat(int row, double& lon, double& lat)
-{
-    // 行号合法性检查
-    if (row < 0 || row >= ui->tableWidget->rowCount())
-        return false;
-
-    QTableWidgetItem* lonItem = ui->tableWidget->item(row, 2); // 第二列
-    QTableWidgetItem* latItem = ui->tableWidget->item(row, 3); // 第三列
-
-    if (!lonItem || !latItem)
-        return false;
-
-    bool ok1 = false;
-    bool ok2 = false;
-
-    lon = lonItem->text().trimmed().toDouble(&ok1);
-    lat = latItem->text().trimmed().toDouble(&ok2);
-
-    if (!ok1 || !ok2)
-        return false;
-
-    return true;
-}
-
-bool DetSettingWindow::setLonLat(int row, double lon, double lat)
-{
-    // 行号合法性
-    if (row < 0 || row >= ui->tableWidget->rowCount())
-        return false;
-
-    // 范围校验：经度 [-180, 180]，纬度 [-90, 90]
-    if (lon < -180.0 || lon > 180.0)
-        return false;
-    if (lat < -90.0 || lat > 90.0)
-        return false;
-
-    ui->tableWidget->blockSignals(true); // 防止触发 itemChanged
-
-    // 经度（第三列）
-    QTableWidgetItem* lonItem = ui->tableWidget->item(row, 2);
-    if (!lonItem) {
-        lonItem = new QTableWidgetItem;
-        ui->tableWidget->setItem(row, 2, lonItem);
-    }
-    lonItem->setText(QString::number(lon, 'f', 2));
-
-    // 纬度（第四列）
-    QTableWidgetItem* latItem = ui->tableWidget->item(row, 3);
-    if (!latItem) {
-        latItem = new QTableWidgetItem;
-        ui->tableWidget->setItem(row, 3, latItem);
-    }
-    latItem->setText(QString::number(lat, 'f', 2));
-
-    ui->tableWidget->blockSignals(false);
-    return true;
-}
-
 // 通过setSaveEnabled控制保存按钮的可用性，防止测量过程中修改参数
 void DetSettingWindow::saveAt(quint8 detId)
 {
@@ -670,12 +601,6 @@ void DetSettingWindow::saveAt(quint8 detId)
     HDF5Settings *settings = HDF5Settings::instance();
     QMap<quint8, DetParameter*> detParameters = settings->getDetParameters();
     DetParameter *detParameter = detParameters.value(detId);
-    double lon = 0.0;
-    double lat = 0.0;
-    if(getLonLat(detId-1, lon, lat)){
-        detParameter->longitude = lon;
-        detParameter->latitude = lat;
-    }
 
     // 网络设置
     //IP地址
@@ -685,25 +610,17 @@ void DetSettingWindow::saveAt(quint8 detId)
     strcpy(detParameter->det_Ip_port, det_Ip_port.toStdString().c_str());
 
     detParameter->id = detId;
-    detParameter->longitude = model->data(model->index(detId - 1, 2)).toDouble();
-    detParameter->latitude = model->data(model->index(detId - 1, 3)).toDouble();
-    detParameter->gain = model->data(model->index(detId - 1, 4)).toDouble();
-    detParameter->triggerThold = model->data(model->index(detId - 1, 5)).toDouble();
-    detParameter->deathTime = model->data(model->index(detId - 1, 6)).toDouble();
-    detParameter->highVoltageOutLevel = model->data(model->index(detId - 1, 7)).toDouble();
-    detParameter->highVoltageEnable = static_cast<Qt::CheckState>(model->data(model->index(detId - 1, 7), Qt::CheckStateRole).toInt()) == Qt::Checked;
+    detParameter->gain = model->data(model->index(detId - 1, 2)).toDouble();
+    detParameter->triggerThold = model->data(model->index(detId - 1, 3)).toDouble();
+    detParameter->deathTime = model->data(model->index(detId - 1, 4)).toDouble();
+    detParameter->highVoltageOutLevel = model->data(model->index(detId - 1, 5)).toDouble();
+    detParameter->highVoltageEnable = static_cast<Qt::CheckState>(model->data(model->index(detId - 1, 5), Qt::CheckStateRole).toInt()) == Qt::Checked;
 
     //能谱设置
     //能谱刷新时间（毫秒）
     detParameter->spectrumRefreshTime = static_cast<quint32>(ui->spinBox_spectrumRefreshTime->value());
     detParameter->spectrumLength = kFullSpectrumChannels;
 
-    //能谱能量范围
-    //能谱最小能量
-    detParameter->spectrumPlotEnMin = ui->dsp_spectrumPlotEnMin->value();
-    //能谱最大能量
-    detParameter->spectrumPlotEnMax = ui->dsp_spectrumPlotEnMax->value();
-    
     //波形设置
     //触发模式
     detParameter->waveformTriggerMode = static_cast<quint8>(ui->comboBox_waveformTriggerMode->currentIndex());
@@ -751,18 +668,16 @@ void DetSettingWindow::loadAt(quint8 detId, bool recordLog)
     //基本设置
     //增益, 获取文本转double
     //ui->comboBox_gain->setCurrentText(QString::number(detParameter->gain));
-    model->setData(model->index(row, 4), QString::number(detParameter->gain));
+    model->setData(model->index(row, 2), QString::number(detParameter->gain));
 
     //死时间
     //ui->spinBox_deathTime->setValue(detParameter->deathTime);
-    model->setData(model->index(row, 6), QString::number(detParameter->deathTime));
+    model->setData(model->index(row, 4), QString::number(detParameter->deathTime));
 
     //触发阈值
     //ui->spinBox_triggerThold->setValue(detParameter->triggerThold);
-    model->setData(model->index(row, 5), QString::number(detParameter->triggerThold));
+    model->setData(model->index(row, 3), QString::number(detParameter->triggerThold));
 
-    //经纬度
-    setLonLat(detId-1, detParameter->longitude, detParameter->latitude);
     //网络设置
     //IP地址
     model->setData(model->index(row, 1), QString::fromLatin1(detParameter->det_Ip_port));
@@ -770,12 +685,6 @@ void DetSettingWindow::loadAt(quint8 detId, bool recordLog)
     //能谱设置
     //能谱刷新时间（毫秒）
     ui->spinBox_spectrumRefreshTime->setValue(spectrumRefreshTimeToSpinValue(detParameter->spectrumRefreshTime));
-
-    //能谱能量范围
-    //能谱最小能量
-    ui->dsp_spectrumPlotEnMin->setValue(detParameter->spectrumPlotEnMin);
-    //能谱最大能量
-    ui->dsp_spectrumPlotEnMax->setValue(detParameter->spectrumPlotEnMax);
 
     //波形设置
     //触发模式
@@ -804,11 +713,11 @@ void DetSettingWindow::loadAt(quint8 detId, bool recordLog)
     //高压电源
     //是否启用
     //ui->highVoltageEnable->setChecked(detParameter->highVoltageEnable);
-    model->setData(model->index(row, 7), detParameter->highVoltageEnable ? Qt::Checked : Qt::Unchecked, Qt::CheckStateRole);
+    model->setData(model->index(row, 5), detParameter->highVoltageEnable ? Qt::Checked : Qt::Unchecked, Qt::CheckStateRole);
 
     //DAC高压输出电平
     //ui->spinBox_highVoltageOutLevel->setValue(detParameter->highVoltageOutLevel);
-    model->setData(model->index(row, 7), QString::number(detParameter->highVoltageOutLevel));
+    model->setData(model->index(row, 5), QString::number(detParameter->highVoltageOutLevel));
 
     mBlockParameterLogging = false;
     if (!recordLog)
@@ -864,7 +773,7 @@ void DetSettingWindow::on_tableWidget_itemChanged(QTableWidgetItem *item)
     }
 
     // 限制触发阈值输入范围（FA12：0000~FFFF），超出则钳制到边界值
-    if (item->column() == 5) {
+    if (item->column() == 3) {
         bool ok = false;
         int v = item->text().trimmed().toInt(&ok);
         if (!ok)
@@ -875,26 +784,6 @@ void DetSettingWindow::on_tableWidget_itemChanged(QTableWidgetItem *item)
             item->setText(QString::number(clamped));
             ui->tableWidget->blockSignals(false);
         }
-        return;
-    }
-
-    // 限制经纬度输入范围
-    if (item->column() != 2 && item->column() != 3)
-        return;
-
-    bool ok = false;
-    double v = item->text().toDouble(&ok);
-
-    if (!ok) return;
-
-    if (item->column() == 2 && (v < -180.0 || v > 180.0)) {
-        QMessageBox::warning(this, "错误", "经度范围必须是 -180~180");
-        item->setText("0");
-    }
-
-    if (item->column() == 3 && (v < -90.0 || v > 90.0)) {
-        QMessageBox::warning(this, "错误", "纬度范围必须是 -90~90");
-        item->setText("0");
     }
 }
 
@@ -910,13 +799,11 @@ void DetSettingWindow::showEvent(QShowEvent */*event*/)
     for (int i=1; i<=DET_NUM; ++i){
         DetParameter *detParameter = detParameters[i];
         ui->tableWidget->item(i - 1, 1)->setText(detParameter->det_Ip_port);
-        ui->tableWidget->item(i - 1, 2)->setText(QString::number(detParameter->longitude));
-        ui->tableWidget->item(i - 1, 3)->setText(QString::number(detParameter->latitude));
-        ui->tableWidget->item(i - 1, 4)->setText(QString::number(detParameter->gain));
-        ui->tableWidget->item(i - 1, 5)->setText(QString::number(detParameter->triggerThold));
-        ui->tableWidget->item(i - 1, 6)->setText(QString::number(detParameter->deathTime));
-        ui->tableWidget->item(i - 1, 7)->setText(QString::number(detParameter->highVoltageOutLevel));
-        ui->tableWidget->item(i - 1, 7)->setCheckState(detParameter->highVoltageEnable ? Qt::Checked : Qt::Unchecked);
+        ui->tableWidget->item(i - 1, 2)->setText(QString::number(detParameter->gain));
+        ui->tableWidget->item(i - 1, 3)->setText(QString::number(detParameter->triggerThold));
+        ui->tableWidget->item(i - 1, 4)->setText(QString::number(detParameter->deathTime));
+        ui->tableWidget->item(i - 1, 5)->setText(QString::number(detParameter->highVoltageOutLevel));
+        ui->tableWidget->item(i - 1, 5)->setCheckState(detParameter->highVoltageEnable ? Qt::Checked : Qt::Unchecked);
     }
 
     loadAt(currentSelectedDetId(), false);

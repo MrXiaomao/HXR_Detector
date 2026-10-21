@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>溴化镧配套软件离线数据分析-能谱H5重建</string>
+   <string>HXR分时能谱软件离线数据分析-能谱H5重建</string>
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QVBoxLayout" name="verticalLayout">

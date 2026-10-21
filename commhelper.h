@@ -138,7 +138,7 @@ public:
     Q_SIGNAL void reportWaveCurve(quint8, const QVector<quint16>& data); // 发送解析后的波形曲线
     Q_SIGNAL void reportParticle(quint8 index, quint32 count); // 发送解析后的粒子个数
     Q_SIGNAL void reportOTAUpgrateData(quint8, QVector<quint16>& data);
-    Q_SIGNAL void reportAutoShotTime(const QDateTime& shotTime);
+    Q_SIGNAL void reportAutoShotTime(const QDateTime& shotTime, quint32 spectrumRefreshMs);
     Q_SIGNAL void reportParamterData(quint8, const QByteArray&);
     Q_SIGNAL void reportPoePowerStatus(quint8, bool); //POE电源开关
     Q_SIGNAL void reportOTAUpgradeData(quint8, const QByteArray& data); // 上报OTA升级数据

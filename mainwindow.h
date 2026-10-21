@@ -189,6 +189,9 @@ private slots:
 
     // 测量倒计时结束处理
     void onMeasureCountdownTimeout();
+    // 定时测量达到设定时长后停止
+    void stopBecauseTimedMeasureReached();
+    void checkTimedMeasureLimit();
     // 清理日志
     void on_bt_clearLog_clicked();
 
@@ -284,6 +287,9 @@ private:
     // 测量倒计时定时器
     int mTotalCountdown = 0;  // 总倒计时时间（秒），用于计算已测量时长
     bool misTimedMeasure = false; // 是否继续测量模式
+    bool mTimedMeasureActive = false; // 本次为定时测量，从首帧起算到设定时长后停止
+    bool mTimedMeasureAllChannels = false; // 定时结束时停止全部通道，否则停止已开始的选中通道
+    bool mTimedStopByDuration = false; // 当前停止由定时到达触发
 
     // 自动化测量定时器
     QTimer *mStartMeasureDelayTimer = nullptr;// 开始测量倒计时（多用于自动化测量）
@@ -292,7 +298,8 @@ private:
     
     // 连续测量计时器（波形等无打靶时刻时使用）
     QElapsedTimer *mMeasureTimer = nullptr;
-    QDateTime mDurationFromShotTime; // 能谱测量时长从打靶时刻起算
+    QDateTime mDurationFromShotTime; // 能谱测量时长从首帧到达时刻起算
+    qint64 mSpectrumDurationOffsetMs = 0; // 刷新时长大于1s时，显示时长额外加上该刷新时长
 
     // 交换机连接状态管理
     bool mSwitcherLogged = false;  // 交换机是否已登录

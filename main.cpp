@@ -1,4 +1,4 @@
-﻿#include "mainwindow.h"
+#include "mainwindow.h"
 #include "globalsettings.h"
 #include "crashhandler.h"
 #include "commhelper.h"
@@ -126,7 +126,7 @@ int main(int argc, char *argv[])
                                      QStringLiteral(GIT_HASH),
                                      QStringLiteral(GIT_DATE));
 
-    QApplication::setApplicationName("溴化镧配套软件");
+    QApplication::setApplicationName("HXR分时能谱软件");
     QApplication::setOrganizationName("Copyright (c) 2025");
     QApplication::setOrganizationDomain("");
     QApplication::setApplicationVersion(APP_VERSION);
@@ -257,15 +257,15 @@ int main(int argc, char *argv[])
 
     QGoodWindowHelper w;
     if (args.contains("-m") && args.contains("countRateStatistics")){
-        QApplication::setApplicationName("溴化镧配套软件离线数据分析-计数率统计");
+        QApplication::setApplicationName("HXR分时能谱软件离线数据分析-计数率统计");
         mMainWindow = new CountRateStatisticsWindow(isDarkTheme, &w);
     }
     else if (args.contains("-m") && args.contains("spectrumH5Rebuild")){
-        QApplication::setApplicationName("溴化镧配套软件离线数据分析-能谱H5重建");
+        QApplication::setApplicationName("HXR分时能谱软件离线数据分析-能谱H5重建");
         mMainWindow = new SpectrumH5RebuildWindow(isDarkTheme, &w);
     }
     else {
-        QApplication::setApplicationName("溴化镧配套软件");
+        QApplication::setApplicationName("HXR分时能谱软件");
         mMainWindow = new MainWindow(isDarkTheme, &w);
     }
     w.setupUiHelper(mMainWindow, isDarkTheme);

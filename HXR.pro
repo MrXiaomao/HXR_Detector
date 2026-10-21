@@ -89,7 +89,7 @@ else: unix:!android: target.path = /opt/$${TARGET}/bin
 !isEmpty(target.path): INSTALLS += target
 
 
-DESTDIR = $$PWD/../build_ZrActivationPro
+DESTDIR = $$PWD/../build_HXR
 contains(QT_ARCH, x86_64) {
     # x64
     DESTDIR = $$DESTDIR/x64
@@ -98,7 +98,6 @@ contains(QT_ARCH, x86_64) {
     DESTDIR = $$DESTDIR/x86
 }
 
-DESTDIR = $$DESTDIR/qt$$QT_VERSION/
 message(DESTDIR = $$DESTDIR)
 
 #开启工程的debug和release两种版本构建
@@ -106,10 +105,10 @@ message(DESTDIR = $$DESTDIR)
 #避免创建空的debug和release目录
 CONFIG -= debug_and_release
 CONFIG(debug, debug|release) {
-    TARGET = Zr_ActivationProd
+    TARGET = HXRd
 } else {
     DEFINES += QT_MESSAGELOGCONTEXT #定义之后Release版qWarning()输出的消息才能够捕获到
-    TARGET = Zr_ActivationPro
+    TARGET = HXR
 }
 
 #指定编译产生的文件分门别类放到对应目录

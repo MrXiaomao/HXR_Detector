@@ -145,9 +145,6 @@ Q_DECLARE_METATYPE(H5Spectrum)
 typedef struct _DetParameter{
     quint8 id;
 
-    double longitude;
-    double latitude;
-
     double gain;
     quint8 deathTime;
     quint16 triggerThold;
@@ -156,9 +153,6 @@ typedef struct _DetParameter{
 
     quint32 spectrumRefreshTime;
     quint32 spectrumLength;
-
-    double spectrumPlotEnMin;
-    double spectrumPlotEnMax;
 
     quint8 waveformTriggerMode;
     quint32 waveformLength;
@@ -179,9 +173,6 @@ typedef struct _DetParameter{
     _DetParameter(){
         id = 1;
 
-        longitude = 0.0;
-        latitude = 0.0;
-
         gain = 1.26;
         deathTime = 30;
         triggerThold = 100;
@@ -191,9 +182,6 @@ typedef struct _DetParameter{
 
         spectrumRefreshTime = 1000;
         spectrumLength = kFullSpectrumChannels;
-
-        spectrumPlotEnMin = 0.0;
-        spectrumPlotEnMax = 3000.0;
 
         waveformTriggerMode = 0;
         waveformLength = 512;

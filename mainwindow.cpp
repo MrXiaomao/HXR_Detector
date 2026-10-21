@@ -309,13 +309,12 @@ void MainWindow::initUi()
     ui->com_triggerModel->setEnabled(false);
     syncTriggerModeDisplay(ui->cbb_measureMode->currentIndex());
 
-    // 开始时刻、打靶时刻由测量过程写入，不可手改。冷却时长和定时测量不再使用。
+    // 开始时刻、打靶时刻由测量过程写入，不可手改。冷却时长不再使用。
+    // 定时测量/连续测量保留：不勾选连续测量时，到 spinBox_measureTime 后自动停止。
     ui->label_11->hide();
     ui->spinBox_coolTimeLength->hide();
-    ui->label->hide();
-    ui->spinBox_measureTime->hide();
     ui->checkBox_continueMeasure->setChecked(true);
-    ui->checkBox_continueMeasure->hide();
+    ui->spinBox_measureTime->setEnabled(false);
     ui->dateTimeEdit_startTime->setDisplayFormat(QStringLiteral("yyyy/M/d H:mm:ss.zzz"));
     ui->dateTimeEdit_startTime->setEnabled(false);
     ui->dateTime_shotTime->setDisplayFormat(QStringLiteral("yyyy/M/d H:mm:ss.zzz"));
@@ -798,6 +797,13 @@ void MainWindow::initUi()
 
     // 接收波形曲线数据
     connect(commHelper, &CommHelper::reportWaveCurve, this, [=](quint8 index, const QVector<quint16>& data){
+        if (ui->action_waveformMode->isChecked() && !mDurationFromShotTime.isValid()) {
+            mDurationFromShotTime = QDateTime::currentDateTime();
+            mSpectrumDurationOffsetMs = 0;
+            ui->lineEdit_triggerflag->setText(QStringLiteral("已经触发"));
+            ui->edit_measureTime->setText(formatTimeString(measureElapsedSeconds()));
+            checkTimedMeasureLimit();
+        }
         return; // 不显示波形
         QCustomPlot *customPlot = getCustomPlot(index);
         if (!customPlot)
@@ -816,11 +822,13 @@ void MainWindow::initUi()
         customPlot->yAxis->rescale(true);
     });
 
-    connect(commHelper, &CommHelper::reportAutoShotTime, this, [this](const QDateTime& shotTime){
+    connect(commHelper, &CommHelper::reportAutoShotTime, this, [this](const QDateTime& shotTime, quint32 spectrumRefreshMs){
         mDurationFromShotTime = shotTime;
+        mSpectrumDurationOffsetMs = spectrumRefreshMs > 1000 ? spectrumRefreshMs : 0;
         ui->dateTime_shotTime->setDateTime(shotTime);
         ui->lineEdit_triggerflag->setText(QStringLiteral("已经触发"));
         ui->edit_measureTime->setText(formatTimeString(measureElapsedSeconds()));
+        checkTimedMeasureLimit();
     }, Qt::QueuedConnection);
 }
 
@@ -1064,6 +1072,7 @@ void MainWindow::onSystemTimer()
         ui->edit_measureTime->setText(formatTimeString(measureElapsedSeconds()));
     else if (mMeasureTimer && mMeasureTimer->isValid())
         ui->edit_measureTime->setText(formatTimeString(mMeasureTimer->elapsed() / 1000));
+    checkTimedMeasureLimit();
 
     // 温度2s刷新一次
     if ((t++%2) == 0){
@@ -1643,6 +1652,7 @@ void MainWindow::on_action_startAllMeasure_triggered()
     if (mMeasureTimer && mMeasureTimer->isValid())
         mMeasureTimer->invalidate();
     mDurationFromShotTime = QDateTime();
+    mSpectrumDurationOffsetMs = 0;
     ui->edit_measureTime->setText("00:00:00");
 
     for (auto index : mOnlineDetectors){
@@ -1654,6 +1664,8 @@ void MainWindow::on_action_startAllMeasure_triggered()
     mStartMeasureDelayTimer->stop();
     mAutoMeasureTimerActive = false;
     ui->lineEdit_triggerflag->setText(QStringLiteral("等待数据"));
+    mTimedMeasureAllChannels = true;
+    mTimedMeasureActive = !ui->checkBox_continueMeasure->isChecked();
     this->startMeasure();
 }
 
@@ -1745,6 +1757,7 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
 
     logMeasureStartInfo();
 
+    bool startedAnyChannel = false;
     if (ui->action_waveformMode->isChecked())
     {
         QStringList startedChannels;
@@ -1761,9 +1774,6 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
             // 再发送开始测量指令
             if (mOnlineDetectors.contains(index))
             {
-                if (!mMeasureTimer->isValid())
-                    mMeasureTimer->start();
-
                 const QDateTime startedAt = QDateTime::currentDateTime();
                 ui->dateTimeEdit_startTime->setDateTime(startedAt);
                 commHelper->startMeasure(startedAt, CommandAdapter::MeasureMode::mmManual, CommandAdapter::WorkMode::wmWaveform, index);
@@ -1775,6 +1785,7 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
             }
         }
         if (!startedChannels.isEmpty()) {
+            startedAnyChannel = true;
             UserActionLogger::logMessage(QStringLiteral("点击开始选中通道测量(波形) 通道:%1").arg(startedChannels.join(",")));
         }
     }
@@ -1808,6 +1819,7 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
             }
         }
         if (!startedChannels.isEmpty()) {
+            startedAnyChannel = true;
             UserActionLogger::logMessage(QStringLiteral("点击开始选中通道测量(能谱) 通道:%1").arg(startedChannels.join(",")));
         }
     }
@@ -1820,6 +1832,13 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
     bool saveOk = HDF5Settings::instance()->saveMeasureParametersToH5(paramFilePath, HDF5Settings::instance()->getDetParameters());
     if (!saveOk) {
         qWarning().noquote().nospace() << QStringLiteral("测量参数保存失败：") << paramFilePath;
+    }
+
+    if (startedAnyChannel) {
+        mTimedMeasureAllChannels = false;
+        mTimedMeasureActive = !ui->checkBox_continueMeasure->isChecked();
+        ui->spinBox_measureTime->setEnabled(false);
+        ui->checkBox_continueMeasure->setEnabled(false);
     }
 
     // 测量中禁用参数配置
@@ -1879,18 +1898,27 @@ void MainWindow::on_btn_stopSelectedMeasure_clicked()
     }
 
     if (m_selectedChannels.empty()){
+        mTimedMeasureActive = false;
         // 显示最终测量时长
         ui->edit_measureTime->setText(formatTimeString(measureElapsedSeconds()));
         mMeasureTimer->invalidate();
         mDurationFromShotTime = QDateTime();
+        mSpectrumDurationOffsetMs = 0;
 
         // 非测量中可用参数配置
         ui->action_startAllMeasure->setEnabled(true);
         ui->action_stopAllMeasure->setEnabled(false);
-
+        ui->btn_startSelectedMeasure->setEnabled(true);
         ui->btn_stopSelectedMeasure->setEnabled(false);
         ui->action_waveformMode->setEnabled(true);
         ui->action_particalMode->setEnabled(true);
+        ui->lineEdit_shotNum->setEnabled(true);
+        ui->checkBox_autoIncrease->setEnabled(true);
+        ui->lineEdit_filePath->setEnabled(true);
+        ui->cbb_measureMode->setEnabled(true);
+        ui->checkBox_continueMeasure->setEnabled(true);
+        ui->spinBox_measureTime->setEnabled(!ui->checkBox_continueMeasure->isChecked());
+        ui->lineEdit_triggerflag->setText(QStringLiteral("未触发"));
     }
     
     // ui->btn_startSelectedMeasure->setEnabled(true);                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
@@ -1902,6 +1930,7 @@ void MainWindow::on_btn_stopSelectedMeasure_clicked()
 
 void MainWindow::on_action_stopAllMeasure_triggered()
 {
+    mTimedMeasureActive = false;
     mStartMeasureDelayTimer->stop(); // 停止自动测量的发送定时测量指令、测量开始指令
     mAutoMeasureDelayTimer->stop(); // 停止自动测量的定时上电
 
@@ -1924,9 +1953,11 @@ void MainWindow::on_action_stopAllMeasure_triggered()
     ui->dateTimeEdit_startTime->setEnabled(false);
     ui->lineEdit_triggerflag->setText("未触发");
 
-    const QString stopAllMsg = mEnableAutoMeasure
-        ? QStringLiteral("点击停止全部测量(自动)")
-        : QStringLiteral("点击停止全部测量(手动)");
+    const QString stopAllMsg = mTimedStopByDuration
+        ? QStringLiteral("定时测量达到设定时长，停止全部测量")
+        : (mEnableAutoMeasure
+            ? QStringLiteral("点击停止全部测量(自动)")
+            : QStringLiteral("点击停止全部测量(手动)"));
 
     commHelper->stopMeasure();
     // 停止测量 - 仅停止m_selectedChannels中的探测器
@@ -1959,6 +1990,7 @@ void MainWindow::on_action_stopAllMeasure_triggered()
     
     mMeasureTimer->invalidate();
     mDurationFromShotTime = QDateTime();
+    mSpectrumDurationOffsetMs = 0;
     misTimedMeasure = false;
     m_selectedChannels.clear();
 
@@ -1967,6 +1999,62 @@ void MainWindow::on_action_stopAllMeasure_triggered()
 
     emit ui->cbb_measureMode->currentIndexChanged(ui->cbb_measureMode->currentIndex());
     emit ui->com_triggerModel->currentIndexChanged(ui->com_triggerModel->currentIndex());
+}
+
+void MainWindow::checkTimedMeasureLimit()
+{
+    if (!mTimedMeasureActive || !mDurationFromShotTime.isValid())
+        return;
+    if (measureElapsedSeconds() < ui->spinBox_measureTime->value())
+        return;
+    stopBecauseTimedMeasureReached();
+}
+
+void MainWindow::stopBecauseTimedMeasureReached()
+{
+    if (!mTimedMeasureActive)
+        return;
+    mTimedMeasureActive = false;
+
+    const int limit = ui->spinBox_measureTime->value();
+    qInfo().noquote() << QStringLiteral("定时测量达到设定时长 %1 秒，停止测量").arg(limit);
+
+    if (mTimedMeasureAllChannels) {
+        mTimedStopByDuration = true;
+        on_action_stopAllMeasure_triggered();
+        mTimedStopByDuration = false;
+        return;
+    }
+
+    QStringList stoppedChannels;
+    const QVector<quint8> channels = m_selectedChannels;
+    for (quint8 index : channels) {
+        commHelper->stopMeasure(index);
+        m_selectedChannels.removeOne(index);
+        stoppedChannels.append(QString::number(index));
+    }
+    UserActionLogger::logMessage(stoppedChannels.isEmpty()
+                                     ? QStringLiteral("定时测量达到设定时长，停止选中通道测量")
+                                     : QStringLiteral("定时测量达到设定时长，停止选中通道测量 通道:%1")
+                                           .arg(stoppedChannels.join(QStringLiteral(","))));
+
+    ui->edit_measureTime->setText(formatTimeString(measureElapsedSeconds()));
+    mMeasureTimer->invalidate();
+    mDurationFromShotTime = QDateTime();
+    mSpectrumDurationOffsetMs = 0;
+    ui->action_startAllMeasure->setEnabled(true);
+    ui->action_stopAllMeasure->setEnabled(false);
+    ui->btn_startSelectedMeasure->setEnabled(true);
+    ui->btn_stopSelectedMeasure->setEnabled(false);
+    ui->action_waveformMode->setEnabled(true);
+    ui->action_particalMode->setEnabled(true);
+    ui->lineEdit_shotNum->setEnabled(true);
+    ui->checkBox_autoIncrease->setEnabled(true);
+    ui->lineEdit_filePath->setEnabled(true);
+    ui->cbb_measureMode->setEnabled(true);
+    ui->checkBox_continueMeasure->setEnabled(true);
+    ui->spinBox_measureTime->setEnabled(!ui->checkBox_continueMeasure->isChecked());
+    ui->lineEdit_triggerflag->setText(QStringLiteral("未触发"));
 }
 
 void MainWindow::onMeasureCountdownTimeout()
@@ -2781,6 +2869,7 @@ void MainWindow::startMeasure()
 
     misTimedMeasure = false;
     mDurationFromShotTime = QDateTime();
+    mSpectrumDurationOffsetMs = 0;
     if (mMeasureTimer && mMeasureTimer->isValid())
         mMeasureTimer->invalidate();
     ui->edit_measureTime->setText("00:00:00");
@@ -2790,10 +2879,9 @@ void MainWindow::startMeasure()
     const QDateTime tmStart = QDateTime::currentDateTime();
     ui->dateTimeEdit_startTime->setDateTime(tmStart);
 
-    // 打靶时刻等首帧数据到达后再写入
+    // 打靶时刻和测量时长等首帧数据到达后再写入
     if (ui->action_waveformMode->isChecked()) {
-        mMeasureTimer->start();
-        ui->lineEdit_triggerflag->setText(QStringLiteral("已经触发"));
+        ui->lineEdit_triggerflag->setText(QStringLiteral("等待数据"));
         commHelper->startMeasure(tmStart, measureMode, CommandAdapter::WorkMode::wmWaveform, 0);
     } else if (ui->action_spectrumMode->isChecked()) {
         commHelper->startMeasure(tmStart, measureMode, CommandAdapter::WorkMode::wmSpectrum, 0);
@@ -2803,8 +2891,11 @@ void MainWindow::startMeasure()
 int MainWindow::measureElapsedSeconds() const
 {
     if (mDurationFromShotTime.isValid()) {
-        const qint64 secs = mDurationFromShotTime.secsTo(QDateTime::currentDateTime());
-        return secs < 0 ? 0 : static_cast<int>(secs);
+        qint64 ms = mDurationFromShotTime.msecsTo(QDateTime::currentDateTime());
+        if (ms < 0)
+            ms = 0;
+        ms += mSpectrumDurationOffsetMs;
+        return static_cast<int>(ms / 1000);
     }
     if (mMeasureTimer && mMeasureTimer->isValid())
         return static_cast<int>(mMeasureTimer->elapsed() / 1000);
@@ -2824,6 +2915,7 @@ void MainWindow::stopMeasure()
     ui->edit_measureTime->setText(formatTimeString(measureElapsedSeconds()));
     mMeasureTimer->invalidate();
     mDurationFromShotTime = QDateTime();
+    mSpectrumDurationOffsetMs = 0;
     misTimedMeasure = false;
 
     // 自动更新发次号
@@ -2968,12 +3060,6 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
         return;
     }
 
-    // 读取探测器参数
-    // 读取道数
-    const QMap<quint8, DetParameter*> detParameters = HDF5Settings::instance()->getDetParameters();
-
-    //更新m_spectrumPlotSettings
-    const DetParameter *detParameter = detParameters.value(detectorId);
     m_spectrumPlotSettings[detectorId-1].multiChannel = kFullSpectrumChannels;
 
     double xMin = 0.0;
@@ -2981,9 +3067,6 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
 
     if (mEnScale)
     {
-        m_spectrumPlotSettings[detectorId-1].xMin = detParameter->spectrumPlotEnMin;
-        m_spectrumPlotSettings[detectorId-1].xMax = detParameter->spectrumPlotEnMax;
-
         // 读取能量刻度系数（仅 device_config.ini），道址固定为 1024
         int fitType = 1;
         EnergyCalibrationStore::DetectorRecord calibRec;
@@ -3013,6 +3096,9 @@ void MainWindow::updateSpectrumPlotSettings(int detectorId)
 
             m_spectrumPlotSettings[detectorId-1].fitType = fitType;
         }
+
+        m_spectrumPlotSettings[detectorId-1].xMin = xMin;
+        m_spectrumPlotSettings[detectorId-1].xMax = xMax;
 
         //获取图表数据
         QCPGraph* graph = getGraph(detectorId, true);

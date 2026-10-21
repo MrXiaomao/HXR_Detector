@@ -8,7 +8,7 @@
  *
  * 崩溃时写入 logs/crash_*.log 与 logs/crash_*.dmp（MiniDump），
  * 不依赖 Log4Qt，避免堆损坏时二次崩溃。
- * 查调用栈建议用 MSVC Release 构建（生成 Zr_ActivationPro.pdb），
+ * 查调用栈建议用 MSVC Release 构建（生成 HXR.pdb），
  * 再用 Visual Studio 打开同版本 exe 对应的 crash_*.dmp。
  */
 class CrashHandler

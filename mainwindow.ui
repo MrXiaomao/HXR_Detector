@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>MainWindow</class>
  <widget class="QMainWindow" name="MainWindow">
@@ -11,7 +11,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>溴化镧配套软件</string>
+   <string>HXR分时能谱软件</string>
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QHBoxLayout" name="horizontalLayout_2">
@@ -1935,7 +1935,7 @@
     <string>关于</string>
    </property>
    <property name="toolTip">
-    <string>关于 ZrActivationPro</string>
+    <string>关于 HXR</string>
    </property>
    <property name="menuRole">
     <enum>QAction::NoRole</enum>

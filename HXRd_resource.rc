@@ -23,8 +23,8 @@ VS_VERSION_INFO VERSIONINFO
 				VALUE "FileDescription", "\0"
 				VALUE "FileVersion", "0.0.0.0\0"
 				VALUE "LegalCopyright", "\0"
-				VALUE "OriginalFilename", "Zr_ActivationProd.exe\0"
-				VALUE "ProductName", "Zr_ActivationProd\0"
+				VALUE "OriginalFilename", "HXRd.exe\0"
+				VALUE "ProductName", "HXRd\0"
 				VALUE "ProductVersion", "0.0.0.0\0"
 			END
 		END

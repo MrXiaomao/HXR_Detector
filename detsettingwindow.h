@@ -17,45 +17,23 @@ class CommHelper;
 #include <QComboBox>
 #include <QSpinBox>
 #include <QCheckBox>
-#include <QDoubleValidator>
 #include <QIntValidator>
 #include <QHBoxLayout>
 #include <QEventLoop>
 class QTableWidgetItem;
 
-class LonLatDelegate : public QStyledItemDelegate
+class DetParamDelegate : public QStyledItemDelegate
 {
     Q_OBJECT
 public:
-    explicit LonLatDelegate(QObject* parent = nullptr)
+    explicit DetParamDelegate(QObject* parent = nullptr)
         : QStyledItemDelegate(parent) {}
 
     QWidget* createEditor(QWidget* parent,
                           const QStyleOptionViewItem&,
                           const QModelIndex& index) const override
     {
-        // 只处理第 3、4 列（0-based）
-        if (index.column() == 2 || index.column() == 3)
-        {
-            QLineEdit* editor = new QLineEdit(parent);
-
-            QDoubleValidator* validator = nullptr;
-
-            if (index.column() == 2) {
-                // 第三列：经度 [-180, 180]
-                validator = new QDoubleValidator(-180.0, 180.0, 6, editor);
-            } else {
-                // 第四列：纬度 [-90, 90]
-                validator = new QDoubleValidator(-90.0, 90.0, 6, editor);
-            }
-
-            validator->setNotation(QDoubleValidator::StandardNotation);
-            editor->setValidator(validator);
-            editor->setInputMethodHints(Qt::ImhFormattedNumbersOnly);
-
-            return editor;
-        }
-        else if (index.column() == 4){// 增益
+        if (index.column() == 2){// 增益
             QComboBox* editor = new QComboBox(parent);
             editor->addItem(QStringLiteral("0.08"));
             editor->addItem(QStringLiteral("0.16"));
@@ -67,18 +45,18 @@ public:
             editor->addItem(QStringLiteral("10.0"));
             return editor;
         }
-        else if (index.column() == 5){// 触发阈值
+        else if (index.column() == 3){// 触发阈值
             QLineEdit* editor = new QLineEdit(parent);
             auto *validator = new QIntValidator(0, 65535, editor);
             editor->setValidator(validator);
             editor->setInputMethodHints(Qt::ImhFormattedNumbersOnly);
             return editor;
         }
-        else if (index.column() == 6 || index.column() == 7){// 死时间/高压
+        else if (index.column() == 4 || index.column() == 5){// 死时间/高压
             QLineEdit* editor = new QLineEdit(parent);
 
             QIntValidator* validator = nullptr;
-            if (index.column() == 7)
+            if (index.column() == 5)
                 validator = new QIntValidator(0, 1000, editor);
             else
                 validator = new QIntValidator(0, 65535, editor);
@@ -88,27 +66,23 @@ public:
             return editor;
         }
 
-        // 其他列默认行为
         return QStyledItemDelegate::createEditor(parent, {}, index);
     }
 
-    // 设置编辑器数据
     void setEditorData(QWidget *editor, const QModelIndex &index) const override
     {
-        // 将参数editor转换为对应创建的控件，再进行数据初始设置就行
-        if (index.column() == 2 || index.column() == 3 || index.column() == 5 || index.column() == 6 || index.column() == 7 ){
+        if (index.column() == 3 || index.column() == 4 || index.column() == 5){
             return QStyledItemDelegate::setEditorData(editor, index);
         }
-        else if (index.column() == 4){
+        else if (index.column() == 2){
             QComboBox *comboBox = static_cast<QComboBox *>(editor);
             comboBox->setCurrentText(index.data(Qt::EditRole).toString());
         }
     }
 
-    // 设置模型数据
     void setModelData(QWidget *editor, QAbstractItemModel *model, const QModelIndex &index) const override
     {
-        if (index.column() == 5) {
+        if (index.column() == 3) {
             auto *lineEdit = static_cast<QLineEdit *>(editor);
             bool ok = false;
             int v = lineEdit->text().trimmed().toInt(&ok);
@@ -117,10 +91,10 @@ public:
             model->setData(index, QString::number(qBound(0, v, 65535)), Qt::EditRole);
             return;
         }
-        if (index.column() == 2 || index.column() == 3 || index.column() == 6 || index.column() == 7 ){
+        if (index.column() == 4 || index.column() == 5){
             return QStyledItemDelegate::setModelData(editor, model, index);
         }
-        else if (index.column() == 4){
+        else if (index.column() == 2){
             QComboBox *comboBox = static_cast<QComboBox *>(editor);
             model->setData(index, comboBox->currentText(), Qt::EditRole);
         }
@@ -161,11 +135,6 @@ private slots:
     void on_tableWidget_itemChanged(QTableWidgetItem *item);
 
 private:
-    //获取指定行的经纬度，这里row从0开始计数
-    bool getLonLat(int row, double& lon, double& lat);
-    //设置经纬度，这里row从0开始计数
-    bool setLonLat(int row, double lon, double lat);
-
     // 编号从1开始；recordLog 为 true 时记录用户加载表格相关日志
     void loadAt(quint8 detId, bool recordLog = false);
     // 编号从1开始

@@ -1169,11 +1169,15 @@ void CommHelper::onFirstSpectrumFrame(quint8 detID, const QDateTime& receiveTime
         mShotTime = shotText;
     }
     const bool ok = HDF5Settings::instance()->writeShotTimeToCurrentH5(shotText);
+    quint32 spectrumRefreshMs = 0;
+    const DetParameter *detParameter = HDF5Settings::instance()->getDetParameters().value(detID);
+    if (detParameter)
+        spectrumRefreshMs = detParameter->spectrumRefreshTime;
     qInfo().noquote() << QStringLiteral("谱仪[#%1]收到首帧能谱，打靶时刻=%2%3")
                              .arg(detID)
                              .arg(shotText)
                              .arg(ok ? QStringLiteral("，已写入H5") : QStringLiteral("，写入H5失败"));
-    emit reportAutoShotTime(shotTime);
+    emit reportAutoShotTime(shotTime, spectrumRefreshMs);
 }
 
 
