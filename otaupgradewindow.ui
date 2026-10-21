@@ -134,46 +134,6 @@
        <string>谱仪#16</string>
       </property>
      </row>
-     <row>
-      <property name="text">
-       <string>谱仪#17</string>
-      </property>
-     </row>
-     <row>
-      <property name="text">
-       <string>谱仪#18</string>
-      </property>
-     </row>
-     <row>
-      <property name="text">
-       <string>谱仪#19</string>
-      </property>
-     </row>
-     <row>
-      <property name="text">
-       <string>谱仪#20</string>
-      </property>
-     </row>
-     <row>
-      <property name="text">
-       <string>谱仪#21</string>
-      </property>
-     </row>
-     <row>
-      <property name="text">
-       <string>谱仪#22</string>
-      </property>
-     </row>
-     <row>
-      <property name="text">
-       <string>谱仪#23</string>
-      </property>
-     </row>
-     <row>
-      <property name="text">
-       <string>谱仪#24</string>
-      </property>
-     </row>
      <column>
       <property name="text">
        <string>模块</string>

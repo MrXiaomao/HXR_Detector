@@ -11,8 +11,11 @@
 
 #include <QButtonGroup>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QAction>
 #include <QToolButton>
+#include <QMessageBox>
+#include <QCoreApplication>
 
 #include <QJsonArray>
 #include <QJsonObject>
@@ -33,7 +36,7 @@
 #include "H5Cpp.h"
 
 namespace {
-constexpr int kDetectorsPerPlot = 16;
+constexpr int kDetectorsPerPlot = DET_NUM;
 constexpr int kSpectrumPointCount = kFullSpectrumChannels;
 /** 统计表每行高度（与 setFixedHeight 计算一致） */
 constexpr int kStatsTableRowHeight = 25;
@@ -459,16 +462,14 @@ void CountRateStatisticsWindow::initUi()
         }
     }
 
-    initCustomPlot(ui->plot_up, tr("时间/s"), tr("计数率/cps"), 1, kDetectorsPerPlot,
-                   tr("计数曲线（通道1-16）"), 1000.0);
-    initCustomPlot(ui->plot_down, tr("时间/s"), tr("计数率/cps"), kDetectorsPerPlot + 1, DET_NUM,
-                   tr("计数曲线（通道17-32）"), 1000.0);
-    initCustomPlot(ui->spec_plot_up, tr("道址"), tr("计数"), 1, kDetectorsPerPlot,
-                   tr("累积能谱（通道1-16）"), kSpectrumPointCount);
-    initCustomPlot(ui->spec_plot_down, tr("道址"), tr("计数"), kDetectorsPerPlot + 1, DET_NUM,
-                   tr("累积能谱（通道17-32）"), kSpectrumPointCount);
+    initCustomPlot(ui->plot_up, tr("时间/s"), tr("计数率/cps"), 1, DET_NUM,
+                   tr("计数曲线（通道1-%1）").arg(DET_NUM), 1000.0);
+    initCustomPlot(ui->spec_plot_up, tr("道址"), tr("计数"), 1, DET_NUM,
+                   tr("累积能谱（通道1-%1）").arg(DET_NUM), kSpectrumPointCount);
+    ui->gridLayout_plot->setRowStretch(0, 1);
+    ui->gridLayout_plot->setRowStretch(1, 1);
 
-    // 默认：32通道原始/修正曲线都开启
+    // 默认：各通道原始/修正曲线都开启
     mOriginalEnabled = QVector<bool>(DET_NUM + 1, true);
     mCorrectEnabled = QVector<bool>(DET_NUM + 1, true);
     mOriginalLegendChecks = QVector<QCheckBox*>(DET_NUM + 1, nullptr);
@@ -886,15 +887,13 @@ void CountRateStatisticsWindow::replyWriteLog(const QString &msg, QtMsgType msgT
 
 void CountRateStatisticsWindow::updateTableRowCount()
 {
-    const int rowCount = DET_NUM + 2;
-    if (ui->tableWidget->rowCount() < rowCount)
-        ui->tableWidget->setRowCount(rowCount);
+    ui->tableWidget->setRowCount(DET_NUM + 2);
 }
 
 
 void CountRateStatisticsWindow::clearAllPlots()
 {
-    for (QCustomPlot* plot : {ui->plot_up, ui->plot_down, ui->spec_plot_up, ui->spec_plot_down})
+    for (QCustomPlot* plot : {ui->plot_up, ui->spec_plot_up})
     {
         for (int i = 0; i < plot->graphCount(); ++i)
             plot->graph(i)->data()->clear();
@@ -924,14 +923,10 @@ void CountRateStatisticsWindow::updatePlotVisibility(QCustomPlot* customPlot, in
 
 void CountRateStatisticsWindow::updateAllPlotVisibility()
 {
-    updatePlotVisibility(ui->plot_up, 1, kDetectorsPerPlot);
-    updatePlotVisibility(ui->plot_down, kDetectorsPerPlot + 1, DET_NUM);
-    updatePlotVisibility(ui->spec_plot_up, 1, kDetectorsPerPlot);
-    updatePlotVisibility(ui->spec_plot_down, kDetectorsPerPlot + 1, DET_NUM);
+    updatePlotVisibility(ui->plot_up, 1, DET_NUM);
+    updatePlotVisibility(ui->spec_plot_up, 1, DET_NUM);
     ui->plot_up->replot(QCustomPlot::rpQueuedReplot);
-    ui->plot_down->replot(QCustomPlot::rpQueuedReplot);
     ui->spec_plot_up->replot(QCustomPlot::rpQueuedReplot);
-    ui->spec_plot_down->replot(QCustomPlot::rpQueuedReplot);
 }
 
 
@@ -951,9 +946,9 @@ void CountRateStatisticsWindow::plotAllDetectors()
         const bool hasSpectrum = mMapSpectrum.contains(det) && mMapSpectrum[det].size() == kSpectrumPointCount
             && mMapSpectrumCorrect.contains(det) && mMapSpectrumCorrect[det].size() == kSpectrumPointCount;
 
-        QCustomPlot* countPlot = det <= kDetectorsPerPlot ? ui->plot_up : ui->plot_down;
-        QCustomPlot* specPlot = det <= kDetectorsPerPlot ? ui->spec_plot_up : ui->spec_plot_down;
-        const int localIndex = (det <= kDetectorsPerPlot ? det - 1 : det - kDetectorsPerPlot - 1);
+        QCustomPlot* countPlot = ui->plot_up;
+        QCustomPlot* specPlot = ui->spec_plot_up;
+        const int localIndex = det - 1;
         const int originalGraphIndex = localIndex;
         const int correctedGraphIndex = kDetectorsPerPlot + localIndex;
 
@@ -1000,15 +995,12 @@ void CountRateStatisticsWindow::plotAllDetectors()
     }
 
     ui->plot_up->rescaleAxes(true);
-    ui->plot_down->rescaleAxes(true);
     ui->spec_plot_up->rescaleAxes(true);
-    ui->spec_plot_down->rescaleAxes(true);
 
     const double countRangeStart = ui->spinBox_timeStart->value();
     const double countRangeEnd = ui->spinBox_timeEnd->value();
     if (countRangeStart <= countRangeEnd) {
         ui->plot_up->xAxis->setRange(countRangeStart, countRangeEnd);
-        ui->plot_down->xAxis->setRange(countRangeStart, countRangeEnd);
     }
 
     updateAllPlotVisibility();
@@ -1280,6 +1272,28 @@ void CountRateStatisticsWindow::on_action_open_triggered()
 void CountRateStatisticsWindow::on_action_exit_triggered()
 {
     mainWindow->close();
+}
+
+void CountRateStatisticsWindow::on_action_about_triggered()
+{
+    QString filename = QFileInfo(QCoreApplication::applicationFilePath()).baseName();
+    QMessageBox::about(this, tr("关于"),
+                       QString("<p>") +
+                           tr("版本") +
+                           QString("</p><span style='color:blue;'>%1 %2</span><p>").arg(filename, APP_VERSION) +
+                           tr("提交") +
+                           QString("</p><span style='color:blue;'>%1: %2</span><p>").arg(GIT_BRANCH, GIT_HASH) +
+                           tr("日期") +
+                           QString("</p><span style='color:blue;'>%1</span><p>").arg(GIT_DATE) +
+                           tr("开发者") +
+                           QString("</p><span style='color:blue;'>MaoXiaoqing</span><p>") +
+                           "</p><p>四川大学物理学院 版权所有 (C) 2026</p>"
+                       );
+}
+
+void CountRateStatisticsWindow::on_action_aboutQt_triggered()
+{
+    QMessageBox::aboutQt(this);
 }
 
 bool CountRateStatisticsWindow::updateMeasureStartTimeFromShotTime(const QDateTime &shotTime,

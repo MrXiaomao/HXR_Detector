@@ -198,21 +198,13 @@
          <enum>QAbstractItemView::SingleSelection</enum>
         </property>
         <property name="columnCount">
-         <number>24</number>
+         <number>16</number>
         </property>
         <row>
          <property name="text">
           <string>交换机</string>
          </property>
         </row>
-        <column/>
-        <column/>
-        <column/>
-        <column/>
-        <column/>
-        <column/>
-        <column/>
-        <column/>
         <column/>
         <column/>
         <column/>

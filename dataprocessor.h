@@ -60,7 +60,7 @@ public:
      */
     void stopMeasure();
 
-    //获取探测器编号1-32
+    //获取探测器编号1-16
     quint8 getIndex(){
         return this->mIndex;
     };

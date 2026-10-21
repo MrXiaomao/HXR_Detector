@@ -6,7 +6,7 @@
 #include <QtGlobal>
 #include <cstring>
 
-#define DET_NUM 32
+#define DET_NUM 16
 #define IP_LENGTH 17
 #define MAC_LENGTH 18
 #define DEFAULT_HDF5_FILENAME "./Config/Settings.H5"

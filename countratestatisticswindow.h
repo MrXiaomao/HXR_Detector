@@ -44,6 +44,10 @@ private slots:
 
     void on_action_exit_triggered();
 
+    void on_action_about_triggered();
+
+    void on_action_aboutQt_triggered();
+
     void on_action_startParse_triggered();
 
     void on_action_stopParse_triggered();

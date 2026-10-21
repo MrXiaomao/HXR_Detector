@@ -275,7 +275,7 @@ void HDF5Settings::export_LocalDetPara()
 void HDF5Settings::writeDetParStrAttr(H5::DataSet& dataset)
 {
     // 给每个字段写解释（多个键）
-    writeStrAttr(dataset, "id",   "通道号(1~32)");
+    writeStrAttr(dataset, "id",   "通道号(1~16)");
     writeStrAttr(dataset, "gain", "增益(0.08~10.0)");
     writeStrAttr(dataset, "deathT", "探测器死时间设定(*10ns)");
     writeStrAttr(dataset, "Threshold", "触发阈值，低于阈值的波形不计入能谱");
