@@ -512,10 +512,14 @@ H5::DataSet HDF5Settings::createSpecDataSet(H5::H5File* H5File, quint8 index)
     H5::DataSet dataset = cfgGroup.createDataSet("Spectrum", H5::PredType::NATIVE_UINT, dataspace, prop_list);
 
     writeStrAttr(dataset, "0", "能谱序号");
-    writeStrAttr(dataset, "1", "utc整数秒");
-    writeStrAttr(dataset, "2", "utc小数秒");
+    writeStrAttr(dataset, "1", "utc整数秒，从1900-01-01 00:00:00 UTC起算");
+    writeStrAttr(dataset, "2", "utc小数秒，单位1/2^32秒");
     writeStrAttr(dataset, "3", "能量测量时间间隔,单位ms");
     writeStrAttr(dataset, "4", "死时间,单位*10ns");
+    // 列 5..1028 共 1024 列，与 H5Spectrum::spectrum[kFullSpectrumChannels] 一一对应
+    writeStrAttr(dataset, "5-1028",
+                 "1024道能谱计数：列5为第1道(道址0)，列1028为第1024道(道址1023)。"
+                 "每道为本刷新周期内的计数(uint32，线上16bit升位存放)，不是从开测起的累积能谱");
 
     return dataset;
 }
