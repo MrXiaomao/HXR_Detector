@@ -1162,6 +1162,7 @@ void CommHelper::onFirstSpectrumFrame(quint8 detID, const QDateTime& receiveTime
         mAwaitAutoShotTime = false;
     }
 
+    // 打靶时刻需要减去能谱测量时长
     const QDateTime shotTime = receiveTime;
     const QString shotText = shotTime.toString(QStringLiteral("yyyy-MM-dd hh:mm:ss.zzz"));
     {
@@ -1193,7 +1194,8 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
     constexpr int kReserveH5PerDetector = 60; // 每路探测器预留60个能谱数据
     constexpr int kReserveRawBytesPerDetector = 1024 * 1024; // 每路探测器预留1MB网口原始数据，50ms能谱刷新频率下0.625MB/s
 
-    mMeasureStartTime = tmStart.toString("yyyy-MM-dd_HHmmss");// QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
+    mMeasureStartTime = tmStart.toString("yyyy-MM-dd HH:mm:ss");// QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
+    const QString measurefilePrefix = tmStart.toString("yyyy-MM-dd_HHmmss");// QDateTime::currentDateTime().toString("yyyy-MM-dd_HHmmss");
     mCurrentWorkMode = workMode;
     const bool wasMeasuring = mMeasuring;
     mMeasuring = true;
@@ -1220,7 +1222,7 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
             QMutexLocker locker(&mAutoShotTimeMutex);
             mShotTime = shotTime;
         }
-        QString filePath = QString("%1/%2/%3.H5").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime);
+        QString filePath = QString("%1/%2/%3.H5").arg(mShotDir).arg(mShotNum).arg(measurefilePrefix);
         HDF5Settings::instance()->closeH5Spectrum();
         HDF5Settings::instance()->createH5Spectrum(filePath, mMeasureStartTime, shotTime);
         mDataFileList.push_back(filePath);
@@ -1243,11 +1245,11 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
             if (!detectorDataProcessor->isFreeSocket()){
                 //创建有效网络数据文件存储
                 if (!mDetectFileProcessor.contains(index)){
-                    QString filePath = QString("%1/%2/%3_%4_能谱.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(index);
+                    QString filePath = QString("%1/%2/%3_%4_能谱.dat").arg(mShotDir).arg(mShotNum).arg(measurefilePrefix).arg(index);
                     if (CommandAdapter::WorkMode::wmWaveform == workMode)
-                        filePath = QString("%1/%2/%3_%4_波形.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(index);
+                        filePath = QString("%1/%2/%3_%4_波形.dat").arg(mShotDir).arg(mShotNum).arg(measurefilePrefix).arg(index);
                     else if (CommandAdapter::WorkMode::wmParticle == workMode)
-                        filePath = QString("%1/%2/%3_%4_粒子.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(index);
+                        filePath = QString("%1/%2/%3_%4_粒子.dat").arg(mShotDir).arg(mShotNum).arg(measurefilePrefix).arg(index);
 
                     mDetectFileProcessor[index] = new QFile(filePath);
                     if (mDetectFileProcessor[index]->open(QIODevice::WriteOnly))
@@ -1264,11 +1266,12 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
                     qDebug().nospace() << "谱仪[#"<< index << "]创建存储文件：" << absolutePath;
                 }
 
+                emit measureStart(index);
+
                 if (measureMode == CommandAdapter::MeasureMode::mmManual)
                     detectorDataProcessor->startMeasure(workMode, sendAlphaGammaThold);
                 else
                     detectorDataProcessor->startAutoMeasure(tmStart, workMode);
-                emit measureStart(index);
             }
         }
     }
@@ -1302,7 +1305,7 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
             if (!pending.isEmpty())
                 HDF5Settings::instance()->writeH5SpectrumBatch(index, pending);
 
-            const QString channelStartTime = mMeasureStartTime;
+            const QString channelStartTime = measurefilePrefix;
             QString h5Path = QString("%1/%2/%3_%4.H5")
                                  .arg(mShotDir)
                                  .arg(mShotNum)
@@ -1323,11 +1326,11 @@ void CommHelper::startMeasure(QDateTime tmStart, CommandAdapter::MeasureMode mea
         if (!detectorDataProcessor->isFreeSocket()){
             //创建有效网络数据文件存储
             if (!mDetectFileProcessor.contains(index)){
-                QString filePath = QString("%1/%2/%3_%4_能谱.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(index);
+                QString filePath = QString("%1/%2/%3_%4_能谱.dat").arg(mShotDir).arg(mShotNum).arg(measurefilePrefix).arg(index);
                 if (CommandAdapter::WorkMode::wmWaveform == workMode)
-                    filePath = QString("%1/%2/%3_%4_波形.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(index);
+                    filePath = QString("%1/%2/%3_%4_波形.dat").arg(mShotDir).arg(mShotNum).arg(measurefilePrefix).arg(index);
                 else if (CommandAdapter::WorkMode::wmParticle == workMode)
-                    filePath = QString("%1/%2/%3_%4_粒子.dat").arg(mShotDir).arg(mShotNum).arg(mMeasureStartTime).arg(index);
+                    filePath = QString("%1/%2/%3_%4_粒子.dat").arg(mShotDir).arg(mShotNum).arg(measurefilePrefix).arg(index);
 
                 mDetectFileProcessor[index] = new QFile(filePath);
                 if (mDetectFileProcessor[index]->open(QIODevice::WriteOnly))

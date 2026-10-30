@@ -794,7 +794,7 @@
                    </size>
                   </property>
                   <property name="text">
-                   <string>测量时间范围（s）：</string>
+                   <string>测量时间范围（ms）：</string>
                   </property>
                   <property name="alignment">
                    <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter</set>
@@ -889,7 +889,7 @@
              <item row="4" column="0">
               <widget class="QLabel" name="label">
                <property name="text">
-                <string>时间步长/s：</string>
+                <string>时间步长/ms：</string>
                </property>
                <property name="alignment">
                 <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
@@ -899,7 +899,7 @@
              <item row="2" column="0" rowspan="2">
               <widget class="QLabel" name="label_8">
                <property name="text">
-                <string>解析时间终点/s：</string>
+                <string>解析时间终点/ms：</string>
                </property>
                <property name="alignment">
                 <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>
@@ -964,7 +964,7 @@
              <item row="1" column="0">
               <widget class="QLabel" name="label_6">
                <property name="text">
-                <string>解析时间起点/s：</string>
+                <string>解析时间起点/ms：</string>
                </property>
                <property name="alignment">
                 <set>Qt::AlignRight|Qt::AlignTrailing|Qt::AlignVCenter</set>

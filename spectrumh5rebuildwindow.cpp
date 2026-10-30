@@ -1,4 +1,4 @@
-#include "spectrumh5rebuildwindow.h"
+﻿#include "spectrumh5rebuildwindow.h"
 #include "ui_spectrumh5rebuildwindow.h"
 
 #include "globalsettings.h"
@@ -465,13 +465,14 @@ void SpectrumH5RebuildWindow::on_bt_startRebuild_clicked()
         return;
     }
 
-    ui->lineEdit_outputH5->setText(mScanResult.defaultOutputH5Path);
+    //ui->lineEdit_outputH5->setText(mScanResult.defaultOutputH5Path);
 
     RebuildJob job;
     job.shotDirectory = mScanResult.shotDirectory;
     job.measureParamPath = mScanResult.measureParamPath;
     job.outputH5Path = ui->lineEdit_outputH5->text().trimmed();
     job.startTime = mScanResult.measureStartTime;
+    job.shotTime = job.startTime;// 重组默认打靶时刻等于开始时刻
     job.datFiles = mScanResult.datFiles;
 
     if (job.outputH5Path.isEmpty()) {

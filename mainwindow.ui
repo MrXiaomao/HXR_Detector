@@ -13,6 +13,10 @@
   <property name="windowTitle">
    <string>HXR分时能谱软件</string>
   </property>
+  <property name="windowIcon">
+   <iconset resource="lResource.qrc">
+    <normaloff>:/resource/LOGO.png</normaloff>:/resource/LOGO.png</iconset>
+  </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QHBoxLayout" name="horizontalLayout_2">
     <property name="spacing">
@@ -1547,7 +1551,7 @@
      <x>0</x>
      <y>0</y>
      <width>1431</width>
-     <height>21</height>
+     <height>18</height>
     </rect>
    </property>
    <widget class="QMenu" name="menu_File">
@@ -2107,6 +2111,7 @@
   </customwidget>
  </customwidgets>
  <resources>
+  <include location="lResource.qrc"/>
   <include location="../3rdParty/resource/resource.qrc"/>
   <include location="../3rdParty/resource/resource.qrc"/>
  </resources>

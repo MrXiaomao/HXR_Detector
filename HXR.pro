@@ -255,3 +255,8 @@ win32:*-msvc* {
     QMAKE_POST_LINK += $$QMAKE_COPY \"$$HDF5_LIBDIR\\hdf5.dll\" \"$$HDF5_OUTDIR\"
     QMAKE_POST_LINK += $$escape_expand(\\n\\t)$$QMAKE_COPY \"$$HDF5_LIBDIR\\zlib1.dll\" \"$$HDF5_OUTDIR\"
 }
+
+RESOURCES += \
+    lResource.qrc
+
+RC_ICONS = $$PWD/resource/LOGO.ico

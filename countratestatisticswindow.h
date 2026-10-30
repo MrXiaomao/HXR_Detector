@@ -77,7 +77,7 @@ private:
     void applyOriginalGlobalState(bool enableAll);
     void applyCorrectGlobalState(bool enableAll);
     bool updateMeasureStartTimeFromShotTime(const QDateTime &shotTime, bool resetParseRange = true);
-    void updateMeasureStartSecond(double startSecond, bool resetParseRange = true);
+    void updateMeasureStartMs(double startMs, bool resetParseRange = true);
 
     Ui::CountRateStatisticsWindow *ui;
     bool mIsDarkTheme = true;
@@ -86,8 +86,8 @@ private:
     class QGoodWindowHelper *mainWindow = nullptr;
     QDateTime mMeasureStartTime;           // H5 Config/StartTime（或文件名推算）
     /** 开测相对打靶的秒数 offset = StartTime - ShotTime；点时刻 t = offset + (sequence-sequence0)×dt；无 ShotTime 时为 0 */
-    double mMeasureStartSecond = 0.0;
-    double mMeasureDurationSecond = 0.0;
+    double mMeasureStartMs = 0.0;
+    double mMeasureDurationMs = 0.0;
 
     // 中断解析
     std::atomic<bool> mInterrupted = false;

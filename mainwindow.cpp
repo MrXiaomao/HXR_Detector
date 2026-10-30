@@ -149,9 +149,6 @@ MainWindow::MainWindow(bool isDarkTheme, QWidget *parent)
             data.disconnectWallMs = 0;
         }
 
-        // 重置该探测器的能谱累积（保留计数率曲线时间轴与已绘数据）
-        resetDetectorSpectrum(index);
-
         // 记录探测器正在测量
         mDetectorMeasuring[index] = true;
         // 波形/粒子测量期间下线再上线不自动续测；能谱保持自动续测
@@ -907,6 +904,7 @@ void MainWindow::clearCustomPlotData(const std::vector<int>& channels)
             const int graphIndex = detectorId - 1;
             if (graphIndex >= 0 && graphIndex < customPlot->graphCount())
                 customPlot->graph(graphIndex)->data()->clear();
+            customPlot->replot(QCustomPlot::rpQueuedReplot);
         }
 
         // 能谱图
@@ -916,6 +914,7 @@ void MainWindow::clearCustomPlotData(const std::vector<int>& channels)
             const int graphIndex = detectorId - 1;
             if (graphIndex >= 0 && graphIndex < customPlot->graphCount())
                 customPlot->graph(graphIndex)->data()->clear();
+            customPlot->replot(QCustomPlot::rpQueuedReplot);
         }
 
         // 全新开测/手动清图：重置计数率时间轴
@@ -1045,6 +1044,9 @@ void MainWindow::onSystemTimer()
     if (commHelper->isMeasuring()/* && (t % m_specPlotRefreshTime) == 0*/){
         // 开始测量以后，有一段冷却时长，这段时间内可以不用刷新能谱
         if (mCountRatePlotReady.exchange(false)) {
+            if (ui->spectroMeter1_top->property("enableAutoScale").toBool()) {
+                ui->spectroMeter1_top->rescaleAxes(true);
+            }
             ui->spectroMeter1_top->replot(QCustomPlot::rpQueuedReplot);
         }
         if (mSpectrumPlotReady.exchange(false)) {
@@ -1194,6 +1196,7 @@ void MainWindow::onFullSpectrum_Thread(int index, const FullSpectrum& fullSpectr
     {
         QMutexLocker locker(&mDetectorDataMutex);
         DetectorData &data = m_detectorData[index];
+        //locker.unlock();
 
         // 累积能谱
         quint32 currentCount = 0;
@@ -1203,15 +1206,22 @@ void MainWindow::onFullSpectrum_Thread(int index, const FullSpectrum& fullSpectr
         }
 
         // 记录累积计数率
-        data.lastAccumulateCount += currentCount;
-        data.lastAccuCountFixed += currentCount * 1.0 * fullSpectrum.measureTime * 1e6
+        data.lastAccumulateCount = currentCount;
+        data.lastAccuCountFixed = currentCount * 1.0 * fullSpectrum.measureTime * 1e6
             / (fullSpectrum.measureTime * 1e6 - fullSpectrum.deathTime * 10); // 死时间修正，注意测量时间单位ms，死时间单位*10ns
 
+        double a = currentCount * 1.0 * fullSpectrum.measureTime * 1e6;
+        quint32 b = (fullSpectrum.measureTime * 1e6 - fullSpectrum.deathTime * 10);
+        if (fullSpectrum.measureTime * 1e6 * 0.8 < fullSpectrum.deathTime * 10)
+            qDebug() << index << fullSpectrum.sequence << fullSpectrum.measureTime * 1e6 << fullSpectrum.deathTime * 10;
+
+        double c = a / b;
         //最快每秒更新一次能谱、计数率,这里不考虑丢包带来的计数率修复
         const quint32 accuTime = (fullSpectrum.sequence - data.lastSpectrumID) * fullSpectrum.measureTime;//单位ms
         currenTime = data.countRateTimeOffsetSec
             + 1.0 * fullSpectrum.sequence * fullSpectrum.measureTime / 1000; //单位s
-        if (accuTime >= 1000) {
+        //if (accuTime >= m_specPlotRefreshTime)
+        {
             const double countRate = 1000.0 * data.lastAccumulateCount * 1.0 / accuTime; //cps
             fixedCountRate = 1000.0 * data.lastAccuCountFixed * 1.0 / accuTime; //修正后的cps
             data.lastSpectrumID = fullSpectrum.sequence;
@@ -1231,7 +1241,7 @@ void MainWindow::onFullSpectrum_Thread(int index, const FullSpectrum& fullSpectr
     QMetaObject::invokeMethod(this, [this, index, spectrumSnap, currenTime, fixedCountRate]() {
         updateSpecPlotData(index, spectrumSnap.data());
         updateCountRatePlotData(index, currenTime, fixedCountRate);
-    }, Qt::QueuedConnection);
+    }, Qt::DirectConnection/*DirectConnection*//*QueuedConnection*/);
 }
 
 // 将缓存的温度数据写入磁盘，避免丢数据
@@ -1555,7 +1565,7 @@ void MainWindow::on_action_startAllMeasure_triggered()
 
     mEnableAutoMeasure = ui->cbb_measureMode->currentIndex()==1;
     mEnableExtendTrigger = false;
-    m_specPlotRefreshTime = qMax((quint32)1000, (quint32)HDF5Settings::instance()->getDetParameters().value(1)->spectrumRefreshTime) / 1000;
+    m_specPlotRefreshTime = qMax((quint32)1, (quint32)HDF5Settings::instance()->getDetParameters().value(1)->spectrumRefreshTime);
 
     UserActionLogger::logMessage(mEnableAutoMeasure
                                      ? QStringLiteral("点击开始全部测量(自动，硬件触发)")
@@ -1588,6 +1598,9 @@ void MainWindow::on_action_startAllMeasure_triggered()
     for (auto index : mOnlineDetectors){
         if ((index != 0) && (!m_selectedChannels.contains(index)))
             m_selectedChannels.append(index);
+
+        // 重置该探测器的能谱累积（保留计数率曲线时间轴与已绘数据）
+        resetDetectorSpectrum(index);
     }
 
     mAutoMeasureDelayTimer->stop();
@@ -1613,8 +1626,8 @@ void MainWindow::on_btn_startSelectedMeasure_clicked()
         qInfo().nospace().noquote() << "自定义通道测量下禁用了自动测量，已自动切换为手动测量模式";
     }
 
-    m_specPlotRefreshTime = qMax((quint32)1000,
-                                 (quint32)HDF5Settings::instance()->getDetParameters().value(1)->spectrumRefreshTime) / 1000;
+    m_specPlotRefreshTime = qMax((quint32)1,
+                                 (quint32)HDF5Settings::instance()->getDetParameters().value(1)->spectrumRefreshTime);
     
     //先检查路径有效性 lineEdit_filePath
     QString filePath = ui->lineEdit_filePath->text();
@@ -2415,7 +2428,6 @@ void MainWindow::updateCountRatePlotData(int detectorId, double fpgaTime, double
     getGraph(detectorId, false)->addData(fpgaTime, countRate);
 
     if (customPlot->property("enableAutoScale").toBool()) {
-        customPlot->rescaleAxes(true);
         mCountRatePlotReady.store(true);
         return;
     }

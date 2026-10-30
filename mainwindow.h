@@ -345,7 +345,7 @@ private:
     // QMutex mMutexTemperature; //温度数据缓存锁
     void flushTemperatureCache();
 
-    quint32 m_specPlotRefreshTime = 1; // 能谱刷新时长(s)
+    quint32 m_specPlotRefreshTime = 1; // 能谱刷新时长(ms)
 
     // 日志内容查找功能相关
     QString mLastSearchText;  // 上次查找的文本

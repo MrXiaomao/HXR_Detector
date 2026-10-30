@@ -388,14 +388,23 @@ void DataProcessor::mergeSubSpec_Thread(quint8 no, const QByteArray& data){
 
     const quint16 part = subSpecPackket.spectrumSubNo; // 1..2
     if (part < 1 || part > kSpectrumSubCount) {
-        qWarning() << "Invalid sub-spectrum part, seq:" << spectrumSeq
+        qWarning() << mIndex << "Invalid sub-spectrum part, seq:" << spectrumSeq
                    << ", part:" << static_cast<int>(part);
         return;
     }
 
     if (mAwaitFirstSpectrumFrame) {
         mAwaitFirstSpectrumFrame = false;
-        emit reportFirstSpectrumFrame(no, QDateTime::currentDateTime());
+        if (subSpecPackket.spectrumSeq != 1)
+            qWarning() << "能谱序号无效：" << subSpecPackket.spectrumSeq;
+        // quint32 timeUTCs = subSpecPackket.timeUTCs;
+        // quint32 timeUTCms = subSpecPackket.timeUTCms;
+        // quint64 msecond = static_cast<quint64>(timeUTCms) * 1000 / std::pow(2,32);//65536; // 毫秒
+
+        // // UTC转Unix时间戳，也就是从1970年1月1日00：00：00开始计算的整数秒数
+        // quint64 tmUnix = static_cast<quint64>(timeUTCs) - 2208988800ULL; // UTC时间戳（1970）-unix时间戳
+        QDateTime triggerDateTime = QDateTime::currentDateTime().addMSecs((-1)*subSpecPackket.measureTime);//QDateTime::fromMSecsSinceEpoch(tmUnix*1000 + msecond);//QDateTime::currentDateTime()
+        emit reportFirstSpectrumFrame(no, triggerDateTime);
     }
 
     FullSpectrum fullSpectrumCopy;

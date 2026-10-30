@@ -122,7 +122,7 @@ int firstDetectorWithSpectrumRows(H5::H5File &file)
     return 0;
 }
 
-/** spinBox 时间步长下限（s）：measureTime<=1s 时为 1，否则按 ms 向上取整到秒 */
+/** spinBox 时间步长下限（ms）：measureTime<=1ms 时为 1，否则按 ms 向上取整到秒 */
 int minTimeStepSecFromMeasureTimeMs(quint32 measureTimeMs)
 {
     if (measureTimeMs <= 1000)
@@ -470,8 +470,12 @@ void CountRateStatisticsWindow::initUi()
     ui->gridLayout_plot->setRowStretch(1, 1);
 
     // 默认：各通道原始/修正曲线都开启
-    mOriginalEnabled = QVector<bool>(DET_NUM + 1, true);
-    mCorrectEnabled = QVector<bool>(DET_NUM + 1, true);
+    mOriginalEnabled = QVector<bool>(DET_NUM + 1, false);
+    mCorrectEnabled = QVector<bool>(DET_NUM + 1, false);
+    for (int i=0; i<=4; ++i){
+        mOriginalEnabled[i] = true;
+        mCorrectEnabled[i] = true;
+    }
     mOriginalLegendChecks = QVector<QCheckBox*>(DET_NUM + 1, nullptr);
     mCorrectLegendChecks = QVector<QCheckBox*>(DET_NUM + 1, nullptr);
 
@@ -958,23 +962,23 @@ void CountRateStatisticsWindow::plotAllDetectors()
             const QVector<QPair<double, double>> &corrPairs = mMapCountCorrect[det];
             const int n = origPairs.size();
 
-            QVector<double> timeSec;
+            QVector<double> timeMs;
             QVector<double> yOriginal;
             QVector<double> yCorrect;
-            timeSec.reserve(n);
+            timeMs.reserve(n);
             yOriginal.reserve(n);
             yCorrect.reserve(n);
             for (int i = 0; i < n; ++i)
             {
-                timeSec << origPairs[i].first;
+                timeMs << origPairs[i].first;
                 yOriginal << origPairs[i].second;
                 yCorrect << corrPairs[i].second;
             }
 
             if (correctedGraphIndex < countPlot->graphCount())
             {
-                countPlot->graph(originalGraphIndex)->setData(timeSec, yOriginal);
-                countPlot->graph(correctedGraphIndex)->setData(timeSec, yCorrect);
+                countPlot->graph(originalGraphIndex)->setData(timeMs, yOriginal);
+                countPlot->graph(correctedGraphIndex)->setData(timeMs, yCorrect);
             }
         }
 
@@ -997,8 +1001,8 @@ void CountRateStatisticsWindow::plotAllDetectors()
     ui->plot_up->rescaleAxes(true);
     ui->spec_plot_up->rescaleAxes(true);
 
-    const double countRangeStart = ui->spinBox_timeStart->value();
-    const double countRangeEnd = ui->spinBox_timeEnd->value();
+    const double countRangeStart = ui->spinBox_timeStart->value() / 1000; // ms->s
+    const double countRangeEnd = ui->spinBox_timeEnd->value() / 1000; // ms->s
     if (countRangeStart <= countRangeEnd) {
         ui->plot_up->xAxis->setRange(countRangeStart, countRangeEnd);
     }
@@ -1152,8 +1156,8 @@ void CountRateStatisticsWindow::on_action_open_triggered()
     settings.setValue("mainWindow/LastFilePath", filePath);
     ui->textBrowser_filepath->setText(filePath);
     mMeasureStartTime = QDateTime();
-    mMeasureStartSecond = 0.0;
-    mMeasureDurationSecond = 0.0;
+    mMeasureStartMs = 0.0;
+    mMeasureDurationMs = 0.0;
 
     // 解析文件，获取能谱范围时长（从首个有数据的通道读取）
     try {
@@ -1205,7 +1209,7 @@ void CountRateStatisticsWindow::on_action_open_triggered()
         dataset.read(row_data.data(), H5::PredType::NATIVE_UINT, mem_space, file_space);
         const FullSpectrum *data = reinterpret_cast<const FullSpectrum *>(row_data.data());
 
-        mMeasureDurationSecond = rows * data->measureTime / 1000.0;
+        mMeasureDurationMs = rows * data->measureTime;
         QDateTime measureStartTime = HDF5Settings::measureStartTimeFromFileName(filePath);
         QDateTime shotTime;
         if (H5Lexists(file.getId(), "Config", H5P_DEFAULT) > 0) {
@@ -1228,34 +1232,35 @@ void CountRateStatisticsWindow::on_action_open_triggered()
             ui->fusionDateTime->setDateTime(shotTime);
             // 打开文件时尽量保留上次解析起止（若仍落在测量范围内）
             if (updateMeasureStartTimeFromShotTime(shotTime, false)) {
-                emit reporWriteLog(tr("已按 H5 中 ShotTime 设置时间零点（相对开测偏移 %1 s）；仍可通过打靶时刻控件覆盖")
-                                       .arg(mMeasureStartSecond));
+                emit reporWriteLog(tr("已按 H5 中 ShotTime 设置时间零点（相对开测偏移 %1 ms）；仍可通过打靶时刻控件覆盖")
+                                       .arg(mMeasureStartMs));
             }
         } else if (mMeasureStartTime.isValid()) {
             // 无 ShotTime：时间零点=开测时刻，fusionDateTime 预填开测时刻便于手工改成真实打靶时刻
-            updateMeasureStartSecond(0, false);
+            updateMeasureStartMs(0, false);
             ui->fusionDateTime->setDateTime(mMeasureStartTime);
             emit reporWriteLog(tr("未读取到有效打靶时刻，暂以开测时刻为时间零点；请在打靶时刻控件中补填后点「导入打靶时刻」"), QtWarningMsg);
         } else {
-            updateMeasureStartSecond(0, false);
+            updateMeasureStartMs(0, false);
             emit reporWriteLog(tr("未读取到有效开测时刻与打靶时刻，时间轴从 0 起；请打开有效测量文件"), QtWarningMsg);
         }
 
         // 设置时间步长下限
         if (data->measureTime == 0) {
-            emit reporWriteLog(tr("参考通道#%1，测量时长/s：%2").arg(probeIndex).arg(mMeasureDurationSecond), QtWarningMsg);
+            emit reporWriteLog(tr("参考通道#%1，测量时长/ms：%2").arg(probeIndex).arg(mMeasureDurationMs), QtWarningMsg);
             emit reporWriteLog(tr("首行 measureTime 为 0，无法设置时间步长下限"), QtWarningMsg);
         } else {
-            const int minStepSec = minTimeStepSecFromMeasureTimeMs(data->measureTime);
+            const int minStepMs = data->measureTime;//minTimeStepSecFromMeasureTimeMs(data->measureTime);
+            ui->spinBox->setMinimum(minStepMs);
+            ui->spinBox->setMaximum(mMeasureDurationMs);
             int currentValue = ui->spinBox->value();
-            if (ui->spinBox->value() < minStepSec)
-                ui->spinBox->setValue(minStepSec);
-            ui->spinBox->setMinimum(minStepSec);
-            emit reporWriteLog(tr("参考通道#%1，测量时长/s：%2，单帧 measureTime=%3 ms，时间步长下限=%4 s")
+            // if (currentValue < minStepMs)
+                ui->spinBox->setValue(minStepMs);
+            emit reporWriteLog(tr("参考通道#%1，测量时长/ms：%2，单帧 measureTime=%3 ms，时间步长下限=%4 ms")
                                    .arg(probeIndex)
-                                   .arg(mMeasureDurationSecond)
+                                   .arg(mMeasureDurationMs)
                                    .arg(data->measureTime)
-                                   .arg(minStepSec));
+                                   .arg(minStepMs));
         }
 
         dataset.close();
@@ -1307,42 +1312,42 @@ bool CountRateStatisticsWindow::updateMeasureStartTimeFromShotTime(const QDateTi
     measureStartTime.setTimeSpec(Qt::UTC);
     fusionShotTime.setTimeSpec(Qt::UTC);
 
-    updateMeasureStartSecond(fusionShotTime.msecsTo(measureStartTime) / 1000.0, resetParseRange);
+    updateMeasureStartMs(fusionShotTime.msecsTo(measureStartTime), resetParseRange);
     return true;
 }
 
-void CountRateStatisticsWindow::updateMeasureStartSecond(double startSecond, bool resetParseRange)
+void CountRateStatisticsWindow::updateMeasureStartMs(double startMs, bool resetParseRange)
 {
-    mMeasureStartSecond = startSecond;
-    ui->line_measure_startT->setText(QString::number(startSecond));
-    const double endSecond = mMeasureDurationSecond + startSecond;
-    ui->line_measure_endT->setText(QString::number(endSecond));
+    mMeasureStartMs = startMs;
+    ui->line_measure_startT->setText(QString::number(startMs));
+    const double endMilliSecond = mMeasureDurationMs + startMs;
+    ui->line_measure_endT->setText(QString::number(endMilliSecond));
 
     const double intMin = static_cast<double>(std::numeric_limits<int>::min());
     const double intMax = static_cast<double>(std::numeric_limits<int>::max());
-    const int minimumStartSecond = static_cast<int>(std::ceil(qBound(intMin, startSecond, intMax)));
-    const int maximumEndSecond = static_cast<int>(std::floor(qBound(intMin, endSecond, intMax)));
+    const int minimumStartMs = static_cast<int>(std::ceil(qBound(intMin, startMs, intMax)));
+    const int maximumEndMs = static_cast<int>(std::floor(qBound(intMin, endMilliSecond, intMax)));
 
     const int prevStart = ui->spinBox_timeStart->value();
     const int prevEnd = ui->spinBox_timeEnd->value();
 
     // 先放宽范围，再设值，避免 spinBox 钳制导致起止错乱
-    ui->spinBox_timeStart->setMinimum(minimumStartSecond);
-    ui->spinBox_timeStart->setMaximum(qMax(minimumStartSecond, maximumEndSecond));
-    ui->spinBox_timeEnd->setMinimum(minimumStartSecond);
-    ui->spinBox_timeEnd->setMaximum(qMax(minimumStartSecond, maximumEndSecond));
+    ui->spinBox_timeStart->setMinimum(minimumStartMs);
+    ui->spinBox_timeStart->setMaximum(qMax(minimumStartMs, maximumEndMs));
+    ui->spinBox_timeEnd->setMinimum(minimumStartMs);
+    ui->spinBox_timeEnd->setMaximum(qMax(minimumStartMs, maximumEndMs));
 
     if (!resetParseRange
-        && prevStart >= minimumStartSecond
-        && prevEnd <= maximumEndSecond
+        && prevStart >= minimumStartMs
+        && prevEnd <= maximumEndMs
         && prevStart <= prevEnd) {
         // 打开文件时优先保留上次（或已加载）的解析起止
         ui->spinBox_timeStart->setValue(prevStart);
         ui->spinBox_timeEnd->setValue(prevEnd);
     } else {
         // 导入打靶时刻，或旧区间落在测量范围外：对齐整段测量范围
-        ui->spinBox_timeStart->setValue(minimumStartSecond);
-        ui->spinBox_timeEnd->setValue(maximumEndSecond);
+        ui->spinBox_timeStart->setValue(minimumStartMs);
+        ui->spinBox_timeEnd->setValue(maximumEndMs);
     }
 }
 
@@ -1360,8 +1365,8 @@ void CountRateStatisticsWindow::on_ConfirmTime_clicked()
     }
 
     if (updateMeasureStartTimeFromShotTime(shotTime)) {
-        emit reporWriteLog(tr("已按打靶时刻控件更新时间零点（相对开测偏移 %1 s，可为负），可开始解析")
-                               .arg(mMeasureStartSecond));
+        emit reporWriteLog(tr("已按打靶时刻控件更新时间零点（相对开测偏移 %1 ms，可为负），可开始解析")
+                               .arg(mMeasureStartMs));
     }
 }
 
@@ -1387,9 +1392,9 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
             QDateTime fusionShotTime = shotFromUi;
             measureStartTime.setTimeSpec(Qt::UTC);
             fusionShotTime.setTimeSpec(Qt::UTC);
-            mMeasureStartSecond = fusionShotTime.msecsTo(measureStartTime) / 1000.0;
-            ui->line_measure_startT->setText(QString::number(mMeasureStartSecond));
-            ui->line_measure_endT->setText(QString::number(mMeasureDurationSecond + mMeasureStartSecond));
+            mMeasureStartMs = fusionShotTime.msecsTo(measureStartTime);
+            ui->line_measure_startT->setText(QString::number(mMeasureStartMs));
+            ui->line_measure_endT->setText(QString::number(mMeasureDurationMs + mMeasureStartMs));
         }
     }
 
@@ -1399,73 +1404,73 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
         emit reporWriteLog(tr("请先打开测量文件"), QtWarningMsg);
         return;
     }
-    if (mMeasureDurationSecond <= 0) {
+    if (mMeasureDurationMs <= 0) {
         qApp->restoreOverrideCursor();
         emit reporWriteLog(tr("测量时长无效，请重新打开测量文件"), QtWarningMsg);
         return;
     }
 
     // 测量时间范围（相对打靶）：[mMeasureStartSecond, mMeasureStartSecond + duration]
-    const double measureRangeStart = mMeasureStartSecond;
-    const double measureRangeEnd = mMeasureStartSecond + mMeasureDurationSecond;
+    const double measureRangeStart = mMeasureStartMs;
+    const double measureRangeEnd = mMeasureStartMs + mMeasureDurationMs;
     const double intMin = static_cast<double>(std::numeric_limits<int>::min());
     const double intMax = static_cast<double>(std::numeric_limits<int>::max());
-    const int measureMinSec = static_cast<int>(std::ceil(qBound(intMin, measureRangeStart, intMax)));
-    const int measureMaxSec = static_cast<int>(std::floor(qBound(intMin, measureRangeEnd, intMax)));
-    if (measureMinSec > measureMaxSec) {
+    const int measureMinMs = static_cast<int>(std::ceil(qBound(intMin, measureRangeStart, intMax)));
+    const int measureMaxMs = static_cast<int>(std::floor(qBound(intMin, measureRangeEnd, intMax)));
+    if (measureMinMs > measureMaxMs) {
         qApp->restoreOverrideCursor();
-        emit reporWriteLog(tr("测量时间范围无效：[%1, %2] s").arg(measureRangeStart).arg(measureRangeEnd), QtWarningMsg);
+        emit reporWriteLog(tr("测量时间范围无效：[%1, %2] ms").arg(measureRangeStart).arg(measureRangeEnd), QtWarningMsg);
         return;
     }
 
     // 先读用户输入，再把 spinBox 合法区间同步到测量范围
     const qint32 rawStart = ui->spinBox_timeStart->value();
     const qint32 rawEnd = ui->spinBox_timeEnd->value();
-    ui->spinBox_timeStart->setMinimum(measureMinSec);
-    ui->spinBox_timeStart->setMaximum(measureMaxSec);
-    ui->spinBox_timeEnd->setMinimum(measureMinSec);
-    ui->spinBox_timeEnd->setMaximum(measureMaxSec);
+    ui->spinBox_timeStart->setMinimum(measureMinMs);
+    ui->spinBox_timeStart->setMaximum(measureMaxMs);
+    ui->spinBox_timeEnd->setMinimum(measureMinMs);
+    ui->spinBox_timeEnd->setMaximum(measureMaxMs);
 
-    const bool startOutOfRange = (rawStart < measureMinSec || rawStart > measureMaxSec);
-    const bool endOutOfRange = (rawEnd < measureMinSec || rawEnd > measureMaxSec);
+    const bool startOutOfRange = (rawStart < measureMinMs || rawStart > measureMaxMs);
+    const bool endOutOfRange = (rawEnd < measureMinMs || rawEnd > measureMaxMs);
     if (startOutOfRange || endOutOfRange) {
         qApp->restoreOverrideCursor();
-        emit reporWriteLog(tr("解析时间区间 [%1, %2] s 超出测量时间范围 [%3, %4] s，请调整到测量范围内后再解析")
+        emit reporWriteLog(tr("解析时间区间 [%1, %2] ms 超出测量时间范围 [%3, %4] ms，请调整到测量范围内后再解析")
                                .arg(rawStart)
                                .arg(rawEnd)
-                               .arg(measureMinSec)
-                               .arg(measureMaxSec),
+                               .arg(measureMinMs)
+                               .arg(measureMaxMs),
                            QtWarningMsg);
         // 将控件收回到合法范围，便于用户下一次直接改
         if (startOutOfRange)
-            ui->spinBox_timeStart->setValue(qBound(measureMinSec, rawStart, measureMaxSec));
+            ui->spinBox_timeStart->setValue(qBound(measureMinMs, rawStart, measureMaxMs));
         if (endOutOfRange)
-            ui->spinBox_timeEnd->setValue(qBound(measureMinSec, rawEnd, measureMaxSec));
+            ui->spinBox_timeEnd->setValue(qBound(measureMinMs, rawEnd, measureMaxMs));
         return;
     }
 
     // t = (StartTime - ShotTime) + (sequence - sequence0) * measureTime_s；无有效打靶时刻时偏移为 0（开测为零点）
-    const double tmStartBase = mMeasureStartSecond;
+    const double tmStartBase = mMeasureStartMs;
     const qint32 tmStart = ui->spinBox_timeStart->value();
     const qint32 tmEnd = ui->spinBox_timeEnd->value();
-    const int stepSec = ui->spinBox->value();
+    const int stepMs = ui->spinBox->value();
     if (tmStart > tmEnd) {
         qApp->restoreOverrideCursor();
         emit reporWriteLog(tr("解析时间起点不能大于终点"), QtWarningMsg);
         return;
     }
-    if (stepSec <= 0) {
+    if (stepMs <= 0) {
         qApp->restoreOverrideCursor();
         emit reporWriteLog(tr("时间步长须大于 0"), QtWarningMsg);
         return;
     }
-    emit reporWriteLog(tr("解析时间区间：[%1, %2] s（测量范围 [%3, %4] s，相对打靶零点偏移 %5 s），时间步长：%6 s")
+    emit reporWriteLog(tr("解析时间区间：[%1, %2] ms（测量范围 [%3, %4] ms，相对打靶零点偏移 %5 ms），时间步长：%6 ms")
                            .arg(tmStart)
                            .arg(tmEnd)
-                           .arg(measureMinSec)
-                           .arg(measureMaxSec)
+                           .arg(measureMinMs)
+                           .arg(measureMaxMs)
                            .arg(tmStartBase)
-                           .arg(stepSec));
+                           .arg(stepMs));
 
     try {
         H5ErrorStackSilencer silence;
@@ -1478,12 +1483,12 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
             file.close();
             return;
         }
-        const int minStepSec = minTimeStepSecFromMeasureTimeMs(fileMeasureTimeMs);
-        ui->spinBox->setMinimum(minStepSec);
-        if (stepSec < minStepSec) {
+        const int minStepMs = fileMeasureTimeMs;//minTimeStepSecFromMeasureTimeMs(fileMeasureTimeMs);
+        ui->spinBox->setMinimum(minStepMs);
+        if (stepMs < minStepMs) {
             qApp->restoreOverrideCursor();
-            emit reporWriteLog(tr("时间步长不能小于 %1 s（单帧 measureTime=%2 ms）")
-                                   .arg(minStepSec)
+            emit reporWriteLog(tr("时间步长不能小于 %1 ms（单帧 measureTime=%2 ms）")
+                                   .arg(minStepMs)
                                    .arg(fileMeasureTimeMs),
                                QtWarningMsg);
             file.close();
@@ -1492,11 +1497,11 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
 
         // 预扫描各通道行数，用于进度条总量
         hsize_t totalRowsAll = 0;
-        int skippedChannels = 0;
+        QVector<int> skippedChannels;
         for (int index = 1; index <= DET_NUM; ++index) {
             const std::string groupName = detectorGroupName(index).toStdString();
             if (!h5GroupExists(file, groupName)) {
-                ++skippedChannels;
+                skippedChannels << index;
                 continue;
             }
             try {
@@ -1509,7 +1514,7 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                 dataset.close();
                 group.close();
             } catch (H5::Exception &) {
-                ++skippedChannels;
+                skippedChannels << index;
             }
         }
 
@@ -1519,8 +1524,11 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
             file.close();
             return;
         }
-        if (skippedChannels > 0) {
-            emit reporWriteLog(tr("预扫描：%1 个通道无数据，解析时将跳过").arg(skippedChannels), QtWarningMsg);
+        if (skippedChannels.size() > 0) {
+            QStringList list;
+            for (const auto & channel : skippedChannels)
+                list << QString("#%1").arg(channel);
+            emit reporWriteLog(tr("预扫描：%1 个通道无数据，解析时将跳过。无数据通道列表：%2").arg(skippedChannels.size()).arg(list.join(",")), QtWarningMsg);
         }
 
         const int progressMax = static_cast<int>(qMin(totalRowsAll, static_cast<hsize_t>(std::numeric_limits<int>::max())));
@@ -1548,6 +1556,9 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
         int channelsWithDataInRange = 0;
         for (int index = 1; index <= DET_NUM; ++index)
         {
+            if (skippedChannels.contains(index))
+                continue;
+
             if (mInterrupted)
             {
                 emit reporWriteLog(tr("解析被中断！"));
@@ -1617,9 +1628,9 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                 }
 
                 // 相对打靶：t = offset + (sequence - sequence0)×dt，offset = StartTime - ShotTime（秒）
-                const auto relativeTimeSec = [&](quint32 sequence, quint32 measureTimeMs) -> double {
+                const auto relativeTimeMs = [&](quint32 sequence, quint32 measureTimeMs) -> double {
                     const qint64 deltaSeq = static_cast<qint64>(sequence) - static_cast<qint64>(sequence0);
-                    return tmStartBase + static_cast<double>(deltaSeq) * measureTimeMs / 1000.0;
+                    return tmStartBase + static_cast<double>(deltaSeq + 1) * measureTimeMs;
                 };
 
                 double minV = 0.0;
@@ -1660,15 +1671,15 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                             sequence0 = data->sequence;
                             haveSequence0 = true;
                         }
-                        const double rowTimeSec = relativeTimeSec(data->sequence, data->measureTime);
-                        if (rowTimeSec > tmEnd) {
+                        const double rowTimeMs = relativeTimeMs(data->sequence, data->measureTime);
+                        if (rowTimeMs > tmEnd) {
                             break;
                         }
-                        if (rowTimeSec >= tmStart)
+                        if (rowTimeMs >= tmStart)
                         {
                             const quint32 measureTimeMs = data->measureTime;
                             const int stepTarget = qMax(1, static_cast<int>(
-                                static_cast<quint64>(stepSec) * 1000 / measureTimeMs));
+                                static_cast<quint64>(stepMs) / measureTimeMs));
 
                             QVector<quint32> spectrum(kSpectrumPointCount, 0);
                             quint64 deathTimeSum = 0;
@@ -1691,10 +1702,10 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                                 if (row->measureTime == 0 || row->measureTime != measureTimeMs)
                                     break;
 
-                                const double binTimeSec = relativeTimeSec(row->sequence, row->measureTime);
-                                if (binTimeSec > tmEnd)
+                                const double binTimeMs = relativeTimeMs(row->sequence, row->measureTime);
+                                if (binTimeMs > tmEnd)
                                     break;
-                                if (binTimeSec < tmStart)
+                                if (binTimeMs < tmStart)
                                     continue;
 
                                 for (int j = 0; j < kSpectrumPointCount; ++j)
@@ -1754,9 +1765,9 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                                     break;
                                 }
 
-                                const double timeSec = relativeTimeSec(lastSequence, measureTimeMs);
-                                mMapCount[index].push_back(qMakePair(timeSec, countRate));
-                                mMapCountCorrect[index].push_back(qMakePair(timeSec, countRateCorrect));
+                                const double timeMs = relativeTimeMs(lastSequence, measureTimeMs) / 1000;
+                                mMapCount[index].push_back(qMakePair(timeMs, countRate));
+                                mMapCountCorrect[index].push_back(qMakePair(timeMs, countRateCorrect));
                             }
                         }
                     }
@@ -1796,7 +1807,7 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
                     mMapSpectrum.remove(index);
                     mMapSpectrumCorrect.remove(index);
                     clearDetectorStatisticsRow(ui->tableWidget, index);
-                    emit reporWriteLog(tr("通道#%1 在时间区间 [%2, %3] 内无数据，已跳过")
+                    emit reporWriteLog(tr("通道#%1 在时间区间 [%2, %3] ms内无数据，已跳过")
                                            .arg(index)
                                            .arg(tmStart)
                                            .arg(tmEnd),
@@ -1821,12 +1832,12 @@ void CountRateStatisticsWindow::on_action_startParse_triggered()
 
         file.close();
         if (channelsWithDataInRange > 0) {
-            emit reporWriteLog(tr("时间区间 [%1, %2] 内成功解析 %3 个通道")
+            emit reporWriteLog(tr("时间区间 [%1, %2] ms内成功解析 %3 个通道")
                                    .arg(tmStart)
                                    .arg(tmEnd)
                                    .arg(channelsWithDataInRange));
         } else {
-            emit reporWriteLog(tr("所有通道在时间区间 [%1, %2] 内均无数据")
+            emit reporWriteLog(tr("所有通道在时间区间 [%1, %2] ms内均无数据")
                                    .arg(tmStart)
                                    .arg(tmEnd),
                                QtWarningMsg);
@@ -1869,4 +1880,3 @@ void CountRateStatisticsWindow::on_tableWidget_cellClicked(int row, int column)
     syncDetectorCheckboxes();
     updateAllPlotVisibility();
 }
-

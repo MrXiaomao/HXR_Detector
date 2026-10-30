@@ -240,11 +240,14 @@
             </item>
             <item row="0" column="1">
              <widget class="QSpinBox" name="spinBox_spectrumRefreshTime">
+              <property name="toolTip">
+               <string>最大时间上限10s</string>
+              </property>
               <property name="minimum">
                <number>1</number>
               </property>
               <property name="maximum">
-               <number>3600000</number>
+               <number>10000</number>
               </property>
               <property name="value">
                <number>1000</number>
@@ -329,7 +332,7 @@
         </column>
         <column>
          <property name="text">
-          <string>触发阈值(0-65535)</string>
+          <string>触发阈值(0-8192)</string>
          </property>
         </column>
         <column>

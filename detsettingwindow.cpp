@@ -15,7 +15,7 @@
 #include <QTimer>
 
 namespace {
-constexpr int kSpectrumRefreshTimeSpinMax = 60 * 60 * 1000; // 1 hour，单位 ms（协议字段为 4 字节 quint32）
+constexpr int kSpectrumRefreshTimeSpinMax = 10 * 1000; // 10 s，单位 ms（协议字段为 4 字节 quint32）
 
 int spectrumRefreshTimeToSpinValue(quint32 ms)
 {

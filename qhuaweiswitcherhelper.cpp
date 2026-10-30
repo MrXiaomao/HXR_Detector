@@ -8,6 +8,7 @@
 
 #ifndef USE_QTELNET
 #include <QTcpSocket>
+#include <QNetworkProxy>
 using QTelnet = QTcpSocket;
 #else
 #include <QTelnet.h>
@@ -31,6 +32,7 @@ QHuaWeiSwitcherHelper::QHuaWeiSwitcherHelper(QString ip, QObject *parent)
     mIsReconnecting = false;
 
 #ifndef USE_QTELNET
+    mTelnet->setProxy(QNetworkProxy::NoProxy);
     connect(mTelnet, &QTcpSocket::readyRead,this,[=](){
         while (mTelnet->bytesAvailable() > 0)
         {
@@ -544,7 +546,7 @@ bool QHuaWeiSwitcherHelper::hasPendingPoeActionsForPort(quint8 port) const
             return true;
     }
 
-    if (mVerifyByPort.contains(port) && mVerifyByPort[port].intent != PoeIntent::None)
+    if (mVerifyByPort.contains(port) && mVerifyByPort[port].intent != PoeIntent::None && mVerifyByPort[port].waitingRetry)
         return true;
 
     return false;
